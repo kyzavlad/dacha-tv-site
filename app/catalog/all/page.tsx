@@ -1,0 +1,67 @@
+export const dynamic = 'force-dynamic'
+import type { Metadata } from 'next'
+import { getPublishedCatalogProducts, CATALOG_PAGE_SIZE } from '@/lib/supabase/catalog'
+import { CatalogProductCard } from '@/components/catalog/CatalogProductCard'
+import { Breadcrumb } from '@/components/catalog/Breadcrumb'
+import { Pagination } from '@/components/catalog/Pagination'
+
+interface Props {
+  searchParams: Promise<{ page?: string }>
+}
+
+export const metadata: Metadata = {
+  title: 'Усі товари | Дача TV',
+  description: 'Повний асортимент товарів для дому, саду та дачі з доставкою по Україні.',
+  alternates: { canonical: '/catalog/all' },
+}
+
+export default async function AllCatalogProductsPage({ searchParams }: Props) {
+  const { page: pageStr } = await searchParams
+  const page = Math.max(1, parseInt(pageStr ?? '1', 10) || 1)
+
+  const { products, total } = await getPublishedCatalogProducts(page).catch(() => ({ products: [], total: 0 }))
+  const totalPages = Math.ceil(total / CATALOG_PAGE_SIZE)
+
+  return (
+    <div className="bg-cream min-h-screen">
+      <div className="bg-white border-b border-gray-100 py-10 md:py-14">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <Breadcrumb crumbs={[
+            { label: 'Головна', href: '/' },
+            { label: 'Каталог', href: '/catalog' },
+            { label: 'Усі товари' },
+          ]} />
+          <h1 className="font-serif text-3xl md:text-4xl font-bold text-bark mt-4 mb-2">
+            Усі товари
+          </h1>
+          {total > 0 && (
+            <p className="text-xs text-gray-400 mt-2">
+              {total.toLocaleString('uk-UA')} товарів{page > 1 ? ` · сторінка ${page} з ${totalPages}` : ''}
+            </p>
+          )}
+        </div>
+      </div>
+
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+        {products.length === 0 ? (
+          <div className="text-center py-16">
+            <p className="text-bark/40 text-sm">Товарів поки немає.</p>
+          </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+              {products.map((product) => (
+                <CatalogProductCard
+                  key={product.id}
+                  product={product}
+                  categorySlug={product.category_slug ?? 'all'}
+                />
+              ))}
+            </div>
+            <Pagination page={page} total={total} baseHref="/catalog/all" />
+          </>
+        )}
+      </div>
+    </div>
+  )
+}

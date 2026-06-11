@@ -1,0 +1,125 @@
+export const dynamic = 'force-dynamic'
+import type { Metadata } from 'next'
+import Link from 'next/link'
+import type { CatalogCategory } from '@/types'
+import {
+  getPublishedCategories,
+  getPublishedCategorySlugCounts,
+} from '@/lib/supabase/catalog'
+import { CategoryCard } from '@/components/catalog/CategoryCard'
+
+export const metadata: Metadata = {
+  title: 'Каталог товарів | Дача TV',
+  description: 'Широкий асортимент товарів для дому, саду та дачі. Якісні товари за доступними цінами з доставкою по Україні.',
+  alternates: { canonical: '/catalog' },
+  openGraph: {
+    title: 'Каталог товарів | Дача TV',
+    description: 'Широкий асортимент товарів для дому, саду та дачі.',
+    type: 'website',
+  },
+}
+
+function isNumericName(name: string | null | undefined): boolean {
+  return !name || /^\d+$/.test(name.trim())
+}
+
+// Synthetic catch-all card for products that have no usable category (null,
+// numeric, or pointing at an unpublished category). slug 'all' → /catalog/all.
+const OTHER_CATEGORY: CatalogCategory = {
+  id: '__other__',
+  supplier_category_id: null,
+  slug: 'all',
+  name_ua: 'Інші товари',
+  description: null,
+  meta_title: null,
+  meta_description: null,
+  image_url: null,
+  is_published: true,
+  display_order: 9_999,
+  created_at: '',
+  updated_at: '',
+}
+
+export default async function CatalogPage() {
+  // Categories are derived from the products that are actually published, so the
+  // grid renders regardless of whether the category_slug backfill/cron has run.
+  const [allCategories, { bySlug, nullCount, total }] = await Promise.all([
+    getPublishedCategories().catch(() => []),
+    getPublishedCategorySlugCounts().catch(() => ({ bySlug: new Map<string, number>(), nullCount: 0, total: 0 })),
+  ])
+
+  // Eligible cards: published, human-readable (non-numeric) categories that
+  // have at least one published product mapped to their slug.
+  const usableCategories = allCategories.filter((cat) => !isNumericName(cat.name_ua))
+  const usableSlugs = new Set(usableCategories.map((c) => c.slug))
+
+  const visibleCategories = usableCategories
+    .map((cat) => ({ cat, count: bySlug.get(cat.slug) ?? 0 }))
+    .filter(({ count }) => count > 0)
+
+  // Everything that doesn't land in a visible category → "Інші товари" bucket:
+  // null slugs + slugs pointing at numeric / unpublished / missing categories.
+  let otherCount = nullCount
+  for (const [slug, n] of bySlug) {
+    if (!usableSlugs.has(slug)) otherCount += n
+  }
+
+  const cards: Array<{ cat: CatalogCategory; count: number }> = [...visibleCategories]
+  if (otherCount > 0) cards.push({ cat: OTHER_CATEGORY, count: otherCount })
+
+  return (
+    <div className="bg-cream min-h-screen">
+      <div className="bg-white border-b border-gray-100 py-12 md:py-16">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <span className="text-xs font-semibold text-honey-700 uppercase tracking-widest mb-3 block">
+            Магазин
+          </span>
+          <h1 className="font-serif text-4xl md:text-5xl font-bold text-bark mb-4">
+            Товари для дому, саду та господарства
+          </h1>
+          <p className="text-gray-500 text-lg max-w-2xl">
+            Товари для дому, саду та дачного господарства. Якість перевірена — доставка по Україні.
+          </p>
+        </div>
+      </div>
+
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        {cards.length > 0 ? (
+          /* ── Category-first grid, derived from real published products ── */
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            {cards.map(({ cat, count }) => (
+              <CategoryCard key={cat.id} category={cat} productCount={count} />
+            ))}
+          </div>
+        ) : total > 0 ? (
+          /* ── Products exist but none are presentable yet → browse-all path ── */
+          <div className="max-w-xl mx-auto text-center py-16">
+            <span className="text-5xl opacity-30 block mb-4" aria-hidden="true">🗂️</span>
+            <p className="text-2xl font-serif text-bark mb-2">Усі товари</p>
+            <p className="text-gray-500 text-sm mb-8">
+              Перегляньте весь асортимент одним списком.
+            </p>
+            <Link
+              href="/catalog/all"
+              className="inline-flex items-center justify-center px-6 py-3 bg-honey-600 hover:bg-honey-700 text-white font-semibold rounded-xl transition-colors"
+            >
+              Переглянути всі товари →
+            </Link>
+          </div>
+        ) : (
+          /* ── True empty state ── */
+          <div className="text-center py-20">
+            <p className="text-2xl font-serif text-bark/40 mb-2">Незабаром</p>
+            <p className="text-gray-400 text-sm">
+              Каталог товарів готується. Заходьте пізніше або{' '}
+              <Link href="/contact" className="text-honey-700 hover:underline">
+                зв&apos;яжіться з нами
+              </Link>
+              .
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}

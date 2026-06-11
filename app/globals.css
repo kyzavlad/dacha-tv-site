@@ -1,0 +1,88 @@
+@import "tailwindcss";
+
+@theme {
+  /* Honey palette */
+  --color-honey-50: #fffbeb;
+  --color-honey-100: #fef3c7;
+  --color-honey-200: #fde68a;
+  --color-honey-300: #fcd34d;
+  --color-honey-400: #fbbf24;
+  --color-honey-500: #f59e0b;
+  --color-honey-600: #d97706;
+  --color-honey-700: #b45309;
+  --color-honey-800: #92400e;
+  --color-honey-900: #78350f;
+  --color-honey-950: #451a03;
+
+  /* Forest palette */
+  --color-forest-50: #f0fdf4;
+  --color-forest-100: #dcfce7;
+  --color-forest-200: #bbf7d0;
+  --color-forest-300: #86efac;
+  --color-forest-400: #4ade80;
+  --color-forest-500: #22c55e;
+  --color-forest-600: #16a34a;
+  --color-forest-700: #15803d;
+  --color-forest-800: #166534;
+  --color-forest-900: #14532d;
+  --color-forest-950: #052e16;
+
+  /* Brand neutrals */
+  --color-cream: #fdf8f0;
+  --color-cream-dark: #f5edd8;
+  --color-bark: #1c1209;
+  --color-bark-light: #3d2c18;
+
+  /* Font stacks — referenced by font-sans / font-serif utility classes */
+  --font-sans: var(--font-inter), system-ui, sans-serif;
+  --font-serif: var(--font-lora), Georgia, serif;
+}
+
+:root {
+  --background: #fdf8f0;
+  --foreground: #1c1209;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-inter), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--font-lora), Georgia, serif;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+:focus-visible {
+  outline: 2px solid #d97706;
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+html {
+  scroll-behavior: smooth;
+  overflow-x: hidden;
+}
+
+/* Prevent horizontal scroll caused by off-canvas drawer transform */
+body {
+  overflow-x: hidden;
+}
+
+/* FAQ accordion — native details/summary */
+details > summary {
+  list-style: none;
+  cursor: pointer;
+}
+details > summary::-webkit-details-marker {
+  display: none;
+}

@@ -1,0 +1,10 @@
+{
+  "crons": [
+    { "path": "/api/admin/cron/sync-categories",   "schedule": "0 1 * * *" },
+    { "path": "/api/admin/cron/category-seo",      "schedule": "0 2 * * *" },
+    { "path": "/api/admin/cron/sync-products",     "schedule": "0 3 * * *" },
+    { "path": "/api/admin/cron/import-products",   "schedule": "0 4 * * *" },
+    { "path": "/api/admin/cron/publish-products",  "schedule": "0 5 * * *" },
+    { "path": "/api/admin/cron/product-seo",       "schedule": "0 6 * * *" }
+  ]
+}

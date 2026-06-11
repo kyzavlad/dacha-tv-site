@@ -1,0 +1,258 @@
+import { createClient } from '@supabase/supabase-js'
+import type { CatalogCategory, CatalogProduct } from '@/types'
+
+function getClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  if (!url || !key) return null
+  return createClient(url, key)
+}
+
+export const CATALOG_PAGE_SIZE = 24
+
+// Manual food/natural categories that are NOT part of /catalog ("Магазин").
+// Their products are presented under /products ("Продукти пасіки") instead. We
+// exclude by category_slug (always present) so the public catalog never depends
+// on a possibly-unmigrated column.
+export const NATURAL_CATEGORY_SLUGS = ['naturalni-produkty', 'zhyvi-olii-holodnogo-vidzhymu']
+
+// PostgREST `or` filter: keep null-category products (the /catalog/all catch-all)
+// but drop products in the natural categories. `NOT IN` alone would also drop
+// NULLs, so the explicit `is.null` branch is required.
+const EXCLUDE_NATURAL_OR = `category_slug.is.null,category_slug.not.in.(${NATURAL_CATEGORY_SLUGS.join(',')})`
+
+// Public price-display guard. Until a re-sync corrects historical rows, some
+// catalog products may still carry a corrupted sub-currency price (raw USD
+// written as UAH, e.g. 0.58). Treat any non-positive or implausibly tiny price
+// as "no price" so the UI shows "Уточнити ціну" instead of a fake bargain.
+export const MIN_VALID_PRICE_UAH = 10
+export function hasValidPrice(price: number | null | undefined): boolean {
+  return typeof price === 'number' && isFinite(price) && price >= MIN_VALID_PRICE_UAH
+}
+
+// ─── Manual / supplier unified price + CTA logic ─────────────────────────────
+// A product shows a real price only when it has a valid, non-suspicious price.
+export function hasDisplayablePrice(product: CatalogProduct): boolean {
+  return hasValidPrice(product.price_uah) && !product.is_price_suspicious
+}
+
+// Inquiry mode: explicitly inquiry-only, or simply has no displayable price.
+// Such products show "Уточнити ціну" and route to a lead/contact flow instead
+// of normal cart checkout.
+export function isInquiryProduct(product: CatalogProduct): boolean {
+  return product.inquiry_only === true || !hasDisplayablePrice(product)
+}
+
+// Can this product go through the normal cart/checkout path?
+export function canAddToCart(product: CatalogProduct): boolean {
+  return product.status === 'published' && !isInquiryProduct(product)
+}
+
+// Build the display price string, honouring an optional prefix ("від") and a
+// unit label ("грн/кг", "грн/м²", …). Returns null when there is no price to
+// show — callers then render "Уточнити ціну". Note: even inquiry-only products
+// may carry a reference price (e.g. "від 100 грн"), which we still surface.
+export function formatCatalogPrice(product: CatalogProduct): string | null {
+  if (!hasDisplayablePrice(product)) return null
+  const amount = (product.price_uah as number).toLocaleString('uk-UA')
+  const unit = product.unit_label && product.unit_label.trim() ? product.unit_label.trim() : 'грн'
+  const prefix = product.price_prefix && product.price_prefix.trim() ? `${product.price_prefix.trim()} ` : ''
+  return `${prefix}${amount} ${unit}`
+}
+
+export async function getPublishedCategories(): Promise<CatalogCategory[]> {
+  const client = getClient()
+  if (!client) return []
+  // Order by safe, always-present columns in the query, then re-sort in JS so we
+  // never error if `source`/`sort_order` (migration 054) are missing on an
+  // instance — the JS comparator simply falls back to defaults.
+  const { data } = await client
+    .from('catalog_categories')
+    .select('*')
+    .eq('is_published', true)
+    .order('display_order', { ascending: true })
+    .order('name_ua', { ascending: true })
+    .limit(2000)
+  const rows = (data ?? []) as CatalogCategory[]
+  // Pinned order: manual categories first (metal → natural → oils via sort_order),
+  // then supplier/API categories by name.
+  return rows.sort((a, b) => {
+    const am = a.source === 'manual' ? 0 : 1
+    const bm = b.source === 'manual' ? 0 : 1
+    if (am !== bm) return am - bm
+    const aso = a.sort_order ?? 100
+    const bso = b.sort_order ?? 100
+    if (aso !== bso) return aso - bso
+    return (a.name_ua ?? '').localeCompare(b.name_ua ?? '', 'uk')
+  })
+}
+
+export async function getCategoryBySlug(slug: string): Promise<CatalogCategory | null> {
+  const client = getClient()
+  if (!client) return null
+  const { data } = await client
+    .from('catalog_categories')
+    .select('*')
+    .eq('slug', slug)
+    .eq('is_published', true)
+    .single()
+  return (data ?? null) as CatalogCategory | null
+}
+
+export async function getPublishedProductsByCategory(
+  categorySlug: string,
+  page: number,
+): Promise<{ products: CatalogProduct[]; total: number }> {
+  const client = getClient()
+  if (!client) return { products: [], total: 0 }
+  const from = (page - 1) * CATALOG_PAGE_SIZE
+  const to = from + CATALOG_PAGE_SIZE - 1
+  const { data, count } = await client
+    .from('catalog_products')
+    .select('*', { count: 'exact' })
+    .eq('status', 'published')
+    .eq('category_slug', categorySlug)
+    .order('is_featured', { ascending: false })
+    .order('display_order', { ascending: true })
+    .order('name_ua', { ascending: true })
+    .range(from, to)
+  return { products: (data ?? []) as CatalogProduct[], total: count ?? 0 }
+}
+
+export async function getPublishedProductBySlug(
+  categorySlug: string,
+  productSlug: string,
+): Promise<CatalogProduct | null> {
+  const client = getClient()
+  if (!client) return null
+  const { data } = await client
+    .from('catalog_products')
+    .select('*')
+    .eq('status', 'published')
+    .eq('category_slug', categorySlug)
+    .eq('slug', productSlug)
+    .single()
+  return (data ?? null) as CatalogProduct | null
+}
+
+// Slug-only fallback: catalog_products.slug is globally unique, so this resolves
+// products even when their category_slug is null/mismatched (used by /catalog/all).
+export async function getPublishedProductBySlugOnly(productSlug: string): Promise<CatalogProduct | null> {
+  const client = getClient()
+  if (!client) return null
+  const { data } = await client
+    .from('catalog_products')
+    .select('*')
+    .eq('status', 'published')
+    .eq('slug', productSlug)
+    .maybeSingle()
+  return (data ?? null) as CatalogProduct | null
+}
+
+export async function getPublishedCatalogSlugs(): Promise<{ category: string; product: string }[]> {
+  const client = getClient()
+  if (!client) return []
+  const { data } = await client
+    .from('catalog_products')
+    .select('slug, category_slug')
+    .eq('status', 'published')
+    .not('category_slug', 'is', null)
+    .not('category_slug', 'in', `(${NATURAL_CATEGORY_SLUGS.join(',')})`)
+  return (data ?? []).map((r) => ({ category: r.category_slug as string, product: r.slug as string }))
+}
+
+export async function getPublishedCatalogProducts(
+  page = 1,
+): Promise<{ products: CatalogProduct[]; total: number }> {
+  const client = getClient()
+  if (!client) return { products: [], total: 0 }
+  const from = (page - 1) * CATALOG_PAGE_SIZE
+  const to = from + CATALOG_PAGE_SIZE - 1
+  const { data, count } = await client
+    .from('catalog_products')
+    .select('*', { count: 'exact' })
+    .eq('status', 'published')
+    .or(EXCLUDE_NATURAL_OR)
+    .order('is_featured', { ascending: false })
+    .order('display_order', { ascending: true })
+    .order('name_ua', { ascending: true })
+    .range(from, to)
+  return { products: (data ?? []) as CatalogProduct[], total: count ?? 0 }
+}
+
+export async function getPublishedCatalogProductCount(): Promise<number> {
+  const client = getClient()
+  if (!client) return 0
+  const { count } = await client
+    .from('catalog_products')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'published')
+    .or(EXCLUDE_NATURAL_OR)
+  return count ?? 0
+}
+
+// Natural/food manual products for /products ("Продукти пасіки"). These live in
+// catalog_products (source='manual') but are excluded from /catalog.
+export async function getNaturalProducts(): Promise<CatalogProduct[]> {
+  const client = getClient()
+  if (!client) return []
+  const { data } = await client
+    .from('catalog_products')
+    .select('*')
+    .eq('status', 'published')
+    .in('category_slug', NATURAL_CATEGORY_SLUGS)
+    .order('display_order', { ascending: true })
+    .order('name_ua', { ascending: true })
+    .limit(200)
+  return (data ?? []) as CatalogProduct[]
+}
+
+export async function getCategoryProductCount(categorySlug: string): Promise<number> {
+  const client = getClient()
+  if (!client) return 0
+  const { count } = await client
+    .from('catalog_products')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'published')
+    .eq('category_slug', categorySlug)
+  return count ?? 0
+}
+
+// Derive product counts grouped by category_slug directly from published
+// products — the single source of truth for what /catalog should show. One
+// lightweight column is fetched (paginated past PostgREST's 1000-row cap) and
+// grouped in memory, which stays cheap for a few thousand products and makes
+// the landing page resilient to missing/misaligned category_slug values.
+export async function getPublishedCategorySlugCounts(): Promise<{
+  bySlug: Map<string, number>
+  nullCount: number
+  total: number
+}> {
+  const client = getClient()
+  const bySlug = new Map<string, number>()
+  let nullCount = 0
+  let total = 0
+  if (!client) return { bySlug, nullCount, total }
+
+  const PAGE = 1000
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await client
+      .from('catalog_products')
+      .select('category_slug')
+      .eq('status', 'published')
+      .order('id', { ascending: true })
+      .range(from, from + PAGE - 1)
+    if (error || !data || data.length === 0) break
+    for (const row of data) {
+      const slug = (row as { category_slug: string | null }).category_slug
+      // Skip natural/food products — they belong to /products, not /catalog.
+      if (slug && NATURAL_CATEGORY_SLUGS.includes(slug)) continue
+      total++
+      if (slug) bySlug.set(slug, (bySlug.get(slug) ?? 0) + 1)
+      else nullCount++
+    }
+    if (data.length < PAGE) break
+  }
+
+  return { bySlug, nullCount, total }
+}
