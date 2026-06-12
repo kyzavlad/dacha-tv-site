@@ -27,6 +27,7 @@ export interface Booking {
   check_in: string | null
   check_out: string | null
   guest_count: number
+  bouquet_qty: number | null
   total_price_uah: number | null
   comment: string | null
   status: 'new' | 'confirmed' | 'cancelled' | 'completed' | 'blocked'

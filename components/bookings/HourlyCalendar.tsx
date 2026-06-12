@@ -20,6 +20,10 @@ interface Props {
   bouquetPrice?: number        // price per bouquet (default 100)
   requireRules?: boolean       // require a rules-confirmation checkbox
   rulesLabel?: string
+  // Optional two-tier hourly pricing: slots starting at/after eveningStartHour
+  // cost eveningPriceUah instead of pricePerHour (used by the lavender field).
+  eveningStartHour?: number
+  eveningPriceUah?: number
 }
 
 function toISODate(d: Date): string {
@@ -34,7 +38,7 @@ export function HourlyCalendar({
   serviceSlug, serviceName, pricePerHour, capacity, extraGuestPrice,
   slotStartHour, slotEndHour, source,
   maxDateISO, maxGuests = 20, enableBouquets = false, bouquetPrice = 100,
-  requireRules = false, rulesLabel,
+  requireRules = false, rulesLabel, eveningStartHour, eveningPriceUah,
 }: Props) {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
@@ -86,9 +90,13 @@ export function HourlyCalendar({
   const slots: number[] = []
   for (let h = slotStartHour; h < slotEndHour; h++) slots.push(h)
 
+  // Per-slot base rate — two-tier when evening pricing is configured.
+  const hourPrice = (eveningStartHour != null && eveningPriceUah != null && selectedHour != null && selectedHour >= eveningStartHour)
+    ? eveningPriceUah
+    : pricePerHour
   const extra = Math.max(0, guestCount - capacity) * extraGuestPrice
   const bouquetCost = enableBouquets && bouquetWanted ? Math.max(0, bouquetQty) * bouquetPrice : 0
-  const total = pricePerHour + extra + bouquetCost
+  const total = hourPrice + extra + bouquetCost
 
   // Disable the "next month" arrow once we'd move past the max bookable date.
   const canGoNext = !maxDate || new Date(viewMonth.getFullYear(), viewMonth.getMonth() + 1, 1) <= maxDate
@@ -295,7 +303,7 @@ export function HourlyCalendar({
             Вартість: <strong>{total.toLocaleString('uk-UA')} ₴</strong>
             {guestCount > capacity && (
               <span className="text-xs text-gray-500 ml-1">
-                ({pricePerHour.toLocaleString('uk-UA')} + {extra.toLocaleString('uk-UA')} за {guestCount - capacity} додат. {(guestCount - capacity) === 1 ? 'гостя' : 'гостей'})
+                ({hourPrice.toLocaleString('uk-UA')} + {extra.toLocaleString('uk-UA')} за {guestCount - capacity} додат. {(guestCount - capacity) === 1 ? 'гостя' : 'гостей'})
               </span>
             )}
             {bouquetCost > 0 && (

@@ -1,5 +1,4 @@
 import type { Review } from '@/types'
-import { ReviewPhotos } from './ReviewPhotos'
 
 interface ReviewsProps {
   reviews?: Review[]
@@ -10,13 +9,15 @@ interface ReviewsProps {
 // whole Dacha TV ecosystem, not only honey.
 const CURATED_REVIEWS: Array<{ quote: string; name: string; city: string; tag: string; rating: number }> = [
   { quote: 'Мед справжній, ароматний, кристалізується як і має натуральний. Замовляю вже третій раз.', name: 'Олена', city: 'Харків', tag: 'Мед', rating: 5 },
+  { quote: 'Акацієвий мед взяли на подарунок — смак ніжний, баночка акуратна. Залишились задоволені.', name: 'Дмитро', city: 'Харків', tag: 'Мед', rating: 5 },
   { quote: 'Брали пилок і прополіс — якість чудова, все свіже, відправили швидко Новою Поштою.', name: 'Андрій', city: 'Полтава', tag: 'Продукти пасіки', rating: 5 },
   { quote: 'Замовляла букет на свято — квіти свіжі, зібрані красиво, привезли вчасно.', name: 'Марія', city: 'Мерефа', tag: 'Квіти', rating: 5 },
-  { quote: 'Фотосесія на лавандовому полі — неймовірні емоції та фото. Дуже рекомендую.', name: 'Ірина', city: 'Харків', tag: 'Лаванда', rating: 5 },
+  { quote: 'Фотосесія на лавандовому полі — неймовірні емоції та фото. Букетик лаванди забрали додому.', name: 'Ірина', city: 'Харків', tag: 'Лаванда', rating: 5 },
   { quote: 'Брали профнастил і металочерепицю на дах. Порахували під розмір, доставили по області. Все рівно, без подряпин.', name: 'Сергій', city: 'Коротич', tag: 'Металопрофіль', rating: 5 },
+  { quote: 'Замовляли металевий штахетник на паркан — колір підібрали, саморізи в тон. Монтувати було зручно.', name: 'Олександр', city: 'Валки', tag: 'Металопрофіль', rating: 5 },
   { quote: 'Жимолість і живі олії — справжній смак з господарства. Олія гарбузова просто супер.', name: 'Тетяна', city: 'Люботин', tag: 'Натуральні продукти', rating: 5 },
-  { quote: 'Замовлення зібрали швидко, тримали в курсі, відправили того ж дня. Все чесно.', name: 'Володимир', city: 'Чугуїв', tag: 'Доставка', rating: 5 },
   { quote: 'Озимий часник на посадку — великі здорові головки, зійшов добре. Дякую!', name: 'Наталія', city: 'Дергачі', tag: 'Натуральні продукти', rating: 5 },
+  { quote: 'Замовлення зібрали швидко, тримали в курсі, відправили того ж дня. Все чесно.', name: 'Володимир', city: 'Чугуїв', tag: 'Доставка', rating: 5 },
 ]
 
 function StarRating({ rating }: { rating: number }) {
@@ -43,7 +44,7 @@ export function Reviews({ reviews }: ReviewsProps) {
   // Prefer real DB reviews when available, otherwise show the curated site-wide
   // set. Either way the section always represents the whole site.
   const items = (reviews && reviews.length >= 3)
-    ? reviews.slice(0, 8).map((r) => ({ quote: r.quote, name: r.reviewer_name, city: r.city ?? '', tag: '', rating: r.rating }))
+    ? reviews.slice(0, 10).map((r) => ({ quote: r.quote, name: r.reviewer_name, city: r.city ?? '', tag: '', rating: r.rating }))
     : CURATED_REVIEWS
 
   return (
@@ -81,9 +82,6 @@ export function Reviews({ reviews }: ReviewsProps) {
             </blockquote>
           ))}
         </div>
-
-        {/* Photo-review carousel (static files, render gracefully if missing) */}
-        <ReviewPhotos />
       </div>
     </section>
   )

@@ -81,7 +81,7 @@ export default async function LavenderPage() {
                 <div className="space-y-2 text-sm">
                   <div className="flex gap-2">
                     <span className="text-purple-600 font-semibold w-28">Ціна:</span>
-                    <span>{(service.price_uah ?? 1000).toLocaleString('uk-UA')} ₴/година</span>
+                    <span>06:00–15:00 — 1000 ₴/год · 15:00–21:00 — 1200 ₴/год</span>
                   </div>
                   <div className="flex gap-2">
                     <span className="text-purple-600 font-semibold w-28">Включено:</span>
@@ -120,6 +120,8 @@ export default async function LavenderPage() {
                   bouquetPrice={100}
                   requireRules
                   rulesLabel="З правилами відвідування лавандового поля ознайомлений(а)"
+                  eveningStartHour={15}
+                  eveningPriceUah={1200}
                 />
               </div>
             </div>

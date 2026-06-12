@@ -13,6 +13,15 @@ const LAVENDER_MAX_GUESTS = 5
 const BOUQUET_PRICE_UAH = 100
 const lavenderMaxDate = () => `${new Date().getFullYear()}-07-20`
 
+// Two-tier lavender hourly pricing: 06:00–15:00 = 1000 ₴, 15:00–21:00 = 1200 ₴.
+const LAVENDER_DAY_PRICE_UAH = 1000
+const LAVENDER_EVENING_PRICE_UAH = 1200
+const LAVENDER_EVENING_FROM_HOUR = 15
+
+function lavenderHourPrice(hour: number): number {
+  return hour >= LAVENDER_EVENING_FROM_HOUR ? LAVENDER_EVENING_PRICE_UAH : LAVENDER_DAY_PRICE_UAH
+}
+
 // Public site URL for clean notification links (never a raw internal path).
 function publicUrl(path: string): string {
   const base = (process.env.NEXT_PUBLIC_SITE_URL || 'https://dachatv.co').replace(/\/+$/, '')
@@ -116,7 +125,11 @@ export async function submitHourlyBooking(formData: FormData): Promise<ActionRes
       .eq('slug', d.serviceSlug)
       .single()
 
-    const basePrice = svc?.price_uah ?? 1000
+    // Lavender uses a two-tier hourly rate by start hour; other hourly services
+    // use the flat service price.
+    const basePrice = d.serviceSlug === LAVENDER_SLUG
+      ? lavenderHourPrice(d.bookingHour)
+      : (svc?.price_uah ?? 1000)
     const capacity = svc?.capacity ?? 5
     const extraRate = svc?.extra_guest_price_uah ?? 200
     const extra = Math.max(0, d.guestCount - capacity) * extraRate
@@ -131,6 +144,7 @@ export async function submitHourlyBooking(formData: FormData): Promise<ActionRes
       booking_date: d.bookingDate,
       booking_hour: d.bookingHour,
       guest_count: d.guestCount,
+      bouquet_qty: bouquetQty,
       total_price_uah: total,
       comment: d.comment ?? null,
       source: d.source ?? null,
