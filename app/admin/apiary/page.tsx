@@ -7,7 +7,7 @@ import { MediaManager } from '@/components/admin/MediaManager'
 import type { ApiaryProduct } from '@/types'
 
 export const metadata: Metadata = {
-  title: 'Адмін — Продукти пасіки',
+  title: 'Адмін: Продукти пасіки',
   robots: 'noindex, nofollow',
 }
 

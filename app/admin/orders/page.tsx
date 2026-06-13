@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { getAdminClient } from '@/lib/supabase/admin'
 import type { Order, OrderStatus } from '@/types'
 
-export const metadata: Metadata = { title: 'Адмін — Замовлення', robots: 'noindex, nofollow' }
+export const metadata: Metadata = { title: 'Адмін: Замовлення', robots: 'noindex, nofollow' }
 
 const STATUS_LABELS: Record<OrderStatus, string> = {
   new: 'Нова',

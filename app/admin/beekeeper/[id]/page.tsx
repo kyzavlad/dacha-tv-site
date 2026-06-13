@@ -12,7 +12,7 @@ interface Props {
 }
 
 export const metadata: Metadata = {
-  title: 'Адмін — Редагувати продукт',
+  title: 'Адмін: Редагувати продукт',
   robots: 'noindex, nofollow',
 }
 

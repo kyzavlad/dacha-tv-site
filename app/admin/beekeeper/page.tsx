@@ -6,7 +6,7 @@ import { createBeekeeperProduct } from './actions'
 import { MediaManager } from '@/components/admin/MediaManager'
 
 export const metadata: Metadata = {
-  title: 'Адмін — Пасічникам',
+  title: 'Адмін: Пасічникам',
   robots: 'noindex, nofollow',
 }
 

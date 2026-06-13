@@ -6,7 +6,7 @@ import { createFaqItem, deleteFaqItem } from './actions'
 import { seedLaunchDataAction } from '@/app/admin/actions/seed'
 
 export const metadata: Metadata = {
-  title: 'Адмін — FAQ',
+  title: 'Адмін: FAQ',
   robots: 'noindex, nofollow',
 }
 

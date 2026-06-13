@@ -1,25 +1,22 @@
 'use client'
 
-import { useRef } from 'react'
+import { useMemo, useState } from 'react'
 import type { Review } from '@/types'
 
 interface ReviewsProps {
   reviews?: Review[]
 }
 
-// Diverse, site-wide reviews — honey, bee products, flowers/lavender, metal
-// roofing, natural farm products and delivery — so the section represents the
-// whole Dacha TV ecosystem, not only honey.
 const CURATED_REVIEWS: Array<{ quote: string; name: string; city: string; tag: string; rating: number }> = [
-  { quote: 'Мед справжній, ароматний, кристалізується як і має натуральний. Замовляю вже третій раз.', name: 'Олена', city: 'Харків', tag: 'Мед', rating: 5 },
-  { quote: 'Акацієвий мед взяли на подарунок — смак ніжний, баночка акуратна. Залишились задоволені.', name: 'Дмитро', city: 'Харків', tag: 'Мед', rating: 5 },
-  { quote: 'Брали пилок і прополіс — якість чудова, все свіже, відправили швидко Новою Поштою.', name: 'Андрій', city: 'Полтава', tag: 'Продукти пасіки', rating: 5 },
+  { quote: 'Мед справжній, ароматний, кристалізується як натуральний. Замовляю вже третій раз.', name: 'Олена', city: 'Харків', tag: 'Мед', rating: 5 },
+  { quote: 'Акацієвий мед брали на подарунок — смак ніжний, баночка акуратна, усе гарно запаковано.', name: 'Дмитро', city: 'Харків', tag: 'Мед', rating: 5 },
+  { quote: 'Брали пилок і прополіс. Все свіже, якісне, відправили швидко Новою Поштою.', name: 'Андрій', city: 'Полтава', tag: 'Продукти', rating: 5 },
+  { quote: 'Горіхи в меду дуже сподобались. Видно, що роблять не масово, а нормально для людей.', name: 'Світлана', city: 'Люботин', tag: 'Продукти', rating: 5 },
   { quote: 'Замовляла букет на свято — квіти свіжі, зібрані красиво, привезли вчасно.', name: 'Марія', city: 'Мерефа', tag: 'Квіти', rating: 5 },
-  { quote: 'Фотосесія на лавандовому полі — неймовірні емоції та фото. Букетик лаванди забрали додому.', name: 'Ірина', city: 'Харків', tag: 'Лаванда', rating: 5 },
-  { quote: 'Брали профнастил і металочерепицю на дах. Порахували під розмір, доставили по області. Все рівно, без подряпин.', name: 'Сергій', city: 'Коротич', tag: 'Металопрофіль', rating: 5 },
-  { quote: 'Замовляли металевий штахетник на паркан — колір підібрали, саморізи в тон. Монтувати було зручно.', name: 'Олександр', city: 'Валки', tag: 'Металопрофіль', rating: 5 },
-  { quote: 'Жимолість і живі олії — справжній смак з господарства. Олія гарбузова просто супер.', name: 'Тетяна', city: 'Люботин', tag: 'Натуральні продукти', rating: 5 },
-  { quote: 'Озимий часник на посадку — великі здорові головки, зійшов добре. Дякую!', name: 'Наталія', city: 'Дергачі', tag: 'Натуральні продукти', rating: 5 },
+  { quote: 'Лавандове поле гарне для фото й заходів. Забронювали час, усе підтвердили, без зайвої метушні.', name: 'Ірина', city: 'Харків', tag: 'Лаванда', rating: 5 },
+  { quote: 'Брали профнастил і металочерепицю на дах. Порахували під розмір, доставили по області.', name: 'Сергій', city: 'Коротич', tag: 'Метал', rating: 5 },
+  { quote: 'Замовляли металевий штахетник на паркан — колір підібрали, саморізи в тон. Монтувати було зручно.', name: 'Олександр', city: 'Валки', tag: 'Метал', rating: 5 },
+  { quote: 'Жимолість і живі олії — справжній смак з господарства. Гарбузова олія дуже сподобалась.', name: 'Тетяна', city: 'Дергачі', tag: 'Натуральні продукти', rating: 5 },
   { quote: 'Замовлення зібрали швидко, тримали в курсі, відправили того ж дня. Все чесно.', name: 'Володимир', city: 'Чугуїв', tag: 'Доставка', rating: 5 },
 ]
 
@@ -43,20 +40,46 @@ function ReviewerInitial({ name }: { name: string }) {
   )
 }
 
+function ReviewCard({ review }: { review: { quote: string; name: string; city: string; tag: string; rating: number } }) {
+  return (
+    <blockquote className="bg-white rounded-2xl p-6 border border-gray-100 hover:border-gray-200 hover:shadow-lg transition-all duration-300 flex flex-col min-h-[260px]">
+      <div className="flex items-center justify-between gap-2 mb-4">
+        <StarRating rating={review.rating} />
+        {review.tag && (
+          <span className="text-[0.7rem] font-semibold uppercase tracking-wide text-honey-700 bg-honey-50 border border-honey-100 rounded-full px-2.5 py-1">
+            {review.tag}
+          </span>
+        )}
+      </div>
+      <p className="text-gray-700 mb-6 leading-relaxed flex-1 text-sm">&ldquo;{review.quote}&rdquo;</p>
+      <footer className="flex items-center gap-3">
+        <ReviewerInitial name={review.name} />
+        <cite className="not-italic">
+          <span className="font-semibold text-bark text-sm block">{review.name}</span>
+          {review.city && <span className="text-gray-400 text-xs">{review.city}</span>}
+        </cite>
+      </footer>
+    </blockquote>
+  )
+}
+
 export function Reviews({ reviews }: ReviewsProps) {
-  // Prefer real DB reviews when available, otherwise show the curated site-wide
-  // set. Either way the section always represents the whole site.
-  const items = (reviews && reviews.length >= 3)
-    ? reviews.slice(0, 10).map((r) => ({ quote: r.quote, name: r.reviewer_name, city: r.city ?? '', tag: '', rating: r.rating }))
-    : CURATED_REVIEWS
+  const items = useMemo(() => {
+    return (reviews && reviews.length >= 3)
+      ? reviews.slice(0, 10).map((r) => ({ quote: r.quote, name: r.reviewer_name, city: r.city ?? '', tag: '', rating: r.rating }))
+      : CURATED_REVIEWS
+  }, [reviews])
 
-  const scroller = useRef<HTMLDivElement>(null)
+  const [index, setIndex] = useState(0)
 
-  // Scroll by roughly one card width (matches the card min-width below).
-  function scrollBy(dir: -1 | 1) {
-    const el = scroller.current
-    if (!el) return
-    el.scrollBy({ left: dir * 340, behavior: 'smooth' })
+  const visible = [0, 1, 2].map((offset) => items[(index + offset) % items.length])
+
+  function prev() {
+    setIndex((i) => (i - 1 + items.length) % items.length)
+  }
+
+  function next() {
+    setIndex((i) => (i + 1) % items.length)
   }
 
   return (
@@ -69,15 +92,15 @@ export function Reviews({ reviews }: ReviewsProps) {
               Що кажуть наші покупці
             </h2>
             <p className="text-gray-500 text-base max-w-xl">
-              Мед і продукти пасіки, квіти й лаванда, металопрофіль і натуральні продукти — реальні відгуки
+              Відгуки про мед, продукти, квіти, лаванду, металопрофіль і доставку
             </p>
           </div>
 
-          {/* Slider controls (hidden on touch where native scroll is natural) */}
-          <div className="hidden sm:flex items-center gap-2 flex-shrink-0">
+          <div className="flex items-center gap-3 flex-shrink-0">
+            <span className="text-sm text-gray-400">{index + 1} / {items.length}</span>
             <button
               type="button"
-              onClick={() => scrollBy(-1)}
+              onClick={prev}
               aria-label="Попередні відгуки"
               className="w-11 h-11 rounded-full border border-gray-200 bg-white flex items-center justify-center text-bark/60 hover:text-bark hover:border-bark/30 transition-colors"
             >
@@ -87,7 +110,7 @@ export function Reviews({ reviews }: ReviewsProps) {
             </button>
             <button
               type="button"
-              onClick={() => scrollBy(1)}
+              onClick={next}
               aria-label="Наступні відгуки"
               className="w-11 h-11 rounded-full border border-gray-200 bg-white flex items-center justify-center text-bark/60 hover:text-bark hover:border-bark/30 transition-colors"
             >
@@ -98,33 +121,21 @@ export function Reviews({ reviews }: ReviewsProps) {
           </div>
         </div>
 
-        {/* Horizontal scrollable slider — all 10 reviews, snap to each card. */}
-        <div
-          ref={scroller}
-          className="flex gap-5 overflow-x-auto snap-x snap-mandatory pb-4 -mx-4 px-4 sm:mx-0 sm:px-0 scroll-smooth"
-        >
-          {items.map((review, i) => (
-            <blockquote
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+          {visible.map((review, i) => (
+            <ReviewCard key={`${index}-${i}-${review.name}`} review={review} />
+          ))}
+        </div>
+
+        <div className="flex justify-center gap-2 mt-8">
+          {items.map((_, i) => (
+            <button
               key={i}
-              className="snap-start flex-shrink-0 w-[85%] sm:w-80 bg-white rounded-2xl p-6 border border-gray-100 hover:border-gray-200 hover:shadow-lg transition-all duration-300 flex flex-col"
-            >
-              <div className="flex items-center justify-between gap-2 mb-4">
-                <StarRating rating={review.rating} />
-                {review.tag && (
-                  <span className="text-[0.7rem] font-semibold uppercase tracking-wide text-honey-700 bg-honey-50 border border-honey-100 rounded-full px-2.5 py-1">
-                    {review.tag}
-                  </span>
-                )}
-              </div>
-              <p className="text-gray-700 mb-6 leading-relaxed flex-1 text-sm">&ldquo;{review.quote}&rdquo;</p>
-              <footer className="flex items-center gap-3">
-                <ReviewerInitial name={review.name} />
-                <cite className="not-italic">
-                  <span className="font-semibold text-bark text-sm block">{review.name}</span>
-                  {review.city && <span className="text-gray-400 text-xs">{review.city}</span>}
-                </cite>
-              </footer>
-            </blockquote>
+              type="button"
+              onClick={() => setIndex(i)}
+              aria-label={`Показати відгук ${i + 1}`}
+              className={`h-2 rounded-full transition-all ${i === index ? 'w-8 bg-honey-600' : 'w-2 bg-gray-300 hover:bg-gray-400'}`}
+            />
           ))}
         </div>
       </div>

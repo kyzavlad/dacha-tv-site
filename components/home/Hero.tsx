@@ -44,7 +44,7 @@ export function Hero({ tagline, subtext, siteSettings }: HeroProps) {
           <div className="inline-flex items-center gap-2.5 bg-white/10 border border-white/15 rounded-full px-4 py-2 mb-8 backdrop-blur-sm">
             <span className="w-2 h-2 rounded-full bg-honey-400 animate-pulse flex-shrink-0" aria-hidden="true" />
             <span className="text-honey-200 text-sm font-medium tracking-wide">
-              Сімейне господарство на Харківщині · YouTube «Дача TV» · реальні люди й товар
+              Сімейне господарство на Харківщині · перевірені товари · реальні заявки та доставка
             </span>
           </div>
 

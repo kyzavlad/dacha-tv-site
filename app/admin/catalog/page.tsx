@@ -6,7 +6,7 @@ import { publishProductAction, unpublishProductAction, bulkApproveFirstN } from 
 import type { CatalogProduct, SupplierProduct } from '@/types'
 
 export const metadata: Metadata = {
-  title: 'Адмін — Каталог',
+  title: 'Адмін: Каталог',
   robots: 'noindex, nofollow',
 }
 
