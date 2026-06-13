@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
 import type { Metadata } from 'next'
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { getServiceBySlug } from '@/lib/supabase/queries'
 import { GeneralContactForm } from '@/components/forms/GeneralContactForm'
@@ -44,6 +44,12 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 export default async function ServiceDetailPage({ params }: Props) {
   const { slug } = await params
+
+  // Lavender lives at its dedicated /lavender page (full booking rules, season,
+  // bouquets, two-tier pricing). Keep a single canonical lavender page — never a
+  // competing duplicate under /services.
+  if (slug === 'orenda-lavandovoho-polia') redirect('/lavender')
+
   const service = await getServiceBySlug(slug).catch(() => null)
   if (!service || service.status !== 'active') notFound()
 

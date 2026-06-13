@@ -62,6 +62,7 @@ function BookingRow({ booking, onUpdate }: { booking: Booking; onUpdate: (id: st
           </div>
           <div className="text-xs text-gray-500">
             {SERVICE_LABELS[booking.service_slug] ?? booking.service_slug} · {when} · {booking.guest_count} ос.
+            {booking.bouquet_qty ? ` · 💐 ${booking.bouquet_qty}` : ''}
             {booking.total_price_uah ? ` · ${booking.total_price_uah.toLocaleString('uk-UA')} ₴` : ''}
           </div>
           <div className="text-xs text-gray-400 mt-0.5">{fmtDateTime(booking.created_at)}</div>
@@ -73,20 +74,31 @@ function BookingRow({ booking, onUpdate }: { booking: Booking; onUpdate: (id: st
         <div className="px-4 pb-4 space-y-3 border-t border-gray-100 pt-3">
           <div className="grid grid-cols-2 gap-2 text-xs">
             <div><span className="text-gray-400">Телефон:</span> <a href={`tel:${booking.phone}`} className="text-blue-600 font-medium">{booking.phone}</a></div>
+            <div><span className="text-gray-400">Гостей:</span> {booking.guest_count}</div>
+            {booking.bouquet_qty ? (
+              <div><span className="text-gray-400">Букети лаванди:</span> {booking.bouquet_qty} шт × 100 ₴</div>
+            ) : null}
+            {booking.total_price_uah != null && (
+              <div><span className="text-gray-400">Сума:</span> {booking.total_price_uah.toLocaleString('uk-UA')} ₴</div>
+            )}
             {booking.comment && <div className="col-span-2"><span className="text-gray-400">Коментар:</span> {booking.comment}</div>}
-            {booking.source && <div><span className="text-gray-400">Сторінка:</span> {booking.source}</div>}
+            {booking.source && <div className="col-span-2"><span className="text-gray-400">Сторінка:</span> {booking.source}</div>}
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Нотатки адміна</label>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Нотатки адміна / повернення</label>
             <textarea
               value={notes} onChange={e => setNotes(e.target.value)} rows={2}
               className="w-full border border-gray-200 rounded-lg px-2.5 py-2 text-xs focus:outline-none focus:border-gray-400 resize-none"
-              placeholder="Внутрішні нотатки..."
+              placeholder="Внутрішні нотатки, статус повернення коштів..."
             />
           </div>
 
           <div className="flex flex-wrap gap-2">
+            <button onClick={() => updateStatus(booking.status)} disabled={pending}
+              className="text-xs bg-gray-800 text-white px-3 py-1.5 rounded-full hover:bg-gray-900 disabled:opacity-40">
+              Зберегти нотатки
+            </button>
             {booking.status === 'new' && (
               <button onClick={() => updateStatus('confirmed')} disabled={pending}
                 className="text-xs bg-green-700 text-white px-3 py-1.5 rounded-full hover:bg-green-800 disabled:opacity-40">
