@@ -9,13 +9,15 @@ import {
 import { CategoryCard } from '@/components/catalog/CategoryCard'
 
 export const metadata: Metadata = {
-  title: 'Каталог товарів | Дача TV',
-  description: 'Широкий асортимент товарів для дому, саду та дачі. Якісні товари за доступними цінами з доставкою по Україні.',
+  title: 'Магазин товарів',
+  description: 'Магазин товарів для дому, саду та господарства: металопрофіль і покрівля та широкий асортимент від постачальників. Доставка по Україні.',
   alternates: { canonical: '/catalog' },
   openGraph: {
-    title: 'Каталог товарів | Дача TV',
-    description: 'Широкий асортимент товарів для дому, саду та дачі.',
+    title: 'Магазин товарів',
+    description: 'Товари для дому, саду та господарства: металопрофіль, покрівля та широкий асортимент від постачальників.',
+    siteName: 'Дача TV',
     type: 'website',
+    images: [{ url: '/images/dacha-tv/logo-square.png', width: 1200, height: 1200, alt: 'Дача TV — магазин товарів' }],
   },
 }
 

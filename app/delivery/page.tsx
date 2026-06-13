@@ -7,13 +7,13 @@ export const metadata: Metadata = {
     "Доставка меду та продуктів пасіки по всій Україні — Нова Пошта, Укрпошта. Бджолопакети та вулики — самовивіз або індивідуальна домовленість.",
   alternates: { canonical: '/delivery' },
   openGraph: {
-    title: 'Доставка | Дача TV',
+    title: 'Доставка',
     description: 'Доставка меду та продуктів пасіки по всій Україні — Нова Пошта, Укрпошта.',
     images: [{ url: '/images/dacha-tv/logo-square.png', width: 1200, height: 1200, alt: 'Дача TV — Доставка' }],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Доставка | Дача TV',
+    title: 'Доставка',
     description: 'Доставка меду та продуктів пасіки по всій Україні — Нова Пошта, Укрпошта.',
   },
 }

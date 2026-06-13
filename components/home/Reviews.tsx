@@ -1,3 +1,6 @@
+'use client'
+
+import { useRef } from 'react'
 import type { Review } from '@/types'
 
 interface ReviewsProps {
@@ -47,22 +50,64 @@ export function Reviews({ reviews }: ReviewsProps) {
     ? reviews.slice(0, 10).map((r) => ({ quote: r.quote, name: r.reviewer_name, city: r.city ?? '', tag: '', rating: r.rating }))
     : CURATED_REVIEWS
 
+  const scroller = useRef<HTMLDivElement>(null)
+
+  // Scroll by roughly one card width (matches the card min-width below).
+  function scrollBy(dir: -1 | 1) {
+    const el = scroller.current
+    if (!el) return
+    el.scrollBy({ left: dir * 340, behavior: 'smooth' })
+  }
+
   return (
     <section className="py-20 md:py-28 bg-cream" aria-labelledby="reviews-heading">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="text-center mb-12">
-          <span className="text-xs font-semibold text-honey-700 uppercase tracking-widest mb-4 block">Відгуки</span>
-          <h2 id="reviews-heading" className="font-serif text-3xl md:text-4xl font-bold text-bark mb-4">
-            Що кажуть наші покупці
-          </h2>
-          <p className="text-gray-500 text-base">
-            Мед і продукти пасіки, квіти й лаванда, металопрофіль і натуральні продукти — реальні відгуки
-          </p>
+        <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-10">
+          <div>
+            <span className="text-xs font-semibold text-honey-700 uppercase tracking-widest mb-4 block">Відгуки</span>
+            <h2 id="reviews-heading" className="font-serif text-3xl md:text-4xl font-bold text-bark mb-3">
+              Що кажуть наші покупці
+            </h2>
+            <p className="text-gray-500 text-base max-w-xl">
+              Мед і продукти пасіки, квіти й лаванда, металопрофіль і натуральні продукти — реальні відгуки
+            </p>
+          </div>
+
+          {/* Slider controls (hidden on touch where native scroll is natural) */}
+          <div className="hidden sm:flex items-center gap-2 flex-shrink-0">
+            <button
+              type="button"
+              onClick={() => scrollBy(-1)}
+              aria-label="Попередні відгуки"
+              className="w-11 h-11 rounded-full border border-gray-200 bg-white flex items-center justify-center text-bark/60 hover:text-bark hover:border-bark/30 transition-colors"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              onClick={() => scrollBy(1)}
+              aria-label="Наступні відгуки"
+              className="w-11 h-11 rounded-full border border-gray-200 bg-white flex items-center justify-center text-bark/60 hover:text-bark hover:border-bark/30 transition-colors"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
+          </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+        {/* Horizontal scrollable slider — all 10 reviews, snap to each card. */}
+        <div
+          ref={scroller}
+          className="flex gap-5 overflow-x-auto snap-x snap-mandatory pb-4 -mx-4 px-4 sm:mx-0 sm:px-0 scroll-smooth"
+        >
           {items.map((review, i) => (
-            <blockquote key={i} className="bg-white rounded-2xl p-6 border border-gray-100 hover:border-gray-200 hover:shadow-lg transition-all duration-300 flex flex-col">
+            <blockquote
+              key={i}
+              className="snap-start flex-shrink-0 w-[85%] sm:w-80 bg-white rounded-2xl p-6 border border-gray-100 hover:border-gray-200 hover:shadow-lg transition-all duration-300 flex flex-col"
+            >
               <div className="flex items-center justify-between gap-2 mb-4">
                 <StarRating rating={review.rating} />
                 {review.tag && (

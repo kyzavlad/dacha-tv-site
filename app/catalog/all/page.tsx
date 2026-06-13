@@ -10,7 +10,7 @@ interface Props {
 }
 
 export const metadata: Metadata = {
-  title: 'Усі товари | Дача TV',
+  title: 'Усі товари',
   description: 'Повний асортимент товарів для дому, саду та дачі з доставкою по Україні.',
   alternates: { canonical: '/catalog/all' },
 }

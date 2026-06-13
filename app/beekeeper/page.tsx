@@ -12,14 +12,14 @@ export const metadata: Metadata = {
     "Бджолопакети (Buckfast, Карніка), бджолосім'ї, вулики та товари пасічника від власної пасіки на Харківщині. Без посередників — напряму від пасічника.",
   alternates: { canonical: '/beekeeper' },
   openGraph: {
-    title: 'Для пасічників | Дача TV',
+    title: 'Для пасічників',
     description: "Бджолопакети, бджолосім'ї, вулики та товари пасічника від пасіки Дача TV на Харківщині",
     type: 'website',
     images: [{ url: '/images/dacha-tv/logo-square.png', width: 1200, height: 1200, alt: 'Дача TV — Для пасічників' }],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Для пасічників | Дача TV',
+    title: 'Для пасічників',
     description: "Бджолопакети Buckfast та Карніка, бджолосім'ї, вулики — напряму від пасічника на Харківщині.",
   },
 }

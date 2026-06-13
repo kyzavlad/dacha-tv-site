@@ -22,11 +22,11 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   if (!service) return { title: 'Послугу не знайдено' }
   const description = service.short_description || `${service.name} — Дача TV`
   return {
-    title: `${service.name} | Дача TV`,
+    title: `${service.name}`,
     description,
     alternates: { canonical: `${siteUrl}/services/${slug}` },
     openGraph: {
-      title: `${service.name} | Дача TV`,
+      title: `${service.name}`,
       description,
       images: service.image_url
         ? [{ url: service.image_url, width: 1200, height: 630, alt: service.name }]
@@ -35,7 +35,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     },
     twitter: {
       card: 'summary_large_image',
-      title: `${service.name} | Дача TV`,
+      title: `${service.name}`,
       description,
       images: service.image_url ? [service.image_url] : [`${siteUrl}/images/dacha-tv/logo-square.png`],
     },

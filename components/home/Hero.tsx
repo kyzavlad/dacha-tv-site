@@ -10,10 +10,10 @@ interface HeroProps {
 }
 
 export function Hero({ tagline, subtext, siteSettings }: HeroProps) {
-  const displayTagline = tagline || 'Дача TV — натуральні продукти, товари для господарства та корисні рішення для дому'
+  const displayTagline = tagline || 'Дача TV — товари, продукти й послуги для дому, саду та господарства'
   const displaySubtext =
     subtext ||
-    'Мед і продукти пасіки, квіти та лаванда, сезонні натуральні продукти, металопрофіль і товари для господарства — напряму від виробників та партнерів.'
+    'Мед і продукти пасіки, натуральні продукти, квіти, лаванда, металопрофіль та товари для господарства — з перевірених джерел і зручним замовленням онлайн.'
 
   return (
     <section className="relative min-h-[90vh] flex items-center overflow-hidden" aria-label="Головний банер">
@@ -44,7 +44,7 @@ export function Hero({ tagline, subtext, siteSettings }: HeroProps) {
           <div className="inline-flex items-center gap-2.5 bg-white/10 border border-white/15 rounded-full px-4 py-2 mb-8 backdrop-blur-sm">
             <span className="w-2 h-2 rounded-full bg-honey-400 animate-pulse flex-shrink-0" aria-hidden="true" />
             <span className="text-honey-200 text-sm font-medium tracking-wide">
-              Напряму від виробників та партнерів · без зайвих посередників
+              Сімейне господарство на Харківщині · YouTube «Дача TV» · реальні люди й товар
             </span>
           </div>
 
@@ -67,7 +67,7 @@ export function Hero({ tagline, subtext, siteSettings }: HeroProps) {
               href="/products"
               className="inline-flex items-center justify-center gap-2 px-9 py-4 text-lg text-white/70 hover:text-white border border-white/20 hover:border-white/40 rounded-full transition-all min-h-[56px]"
             >
-              Продукти пасіки
+              Переглянути продукти
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
               </svg>

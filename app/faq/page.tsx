@@ -9,13 +9,13 @@ export const metadata: Metadata = {
     'Відповіді на часті запитання про мед, замовлення, доставку та бджільництво від пасіки Дача TV на Харківщині.',
   alternates: { canonical: '/faq' },
   openGraph: {
-    title: 'FAQ | Дача TV',
+    title: 'FAQ',
     description: 'Часті запитання про мед, замовлення, доставку та бджільництво від пасіки Дача TV.',
     images: [{ url: '/images/dacha-tv/logo-square.png', width: 1200, height: 1200, alt: 'Дача TV — FAQ' }],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'FAQ | Дача TV',
+    title: 'FAQ',
     description: 'Часті запитання про мед, замовлення, доставку та бджільництво від пасіки Дача TV.',
   },
 }
