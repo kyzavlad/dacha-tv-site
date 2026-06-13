@@ -7,7 +7,7 @@ import { seedServicesAction } from '@/app/admin/actions/seed'
 import type { Service } from '@/types'
 
 export const metadata: Metadata = {
-  title: 'Адмін — Послуги',
+  title: 'Адмін: Послуги',
   robots: 'noindex, nofollow',
 }
 

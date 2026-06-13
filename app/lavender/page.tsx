@@ -6,13 +6,15 @@ import { getSupabaseClient } from '@/lib/supabase/client'
 import { HourlyCalendar } from '@/components/bookings/HourlyCalendar'
 
 export const metadata: Metadata = {
-  title: 'Лавандове поле — оренда для фотосесій | Дача TV',
-  description: 'Лавандове поле на Харківщині — оренда для фотосесій і відпочинку від ₴1000/год. Букети лаванди під замовлення. Сезон: червень–липень.',
+  title: 'Лавандове поле',
+  description: 'Оренда лавандового поля на Харківщині для фотосесій і відпочинку — від 1000 ₴/год. Букети лаванди під замовлення. Сезон: червень–липень.',
   alternates: { canonical: '/lavender' },
   openGraph: {
-    title: 'Лавандове поле | Дача TV',
+    title: 'Лавандове поле',
     description: 'Оренда лавандового поля для фотосесій і відпочинку на Харківщині. Букети лаванди під замовлення.',
+    siteName: 'Дача TV',
     type: 'website',
+    images: [{ url: '/images/dacha-tv/logo-square.png', width: 1200, height: 1200, alt: 'Дача TV — лавандове поле' }],
   },
 }
 
@@ -49,7 +51,7 @@ export default async function LavenderPage() {
               Лаванда
             </h1>
             <p className="text-white/60 text-lg leading-relaxed mb-6">
-              Цвітіння у червні–липні. Орендуйте поле для фотосесії, прогулянки або пікніку.
+              Цвітіння у червні–липні. Орендуйте поле для фотосесії, освітніх, культурних і оздоровчих заходів.
               За бажанням — букети лаванди під замовлення.
             </p>
             <div className="flex flex-col sm:flex-row sm:items-center gap-4">

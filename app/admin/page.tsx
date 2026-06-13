@@ -5,7 +5,7 @@ import { InquiryCard } from '@/components/admin/InquiryCard'
 import type { Inquiry, InquiryStatus } from '@/types'
 
 export const metadata: Metadata = {
-  title: 'Адмін — Заявки',
+  title: 'Адмін: Заявки',
   robots: 'noindex, nofollow',
 }
 

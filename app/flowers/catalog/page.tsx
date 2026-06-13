@@ -11,14 +11,14 @@ export const metadata: Metadata = {
   description: 'Колекція хризантем від домашнього розсадника. Понад 50 сортів: помпонові, кущові, великоквіткові, рідкісні. Харківщина.',
   alternates: { canonical: '/flowers/catalog' },
   openGraph: {
-    title: 'Каталог хризантем | Дача TV',
+    title: 'Каталог хризантем',
     description: 'Понад 50 сортів хризантем від домашнього розсадника на Харківщині — помпонові, кущові, великоквіткові.',
     type: 'website',
     images: [{ url: '/images/dacha-tv/logo-square.png', width: 1200, height: 1200, alt: 'Дача TV — Хризантеми' }],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Каталог хризантем | Дача TV',
+    title: 'Каталог хризантем',
     description: 'Понад 50 сортів хризантем від домашнього розсадника на Харківщині.',
   },
 }

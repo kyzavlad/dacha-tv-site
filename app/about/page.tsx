@@ -13,13 +13,13 @@ export const metadata: Metadata = {
     'Сімейна пасіка Дача TV — Коротич, Харківська область. Дізнайтесь нашу історію: як ми починали, що нас відрізняє, і чому ми відкрито показуємо всю нашу роботу на YouTube.',
   alternates: { canonical: '/about' },
   openGraph: {
-    title: 'Про нас | Дача TV',
+    title: 'Про нас',
     description: 'Сімейна пасіка на Харківщині — наша історія, наш підхід, наші бджоли.',
     images: [{ url: '/images/dacha-tv/logo-square.png', width: 1200, height: 1200, alt: 'Дача TV — Сімейна пасіка' }],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Про нас | Дача TV',
+    title: 'Про нас',
     description: 'Сімейна пасіка на Харківщині — наша історія, наш підхід, наші бджоли.',
   },
 }

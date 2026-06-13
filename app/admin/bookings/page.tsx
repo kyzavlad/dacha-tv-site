@@ -4,7 +4,7 @@ import type { Metadata } from 'next'
 import { getAllBookings } from '@/lib/bookings/queries'
 import { AdminBookingsClient } from './AdminBookingsClient'
 
-export const metadata: Metadata = { title: 'Адмін — Бронювання', robots: 'noindex, nofollow' }
+export const metadata: Metadata = { title: 'Адмін: Бронювання', robots: 'noindex, nofollow' }
 
 export default async function AdminBookingsPage() {
   const bookings = await getAllBookings().catch(() => [])

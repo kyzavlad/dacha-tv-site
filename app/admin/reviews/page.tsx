@@ -4,7 +4,7 @@ import { getAdminClient } from '@/lib/supabase/admin'
 import { createReview, deleteReview, toggleReviewVisibility } from './actions'
 
 export const metadata: Metadata = {
-  title: 'Адмін — Відгуки',
+  title: 'Адмін: Відгуки',
   robots: 'noindex, nofollow',
 }
 

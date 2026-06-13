@@ -36,14 +36,14 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     description,
     alternates: { canonical: siteUrl ? `${siteUrl}/honey/${slug}` : `/honey/${slug}` },
     openGraph: {
-      title: `${product.name} | Дача TV`,
+      title: `${product.name}`,
       description: `Натуральний ${product.name.toLowerCase()} від пасіки Дача TV на Харківщині`,
       images: ogImageUrl ? [{ url: ogImageUrl, width: 1200, height: 630, alt: product.name }] : [],
       type: 'website',
     },
     twitter: {
       card: 'summary_large_image',
-      title: `${product.name} | Дача TV`,
+      title: `${product.name}`,
       description,
       images: ogImageUrl ? [ogImageUrl] : [],
     },

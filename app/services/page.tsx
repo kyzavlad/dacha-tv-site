@@ -9,18 +9,19 @@ import { StructuredData } from '@/components/shared/StructuredData'
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://www.dachatv.com'
 
 export const metadata: Metadata = {
-  title: 'Послуги | Дача TV',
+  title: 'Послуги',
   description: 'Фотосесія на лавандовому полі, оренда альтанки на воді та послуги пасічника на садибі Дача TV на Харківщині.',
   alternates: { canonical: `${siteUrl}/services` },
   openGraph: {
-    title: 'Послуги | Дача TV',
+    title: 'Послуги',
     description: 'Фотосесія на лавандовому полі, оренда альтанки та консультації пасічника.',
+    siteName: 'Дача TV',
     images: [{ url: `${siteUrl}/images/dacha-tv/logo-square.png`, width: 1200, height: 630, alt: 'Дача TV' }],
     type: 'website',
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Послуги | Дача TV',
+    title: 'Послуги',
     description: 'Фотосесія на лавандовому полі, оренда альтанки та консультації пасічника.',
     images: [`${siteUrl}/images/dacha-tv/logo-square.png`],
   },

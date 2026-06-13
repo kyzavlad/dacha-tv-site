@@ -7,20 +7,21 @@ import { getAllApiaryProducts } from '@/lib/supabase/queries'
 import { getNaturalProducts } from '@/lib/supabase/catalog'
 
 export const metadata: Metadata = {
-  title: 'Продукти пасіки',
+  title: 'Продукти',
   description:
-    'Квітковий пилок, прополіс та горіхи в меду від сімейної пасіки на Харківщині. Натуральні продукти пасічництва — замовляйте напряму від виробника.',
+    'Продукти (пилок, прополіс, горіхи в меду) та натуральні продукти господарства — жимолость, живі олії холодного віджиму, Іван-чай, часник. Від сімейного господарства на Харківщині.',
   alternates: { canonical: '/products' },
   openGraph: {
-    title: 'Продукти пасіки | Дача TV',
-    description: 'Квітковий пилок, прополіс, горіхи в меду — натуральні продукти від пасіки Дача TV на Харківщині',
+    title: 'Продукти',
+    description: 'Продукти та натуральні продукти господарства — пилок, прополіс, жимолость, живі олії, Іван-чай, часник.',
+    siteName: 'Дача TV',
     type: 'website',
-    images: [{ url: '/images/dacha-tv/logo-square.png', width: 1200, height: 1200, alt: 'Дача TV — Продукти пасіки' }],
+    images: [{ url: '/images/dacha-tv/logo-square.png', width: 1200, height: 1200, alt: 'Дача TV' }],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Продукти пасіки | Дача TV',
-    description: 'Квітковий пилок, прополіс та горіхи в меду від сімейної пасіки на Харківщині.',
+    title: 'Продукти',
+    description: 'Продукти та натуральні продукти господарства — від сімейного господарства на Харківщині.',
   },
 }
 
@@ -35,17 +36,21 @@ export default async function ProductsPage() {
       {/* Page header */}
       <div className="bg-white border-b border-gray-100 py-12 md:py-16">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <span className="text-xs font-semibold text-honey-700 uppercase tracking-widest mb-3 block">Продукти пасіки</span>
+          <span className="text-xs font-semibold text-honey-700 uppercase tracking-widest mb-3 block">Продукти</span>
           <h1 className="font-serif text-4xl md:text-5xl font-bold text-bark mb-4">
-            Більше від пасіки
+            Продукти господарства
           </h1>
           <p className="text-gray-500 text-lg max-w-2xl">
-            Крім меду, наша пасіка дає й інші цінні продукти — пилок, прополіс та горіхи в меду.
+            Натуральні продукти, продукти пасіки та сезонні товари господарства: пилок, прополіс, горіхи в меду, жимолость, живі олії, Іван-чай, часник та інше.
           </p>
         </div>
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        <span className="text-xs font-semibold text-honey-700 uppercase tracking-widest mb-3 block">Продукти</span>
+        <h2 className="font-serif text-3xl md:text-4xl font-bold text-bark mb-8">
+          Продукти пасіки
+        </h2>
         <ProductGrid products={products} />
       </div>
 

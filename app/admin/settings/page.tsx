@@ -5,7 +5,7 @@ import type { SiteSettings } from '@/types'
 import { saveSiteSettings } from './actions'
 
 export const metadata: Metadata = {
-  title: 'Адмін — Налаштування',
+  title: 'Адмін: Налаштування',
   robots: 'noindex, nofollow',
 }
 

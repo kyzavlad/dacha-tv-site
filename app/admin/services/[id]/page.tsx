@@ -11,7 +11,7 @@ interface Props {
 }
 
 export const metadata: Metadata = {
-  title: 'Адмін — Редагувати послугу',
+  title: 'Адмін: Редагувати послугу',
   robots: 'noindex, nofollow',
 }
 

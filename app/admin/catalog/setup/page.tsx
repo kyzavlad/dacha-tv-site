@@ -5,7 +5,7 @@ import { getPipelineStats } from '@/lib/catalog/pipeline'
 import { SetupClient } from './SetupClient'
 import type { PipelineStats } from '@/lib/catalog/pipeline'
 
-export const metadata: Metadata = { title: 'Адмін — Налаштування каталогу', robots: 'noindex, nofollow' }
+export const metadata: Metadata = { title: 'Адмін: Налаштування каталогу', robots: 'noindex, nofollow' }
 
 const EMPTY: PipelineStats = {
   supplierCategories: 0, supplierProductsNew: 0, catalogCategories: 0,

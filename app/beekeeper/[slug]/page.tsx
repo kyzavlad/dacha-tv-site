@@ -42,14 +42,14 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     description,
     alternates: { canonical: siteUrl ? `${siteUrl}/beekeeper/${slug}` : `/beekeeper/${slug}` },
     openGraph: {
-      title: `${product.name} | Дача TV`,
+      title: `${product.name}`,
       description,
       images: ogImage ? [{ url: ogImage, width: 1200, height: 630 }] : [],
       type: 'website',
     },
     twitter: {
       card: 'summary_large_image',
-      title: `${product.name} | Дача TV`,
+      title: `${product.name}`,
       description,
       images: ogImage ? [ogImage] : [],
     },

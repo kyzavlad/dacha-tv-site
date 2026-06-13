@@ -6,7 +6,7 @@ import { SyncPoller } from './SyncPoller'
 import type { SupplierSyncLog } from '@/types'
 
 export const metadata: Metadata = {
-  title: 'Адмін — Постачальник',
+  title: 'Адмін: Постачальник',
   robots: 'noindex, nofollow',
 }
 

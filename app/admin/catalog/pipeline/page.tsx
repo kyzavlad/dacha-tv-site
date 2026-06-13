@@ -6,7 +6,7 @@ import { getAutomationStatus, type AutomationStatus } from '@/lib/catalog/automa
 import { PipelineClient } from './PipelineClient'
 import type { PipelineStats } from '@/lib/catalog/pipeline'
 
-export const metadata: Metadata = { title: 'Адмін — Пайплайн', robots: 'noindex, nofollow' }
+export const metadata: Metadata = { title: 'Адмін: Пайплайн', robots: 'noindex, nofollow' }
 
 const EMPTY_STATS: PipelineStats = {
   supplierCategories: 0, supplierProductsNew: 0, catalogCategories: 0,

@@ -7,7 +7,7 @@ import { getAdminClient } from '@/lib/supabase/admin'
 import { OrderStatusForm } from '../OrderStatusForm'
 import type { Order, OrderItem, OrderStatus } from '@/types'
 
-export const metadata: Metadata = { title: 'Адмін — Замовлення', robots: 'noindex, nofollow' }
+export const metadata: Metadata = { title: 'Адмін: Замовлення', robots: 'noindex, nofollow' }
 
 const STATUS_LABELS: Record<OrderStatus, string> = {
   new: 'Нова',

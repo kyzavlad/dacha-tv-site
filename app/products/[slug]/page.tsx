@@ -33,14 +33,14 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     description,
     alternates: { canonical: siteUrl ? `${siteUrl}/products/${slug}` : `/products/${slug}` },
     openGraph: {
-      title: `${product.name} | Дача TV`,
+      title: `${product.name}`,
       description: product.short_description || product.description || product.name,
       images: ogImageUrl ? [{ url: ogImageUrl, width: 1200, height: 630 }] : [],
       type: 'website',
     },
     twitter: {
       card: 'summary_large_image',
-      title: `${product.name} | Дача TV`,
+      title: `${product.name}`,
       description,
       images: ogImageUrl ? [ogImageUrl] : [],
     },

@@ -24,10 +24,19 @@ function lavenderHourPrice(hour: number): number {
 
 // Public site URL for clean notification links (never a raw internal path).
 function publicUrl(path: string): string {
-  const base = (process.env.NEXT_PUBLIC_SITE_URL || 'https://dachatv.co').replace(/\/+$/, '')
+  const base = (process.env.NEXT_PUBLIC_SITE_URL || 'https://www.dachatv.com').replace(/\/+$/, '')
   if (!path) return base
   if (path.startsWith('http')) return path
   return `${base}${path.startsWith('/') ? '' : '/'}${path}`
+}
+
+// Detect a "column does not exist" error so a not-yet-migrated optional column
+// (e.g. bouquet_qty before migration 056) can be dropped and the insert retried,
+// rather than failing the whole booking save.
+function isMissingColumn(error: { message?: string; code?: string } | null | undefined, column: string): boolean {
+  if (!error) return false
+  const msg = (error.message ?? '').toLowerCase()
+  return error.code === '42703' || error.code === 'PGRST204' || (msg.includes(column.toLowerCase()) && msg.includes('column'))
 }
 
 const hourlyBookingSchema = z.object({
@@ -135,7 +144,9 @@ export async function submitHourlyBooking(formData: FormData): Promise<ActionRes
     const extra = Math.max(0, d.guestCount - capacity) * extraRate
     const total = basePrice + extra + bouquetTotal
 
-    const { error } = await client.from('bookings').insert({
+    // Save the booking to Supabase FIRST. Notifications are best-effort and run
+    // only after a confirmed save, so they can never break the booking itself.
+    const bookingRow: Record<string, unknown> = {
       service_id: svc?.id ?? null,
       service_slug: d.serviceSlug,
       booking_type: 'hourly',
@@ -149,9 +160,23 @@ export async function submitHourlyBooking(formData: FormData): Promise<ActionRes
       comment: d.comment ?? null,
       source: d.source ?? null,
       status: 'new',
-    })
+    }
 
-    if (error) return { success: false, error: 'Не вдалося зберегти бронювання. Спробуйте ще раз.' }
+    let { error } = await client.from('bookings').insert(bookingRow)
+
+    // Graceful degradation: if bouquet_qty hasn't been migrated yet (056),
+    // retry without it so the booking still saves. Clear server log either way.
+    if (error && isMissingColumn(error, 'bouquet_qty')) {
+      console.error('[booking] bookings.bouquet_qty missing — apply migration 056_booking_bouquets.sql. Saving booking without bouquet_qty for now.')
+      const fallbackRow = { ...bookingRow }
+      delete fallbackRow.bouquet_qty
+      ;({ error } = await client.from('bookings').insert(fallbackRow))
+    }
+
+    if (error) {
+      console.error('[booking] failed to save hourly booking:', error)
+      return { success: false, error: 'Не вдалося зберегти бронювання. Спробуйте ще раз.' }
+    }
 
     const pageLink = publicUrl(d.source || '/lavender')
 
@@ -187,7 +212,8 @@ export async function submitHourlyBooking(formData: FormData): Promise<ActionRes
       total_price: total,
       message: d.comment ?? null,
     })
-  } catch {
+  } catch (e) {
+    console.error('[booking] unexpected error saving hourly booking:', e)
     return { success: false, error: 'Не вдалося зберегти бронювання. Спробуйте ще раз.' }
   }
 
@@ -241,7 +267,10 @@ export async function submitDailyBooking(formData: FormData): Promise<ActionResu
       status: 'new',
     }).select('id').single()
 
-    if (error) return { success: false, error: 'Не вдалося зберегти бронювання. Спробуйте ще раз.' }
+    if (error) {
+      console.error('[booking] failed to save daily booking:', error)
+      return { success: false, error: 'Не вдалося зберегти бронювання. Спробуйте ще раз.' }
+    }
     bookingId = booking?.id ?? null
 
     const nightsLabel = `${nights} ніч${nights === 1 ? '' : nights < 5 ? 'і' : 'ей'}`
@@ -274,7 +303,8 @@ export async function submitDailyBooking(formData: FormData): Promise<ActionResu
       message: d.comment ?? null,
       booking_id: bookingId,
     })
-  } catch {
+  } catch (e) {
+    console.error('[booking] unexpected error saving daily booking:', e)
     return { success: false, error: 'Не вдалося зберегти бронювання. Спробуйте ще раз.' }
   }
 

@@ -7,7 +7,7 @@ import { MediaManager } from '@/components/admin/MediaManager'
 import type { HoneyProduct } from '@/types'
 
 export const metadata: Metadata = {
-  title: 'Адмін — Мед',
+  title: 'Адмін: Мед',
   robots: 'noindex, nofollow',
 }
 

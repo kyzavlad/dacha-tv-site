@@ -5,7 +5,7 @@ import { getAdminClient } from '@/lib/supabase/admin'
 import type { CatalogCategory } from '@/types'
 import { createCatalogCategoryAction, publishCategoryAction, unpublishCategoryAction, deleteCategoryAction, bulkActivateFromSupplierAction, fixNumericCategoryNamesAction } from './actions'
 
-export const metadata: Metadata = { title: 'Адмін — Категорії каталогу', robots: 'noindex, nofollow' }
+export const metadata: Metadata = { title: 'Адмін: Категорії каталогу', robots: 'noindex, nofollow' }
 
 const INPUT = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400'
 
