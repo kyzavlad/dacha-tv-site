@@ -51,7 +51,7 @@ export default async function LavenderPage() {
               Лаванда
             </h1>
             <p className="text-white/60 text-lg leading-relaxed mb-6">
-              Цвітіння у червні–липні. Орендуйте поле для фотосесії, прогулянки або пікніку.
+              Цвітіння у червні–липні. Орендуйте поле для фотосесії, освітніх, культурних і оздоровчих заходів.
               За бажанням — букети лаванди під замовлення.
             </p>
             <div className="flex flex-col sm:flex-row sm:items-center gap-4">
