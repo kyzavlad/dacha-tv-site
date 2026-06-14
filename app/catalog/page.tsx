@@ -17,7 +17,7 @@ export const metadata: Metadata = {
     description: 'Товари для дому, саду та господарства: металопрофіль, покрівля та широкий асортимент від постачальників.',
     siteName: 'Дача TV',
     type: 'website',
-    images: [{ url: '/images/dacha-tv/logo-square.png', width: 1200, height: 1200, alt: 'Дача TV — магазин товарів' }],
+    images: [{ url: '/images/dacha-tv/logo-square.png', width: 1200, height: 1200, alt: 'Дача TV: магазин товарів' }],
   },
 }
 
@@ -80,7 +80,7 @@ export default async function CatalogPage() {
             Товари для дому, саду та господарства
           </h1>
           <p className="text-gray-500 text-lg max-w-2xl">
-            Товари для дому, саду та дачного господарства. Якість перевірена — доставка по Україні.
+            Товари для дому, саду та дачного господарства. Якість перевірена: доставка по Україні.
           </p>
         </div>
       </div>

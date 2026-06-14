@@ -66,7 +66,7 @@ export default async function ProductPage({ params }: Props) {
   const hasDiscount =
     priceOk && product.compare_price_uah != null && product.price_uah != null && product.compare_price_uah > product.price_uah
 
-  // JSON-LD structured data — only advertise an offer when the price is valid.
+  // JSON-LD structured data: only advertise an offer when the price is valid.
   const jsonLd = {
     '@context': 'https://schema.org',
     '@type': 'Product',
@@ -226,8 +226,8 @@ export default async function ProductPage({ params }: Props) {
                   +380 99 648 04 85
                 </a>
                 <p className="text-bark/70 mt-2 text-xs leading-relaxed">
-                  Доставка по Харківській та Полтавській областях — за домовленістю.
-                  Інші регіони — індивідуально після підтвердження.
+                  Доставка по Харківській та Полтавській областях: за домовленістю.
+                  Інші регіони: індивідуально після підтвердження.
                 </p>
               </div>
             )}

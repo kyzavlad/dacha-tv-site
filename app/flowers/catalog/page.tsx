@@ -12,9 +12,9 @@ export const metadata: Metadata = {
   alternates: { canonical: '/flowers/catalog' },
   openGraph: {
     title: 'Каталог хризантем',
-    description: 'Понад 50 сортів хризантем від домашнього розсадника на Харківщині — помпонові, кущові, великоквіткові.',
+    description: 'Понад 50 сортів хризантем від домашнього розсадника на Харківщині: помпонові, кущові, великоквіткові.',
     type: 'website',
-    images: [{ url: '/images/dacha-tv/logo-square.png', width: 1200, height: 1200, alt: 'Дача TV — Хризантеми' }],
+    images: [{ url: '/images/dacha-tv/logo-square.png', width: 1200, height: 1200, alt: 'Дача TV: Хризантеми' }],
   },
   twitter: {
     card: 'summary_large_image',
@@ -32,7 +32,7 @@ const VARIETY_EN: Record<string, string> = {
 
 const VARIETY_DESC: Record<string, string> = {
   'Помпонова': 'Щільні кулясті суцвіття 3–6 см. Класика флористики.',
-  'Кущова': 'Один стебель — безліч квіток. Природна пишність.',
+  'Кущова': 'Один стебель: безліч квіток. Природна пишність.',
   'Великоквіткова': 'Одна квітка до 25 см. Виставковий формат.',
   'Дрібноквіткова': 'Хмарка з сотень крихітних суцвіть.',
   'Компактна': 'До 35 см. Для вазонів і балконів.',
@@ -150,7 +150,7 @@ export default async function FlowersCatalogPage() {
           {Object.entries(byVariety).map(([variety, products]) => (
             <section key={variety} id={encodeURIComponent(variety)}>
 
-              {/* Section header — large typographic */}
+              {/* Section header: large typographic */}
               <div className="grid grid-cols-1 md:grid-cols-[auto_1fr] gap-6 md:gap-12 items-start mb-10 pb-6 border-b-2 border-gray-900">
                 <div>
                   <p className="text-[10px] font-semibold text-gray-300 uppercase tracking-[0.25em] mb-1">
@@ -167,7 +167,7 @@ export default async function FlowersCatalogPage() {
                 </div>
               </div>
 
-              {/* Products — alternating dense list */}
+              {/* Products: alternating dense list */}
               <div className="divide-y divide-gray-50">
                 {products.map((p, i) => (
                   <Link key={p.id} href={`/flowers/${p.slug}`}
@@ -216,7 +216,7 @@ export default async function FlowersCatalogPage() {
             </h2>
             <p className="text-gray-500 leading-relaxed mb-6">
               Підберемо сорти за кольором, строком цвітіння і бюджетом.
-              Залиште заявку — зв&apos;яжемося протягом дня.
+              Залиште заявку: зв&apos;яжемося протягом дня.
             </p>
             <div className="flex gap-3 flex-wrap">
               <Link href="/flowers"

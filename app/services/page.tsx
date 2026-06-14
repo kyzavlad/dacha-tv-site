@@ -32,7 +32,7 @@ const serviceSchema = {
   '@type': 'LocalBusiness',
   name: 'Дача TV',
   url: siteUrl,
-  description: 'Сімейна садиба Дача TV — мед, квіти, фотосесії та відпочинок на природі на Харківщині.',
+  description: 'Сімейна садиба Дача TV: мед, квіти, фотосесії та відпочинок на природі на Харківщині.',
   address: {
     '@type': 'PostalAddress',
     addressLocality: 'Коротич',
@@ -55,7 +55,7 @@ export default async function ServicesPage() {
             Послуги садиби
           </h1>
           <p className="text-bark/70 text-lg max-w-2xl mx-auto">
-            Фотосесії у лаванді, відпочинок над ставком та консультації пасічника — все на одній садибі.
+            Фотосесії у лаванді, відпочинок над ставком та консультації пасічника: все на одній садибі.
           </p>
         </div>
       </div>
@@ -151,7 +151,7 @@ export default async function ServicesPage() {
               Маєте питання?
             </h2>
             <p className="text-bark/70 text-center text-sm mb-6">
-              Залиште контакти — розповімо деталі та допоможемо обрати.
+              Залиште контакти: розповімо деталі та допоможемо обрати.
             </p>
             <GeneralContactForm source="/services" />
           </div>

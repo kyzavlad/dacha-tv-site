@@ -9,18 +9,18 @@ import { getAllBeekeeperProducts } from '@/lib/supabase/queries'
 export const metadata: Metadata = {
   title: 'Для пасічників',
   description:
-    "Бджолопакети (Buckfast, Карніка), бджолосім'ї, вулики та товари пасічника від власної пасіки на Харківщині. Без посередників — напряму від пасічника.",
+    "Бджолопакети (Buckfast, Карніка), бджолосім'ї, вулики та товари пасічника від власної пасіки на Харківщині. Без посередників: напряму від пасічника.",
   alternates: { canonical: '/beekeeper' },
   openGraph: {
     title: 'Для пасічників',
     description: "Бджолопакети, бджолосім'ї, вулики та товари пасічника від пасіки Дача TV на Харківщині",
     type: 'website',
-    images: [{ url: '/images/dacha-tv/logo-square.png', width: 1200, height: 1200, alt: 'Дача TV — Для пасічників' }],
+    images: [{ url: '/images/dacha-tv/logo-square.png', width: 1200, height: 1200, alt: 'Дача TV: Для пасічників' }],
   },
   twitter: {
     card: 'summary_large_image',
     title: 'Для пасічників',
-    description: "Бджолопакети Buckfast та Карніка, бджолосім'ї, вулики — напряму від пасічника на Харківщині.",
+    description: "Бджолопакети Buckfast та Карніка, бджолосім'ї, вулики: напряму від пасічника на Харківщині.",
   },
 }
 
@@ -55,7 +55,7 @@ export default async function BeekeeperPage() {
             Бджолопакети та вулики
           </h1>
           <p className="text-gray-500 text-lg max-w-2xl">
-            Ми пасічники, і розуміємо, що вам потрібно. Пропонуємо бджолопакети, бджолосім&apos;ї та вулики — з індивідуальним підходом.
+            Ми пасічники, і розуміємо, що вам потрібно. Пропонуємо бджолопакети, бджолосім&apos;ї та вулики: з індивідуальним підходом.
           </p>
 
           {/* Type quick-jump links */}
@@ -84,7 +84,7 @@ export default async function BeekeeperPage() {
             {activeTypes.length === 0 ? (
               <div className="bg-white rounded-2xl p-8 border border-forest-100 text-center">
                 <p className="text-bark/60">
-                  Каталог поповнюється. Залиште заявку — ми зв&apos;яжемося для обговорення.
+                  Каталог поповнюється. Залиште заявку: ми зв&apos;яжемося для обговорення.
                 </p>
               </div>
             ) : (
@@ -113,7 +113,7 @@ export default async function BeekeeperPage() {
             <div className="bg-honey-50 rounded-2xl p-6 border border-honey-200">
               <h3 className="font-semibold text-bark mb-2">Важливо знати</h3>
               <p className="text-bark/70 text-sm leading-relaxed">
-                Всі бджолопродукти — живі тварини зі складною сезонною логістикою. Ціни залежать від сезону, породи та кількості. Ми завжди повідомляємо про реальну наявність. Залиште заявку — і ми зв&apos;яжемося для обговорення деталей.
+                Всі бджолопродукти: живі тварини зі складною сезонною логістикою. Ціни залежать від сезону, породи та кількості. Ми завжди повідомляємо про реальну наявність. Залиште заявку: і ми зв&apos;яжемося для обговорення деталей.
               </p>
             </div>
           </div>
@@ -126,7 +126,7 @@ export default async function BeekeeperPage() {
                   Залишити заявку
                 </h2>
                 <p className="text-bark/60 text-sm mb-6">
-                  Щоб дізнатись наявність та вартість — залиште заявку або зателефонуйте
+                  Щоб дізнатись наявність та вартість: залиште заявку або зателефонуйте
                 </p>
                 <BeekeeperInquiryForm source="/beekeeper" />
               </div>

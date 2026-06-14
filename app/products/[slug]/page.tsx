@@ -147,7 +147,7 @@ export default async function ApiaryProductPage({ params }: Props) {
 
             {product.status !== 'available' && product.status !== 'preorder' && (
               <div className="bg-gray-100 text-gray-700 rounded-lg px-4 py-3 mb-4 text-sm font-medium">
-                Наразі немає в наявності. Залиште заявку — ми повідомимо, коли з&apos;явиться.
+                Наразі немає в наявності. Залиште заявку: ми повідомимо, коли з&apos;явиться.
               </div>
             )}
 
@@ -260,7 +260,7 @@ export default async function ApiaryProductPage({ params }: Props) {
               )
             ) : (
               <div className="bg-gray-100 text-gray-600 rounded-xl px-4 py-3 text-sm font-medium text-center">
-                Немає в наявності. Залиште заявку — повідомимо про надходження.
+                Немає в наявності. Залиште заявку: повідомимо про надходження.
               </div>
             )}
           </div>
