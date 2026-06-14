@@ -79,7 +79,11 @@ export default async function LavenderPage() {
 
             <div className="grid md:grid-cols-2 gap-8 mb-8">
               <div>
-                <p className="text-gray-600 leading-relaxed mb-4">{service.description}</p>
+                <p className="text-gray-600 leading-relaxed mb-4">
+                  Орендуйте лавандове поле на нашій садибі для фотосесій, освітніх, культурних і
+                  оздоровчих заходів. Вартість включає 5 осіб, кожна додаткова — 200 ₴.
+                  Сезон цвітіння: червень–липень.
+                </p>
                 <div className="space-y-2 text-sm">
                   <div className="flex gap-2">
                     <span className="text-purple-600 font-semibold w-28">Ціна:</span>
@@ -115,13 +119,15 @@ export default async function LavenderPage() {
                 <div>
                   <p className="font-semibold text-bark mb-1">Адреса локації:</p>
                   <p>Харківська область, смт Коротич, вул. Дачна, 27</p>
+                  <p className="mt-2 font-semibold text-bark">Графік роботи:</p>
+                  <p>Щодня 06:00–21:00</p>
                   <a
                     href="https://www.google.com/maps/dir/?api=1&destination=49.9420503,36.0561702"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="mt-3 inline-flex items-center text-purple-700 font-semibold hover:text-purple-900"
+                    className="mt-3 inline-flex items-center gap-1.5 rounded-xl bg-purple-700 px-4 py-2 text-white font-semibold hover:bg-purple-800 transition-colors"
                   >
-                    Прокласти маршрут →
+                    📍 Прокласти маршрут
                   </a>
                 </div>
                 <a

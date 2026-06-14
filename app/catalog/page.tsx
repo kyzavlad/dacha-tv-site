@@ -5,11 +5,14 @@ import type { CatalogCategory } from '@/types'
 import {
   getPublishedCategories,
   getPublishedCategorySlugCounts,
+  searchPublishedCatalogProducts,
 } from '@/lib/supabase/catalog'
 import { CategoryCard } from '@/components/catalog/CategoryCard'
+import { CatalogProductCard } from '@/components/catalog/CatalogProductCard'
+import { CatalogSearchBar } from '@/components/catalog/CatalogSearchBar'
 
 export const metadata: Metadata = {
-  title: 'Магазин товарів',
+  title: 'Магазин',
   description: 'Магазин товарів для дому, саду та господарства: металопрофіль і покрівля та широкий асортимент від постачальників. Доставка по Україні.',
   alternates: { canonical: '/catalog' },
   openGraph: {
@@ -42,7 +45,54 @@ const OTHER_CATEGORY: CatalogCategory = {
   updated_at: '',
 }
 
-export default async function CatalogPage() {
+export default async function CatalogPage({ searchParams }: { searchParams: Promise<{ q?: string; page?: string }> }) {
+  const { q, page: pageRaw } = await searchParams
+  const query = (q ?? '').trim()
+
+  // ── Search results (?q=) ──────────────────────────────────────────────────
+  if (query) {
+    const page = Math.max(1, Number(pageRaw) || 1)
+    const { products } = await searchPublishedCatalogProducts(query, page).catch(() => ({ products: [], total: 0 }))
+    const fullPage = products.length >= 24
+    return (
+      <div className="bg-cream min-h-screen">
+        <div className="bg-white border-b border-gray-100 py-10 md:py-12">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <h1 className="font-serif text-3xl md:text-4xl font-bold text-bark mb-4">Пошук у магазині</h1>
+            <CatalogSearchBar defaultValue={query} />
+          </div>
+        </div>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+          <p className="text-sm text-gray-500 mb-6">Результати за запитом «{query}»</p>
+          {products.length > 0 ? (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                {products.map((p) => (
+                  <CatalogProductCard key={p.id} product={p} categorySlug={p.category_slug ?? 'all'} />
+                ))}
+              </div>
+              {(page > 1 || fullPage) && (
+                <div className="flex justify-between items-center mt-10">
+                  {page > 1 ? (
+                    <Link href={`/catalog?q=${encodeURIComponent(query)}&page=${page - 1}`} className="text-honey-700 font-semibold hover:underline">← Попередня</Link>
+                  ) : <span />}
+                  {fullPage && (
+                    <Link href={`/catalog?q=${encodeURIComponent(query)}&page=${page + 1}`} className="text-honey-700 font-semibold hover:underline">Наступна →</Link>
+                  )}
+                </div>
+              )}
+            </>
+          ) : (
+            <p className="text-gray-500">
+              Нічого не знайдено. Спробуйте інший запит або{' '}
+              <Link href="/catalog" className="text-honey-700 hover:underline">перегляньте категорії</Link>.
+            </p>
+          )}
+        </div>
+      </div>
+    )
+  }
+
   // Categories are derived from the products that are actually published, so the
   // grid renders regardless of whether the category_slug backfill/cron has run.
   const [allCategories, { bySlug, nullCount, total }] = await Promise.all([
@@ -79,9 +129,10 @@ export default async function CatalogPage() {
           <h1 className="font-serif text-4xl md:text-5xl font-bold text-bark mb-4">
             Товари для дому, саду та господарства
           </h1>
-          <p className="text-gray-500 text-lg max-w-2xl">
+          <p className="text-gray-500 text-lg max-w-2xl mb-6">
             Товари для дому, саду та дачного господарства. Якість перевірена: доставка по Україні.
           </p>
+          <CatalogSearchBar />
         </div>
       </div>
 

@@ -36,11 +36,18 @@ export function hasDisplayablePrice(product: CatalogProduct): boolean {
   return hasValidPrice(product.price_uah) && !product.is_price_suspicious
 }
 
-// Inquiry mode: explicitly inquiry-only, or simply has no displayable price.
-// Such products show "Уточнити ціну" and route to a lead/contact flow instead
-// of normal cart checkout.
+// Metal / roofing products are always inquiry/lead-only (price is per-order,
+// cut-to-size, region-dependent), never add-to-cart — regardless of any
+// reference price stored on the row.
+export const METAL_CATEGORY_SLUG = 'metaloprofil-pokrivlia-komplektuiuchi'
+export function isMetalProduct(product: CatalogProduct): boolean {
+  return product.lead_type === 'metal' || product.category_slug === METAL_CATEGORY_SLUG
+}
+
+// Inquiry mode: metal (always), explicitly inquiry-only, or simply has no
+// displayable price. Such products show a lead/contact CTA instead of cart.
 export function isInquiryProduct(product: CatalogProduct): boolean {
-  return product.inquiry_only === true || !hasDisplayablePrice(product)
+  return isMetalProduct(product) || product.inquiry_only === true || !hasDisplayablePrice(product)
 }
 
 // Can this product go through the normal cart/checkout path?
@@ -175,6 +182,31 @@ export async function getPublishedCatalogProducts(
     .or(EXCLUDE_NATURAL_OR)
     .order('is_featured', { ascending: false })
     .order('display_order', { ascending: true })
+    .order('name_ua', { ascending: true })
+    .range(from, to)
+  return { products: (data ?? []) as CatalogProduct[], total: count ?? 0 }
+}
+
+// Public catalog search (?q=) — matches published shop products by name. Natural
+// food products are excluded (they live under /products), metal stays included.
+export async function searchPublishedCatalogProducts(
+  q: string,
+  page = 1,
+): Promise<{ products: CatalogProduct[]; total: number }> {
+  const client = getClient()
+  const term = q.trim()
+  if (!client || !term) return { products: [], total: 0 }
+  const from = (page - 1) * CATALOG_PAGE_SIZE
+  const to = from + CATALOG_PAGE_SIZE - 1
+  // Escape PostgREST ilike wildcards so user input can't broaden the match.
+  const pattern = `%${term.replace(/[%_,()]/g, ' ').trim()}%`
+  const { data, count } = await client
+    .from('catalog_products')
+    .select('*', { count: 'exact' })
+    .eq('status', 'published')
+    .or(EXCLUDE_NATURAL_OR)
+    .ilike('name_ua', pattern)
+    .order('is_featured', { ascending: false })
     .order('name_ua', { ascending: true })
     .range(from, to)
   return { products: (data ?? []) as CatalogProduct[], total: count ?? 0 }

@@ -19,32 +19,38 @@ const STATUS_LABEL: Record<string, string> = {
 const PAGE_SIZE = 50
 
 interface PageProps {
-  searchParams: Promise<{ page?: string }>
+  searchParams: Promise<{ page?: string; q?: string }>
 }
 
 export default async function AdminCatalogPage({ searchParams }: PageProps) {
-  const { page: pageRaw } = await searchParams
+  const { page: pageRaw, q: qRaw } = await searchParams
+  const query = (qRaw ?? '').trim()
   const page = Math.max(1, Number(pageRaw) || 1)
   const from = (page - 1) * PAGE_SIZE
   const to = from + PAGE_SIZE - 1
+  const pageQs = query ? `&q=${encodeURIComponent(query)}` : ''
 
   let catalogProducts: CatalogProduct[] = []
   let pendingApproval: SupplierProduct[] = []
   let publishedCount = 0   // real total across the whole table
   let draftCount = 0       // real total across the whole table
   let totalCount = 0       // published + draft + archived
+  let listCount = 0        // count for the current (optionally filtered) list
   let pendingCount = 0
   let tablesMissing = false
 
   try {
     const client = getAdminClient()
+    let catalogQuery = client
+      .from('catalog_products')
+      .select('*', { count: 'exact' })
+      .order('status', { ascending: true })
+      .order('display_order', { ascending: true })
+    if (query) {
+      catalogQuery = catalogQuery.ilike('name_ua', `%${query.replace(/[%_,()]/g, ' ').trim()}%`)
+    }
     const [catalog, pending, publishedHead, draftHead, totalHead] = await Promise.all([
-      client
-        .from('catalog_products')
-        .select('*')
-        .order('status', { ascending: true })
-        .order('display_order', { ascending: true })
-        .range(from, to),
+      catalogQuery.range(from, to),
       client
         .from('supplier_products')
         .select('*')
@@ -66,11 +72,12 @@ export default async function AdminCatalogPage({ searchParams }: PageProps) {
       publishedCount = publishedHead.count ?? 0
       draftCount = draftHead.count ?? 0
       totalCount = totalHead.count ?? 0
+      listCount = catalog.count ?? 0
       pendingCount = pendingApproval.length
     }
   } catch { /* env not set */ }
 
-  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE))
+  const totalPages = Math.max(1, Math.ceil((query ? listCount : totalCount) / PAGE_SIZE))
   const bulkApprove100 = bulkApproveFirstN.bind(null, 100)
 
   return (
@@ -80,7 +87,26 @@ export default async function AdminCatalogPage({ searchParams }: PageProps) {
           <h1 className="text-xl font-bold text-gray-900">Публічний каталог</h1>
           <p className="text-sm text-gray-500 mt-0.5">
             {publishedCount} опублікованих · {draftCount} у чернетці · {totalCount} всього
+            {query && <> · знайдено {listCount} за «{query}»</>}
           </p>
+          <form action="/admin/catalog" method="get" role="search" className="mt-3 flex gap-2 max-w-md">
+            <input
+              type="search"
+              name="q"
+              defaultValue={query}
+              placeholder="Пошук товарів за назвою…"
+              aria-label="Пошук товарів"
+              className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:border-gray-500"
+            />
+            <button type="submit" className="rounded-lg bg-gray-900 text-white text-sm font-medium px-4 py-2 hover:bg-gray-700 transition-colors">
+              Знайти
+            </button>
+            {query && (
+              <Link href="/admin/catalog" className="rounded-lg border border-gray-300 text-sm text-gray-600 px-4 py-2 hover:bg-gray-50 transition-colors flex items-center">
+                Скинути
+              </Link>
+            )}
+          </form>
         </div>
         {pendingCount > 0 && !tablesMissing && (
           <form action={bulkApprove100}>
@@ -214,7 +240,7 @@ export default async function AdminCatalogPage({ searchParams }: PageProps) {
             <div className="px-5 py-3 border-t border-gray-100 bg-gray-50 flex items-center justify-between">
               {page > 1 ? (
                 <Link
-                  href={`/admin/catalog?page=${page - 1}`}
+                  href={`/admin/catalog?page=${page - 1}${pageQs}`}
                   className="text-sm text-gray-600 hover:text-gray-900 font-medium transition-colors"
                 >
                   ← Попередня
@@ -223,7 +249,7 @@ export default async function AdminCatalogPage({ searchParams }: PageProps) {
               <span className="text-xs text-gray-400">Сторінка {page} з {totalPages}</span>
               {page < totalPages ? (
                 <Link
-                  href={`/admin/catalog?page=${page + 1}`}
+                  href={`/admin/catalog?page=${page + 1}${pageQs}`}
                   className="text-sm text-gray-600 hover:text-gray-900 font-medium transition-colors"
                 >
                   Наступна →

@@ -1,16 +1,19 @@
 import Link from 'next/link'
 
+// Grouped, de-duplicated admin nav. "Заявки" (the inquiries/leads inbox) is
+// renamed to "Вхідні заявки" so it reads as the lead inbox, and the unified
+// shop catalog is "Каталог магазину" (was the ambiguous second "Продукти").
 const NAV_LINKS = [
-  { href: '/admin', label: 'Заявки' },
+  { href: '/admin', label: 'Вхідні заявки' },
   { href: '/admin/orders', label: 'Замовлення' },
+  { href: '/admin/bookings', label: 'Бронювання' },
+  { href: '/admin/catalog', label: 'Каталог магазину' },
+  { href: '/admin/catalog/pipeline', label: 'Пайплайн' },
   { href: '/admin/honey', label: 'Мед' },
   { href: '/admin/apiary', label: 'Продукти пасіки' },
   { href: '/admin/flowers', label: 'Квіти' },
-  { href: '/admin/services', label: 'Послуги' },
-  { href: '/admin/bookings', label: 'Бронювання' },
   { href: '/admin/beekeeper', label: 'Пасічникам' },
-  { href: '/admin/catalog/pipeline', label: 'Пайплайн' },
-  { href: '/admin/catalog', label: 'Продукти' },
+  { href: '/admin/services', label: 'Послуги' },
 ]
 
 export default function AdminLayout({
