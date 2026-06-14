@@ -226,18 +226,23 @@ export default async function ProductPage({ params }: Props) {
                   +380 99 648 04 85
                 </a>
                 <p className="text-bark/70 mt-2 text-xs leading-relaxed">
-                  Доставка по Харківській та Полтавській областях: за домовленістю.
-                  Інші регіони: індивідуально після підтвердження.
+                  Доставка по Харківській та Полтавській областях — за домовленістю.
+                  Інші регіони — індивідуально після підтвердження.
+                  Самовивіз і наявність — за підтвердженням.
                 </p>
               </div>
             )}
 
             <ProductOptions options={product.options} />
 
-            <div className="flex items-center gap-2 text-sm text-green-700 mb-6">
-              <span className="w-2 h-2 rounded-full bg-green-500 flex-shrink-0" />
-              Доставка по Україні
-            </div>
+            {/* Generic "Доставка по Україні" is hidden for metal — metal has its own
+                regional delivery terms above and is not shipped nationwide. */}
+            {product.lead_type !== 'metal' && (
+              <div className="flex items-center gap-2 text-sm text-green-700 mb-6">
+                <span className="w-2 h-2 rounded-full bg-green-500 flex-shrink-0" />
+                Доставка по Україні
+              </div>
+            )}
 
             {product.description && (
               <div className="border-t border-gray-100 pt-6">

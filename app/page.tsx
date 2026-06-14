@@ -1,7 +1,6 @@
 import type { Metadata } from 'next'
 import { Hero } from '@/components/home/Hero'
 import { EcosystemSections } from '@/components/home/EcosystemSections'
-import { ProductPreview } from '@/components/home/ProductPreview'
 import { BrandStory } from '@/components/home/BrandStory'
 import { YouTubeSection } from '@/components/home/YouTubeSection'
 import { HowToOrder } from '@/components/home/HowToOrder'
@@ -12,7 +11,6 @@ import { StructuredData } from '@/components/shared/StructuredData'
 import { ApiaryTrustStrip } from '@/components/home/ApiaryTrustStrip'
 import { ApiaryTrust } from '@/components/shared/ApiaryTrust'
 import {
-  getFeaturedHoneyProducts,
   getVisibleReviews,
   getSiteSettings,
 } from '@/lib/supabase/queries'
@@ -30,8 +28,7 @@ export const metadata: Metadata = {
 }
 
 export default async function HomePage() {
-  const [featuredHoneyProducts, reviews, siteSettings] = await Promise.all([
-    getFeaturedHoneyProducts().catch(() => []),
+  const [reviews, siteSettings] = await Promise.all([
     getVisibleReviews().catch(() => []),
     getSiteSettings().catch(() => null),
   ])
@@ -71,8 +68,6 @@ export default async function HomePage() {
       />
 
       <EcosystemSections />
-
-      <ProductPreview products={featuredHoneyProducts} />
 
       <BrandStory />
 
