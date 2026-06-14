@@ -121,7 +121,7 @@ export default async function LavenderPage() {
                     rel="noopener noreferrer"
                     className="mt-3 inline-flex items-center text-purple-700 font-semibold hover:text-purple-900"
                   >
-                    Відкрити геолокацію в Google Maps →
+                    Прокласти маршрут →
                   </a>
                 </div>
                 <a
