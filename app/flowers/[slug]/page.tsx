@@ -27,7 +27,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     ?? media.find((m) => m.media_type === 'image')
   const ogImageUrl = primaryImg?.url ?? dbProduct.image_url ?? null
   const description = dbProduct.short_description ||
-    `${dbProduct.name} — хризантема від домашнього розсадника Дача TV на Харківщині.`
+    `${dbProduct.name}: хризантема від домашнього розсадника Дача TV на Харківщині.`
   return {
     title: dbProduct.name,
     description,
@@ -153,7 +153,7 @@ export default async function FlowerProductPage({ params }: Props) {
 
             {product.status !== 'available' && product.status !== 'preorder' && (
               <div className="bg-gray-100 text-gray-600 rounded-xl px-4 py-3 mb-5 text-sm">
-                Наразі немає в наявності. Залиште заявку — повідомимо, коли з&apos;явиться.
+                Наразі немає в наявності. Залиште заявку: повідомимо, коли з&apos;явиться.
               </div>
             )}
 
@@ -255,7 +255,7 @@ export default async function FlowerProductPage({ params }: Props) {
               ) : (
                 <div id="order-form" className="bg-gray-50 rounded-2xl p-6 border border-gray-200">
                   <h2 className="font-serif text-xl font-bold text-gray-900 mb-1">Замовити</h2>
-                  <p className="text-gray-500 text-sm mb-5">Залиште заявку — уточнимо наявність і домовимося про передачу.</p>
+                  <p className="text-gray-500 text-sm mb-5">Залиште заявку: уточнимо наявність і домовимося про передачу.</p>
                   <FlowerInquiryForm preselectedProduct={product.name} source={`/flowers/${slug}`} />
                 </div>
               )

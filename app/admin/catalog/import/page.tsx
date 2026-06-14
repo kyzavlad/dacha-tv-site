@@ -11,7 +11,7 @@ import type { ImportPreview, ImportRow, ApplyResult, CatSeoPreview, CatSeoRow, C
 const DEFAULT_PRODUCT_SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vT9LdpBMcaR3UsJjbNEFRs8RYV0DAgyIsW3hcDIqELxrAV8z6O6QPkDdpTi3cyuECM5R783boFU8dHR/pub?output=csv'
 const DEFAULT_CATEGORY_SEO_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSFz7CfebTkj8qLiKNIyIM2evNTgKPtXZtOnc2H5m6T1khTXJY0Aw-VOhcfkhoROErQKU4VSBvDS7fKC/pub?output=csv'
 
-// Old edit-link URLs that may be stored in existing sessions — replaced automatically
+// Old edit-link URLs that may be stored in existing sessions: replaced automatically
 const LEGACY_PRODUCT_URL = 'https://docs.google.com/spreadsheets/d/1g_fljSpg4_dPk8Zij7sHF-DKbvk3C_mOdqQlf4anGIU/edit?gid=1604331528#gid=1604331528'
 const LEGACY_CATEGORY_URL = 'https://docs.google.com/spreadsheets/d/1En8K5-4-ThCl2QcDMk_CFuT3ymjK2aWDV-i4Uat2Ww4/edit?gid=0#gid=0'
 
@@ -76,14 +76,14 @@ function ProductSeoTab() {
       <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-5 max-w-2xl">
         <p className="text-sm font-semibold text-amber-800">Тільки SEO-поля оновлюються</p>
         <p className="text-xs text-amber-700 mt-1">
-          Ціна, фото, залишок — завжди з API. Для додавання нових товарів запустіть Пайплайн (Кроки 1–5).
+          Ціна, фото, залишок: завжди з API. Для додавання нових товарів запустіть Пайплайн (Кроки 1–5).
         </p>
       </div>
 
       <form onSubmit={handlePreview} className="bg-white border border-gray-100 rounded-xl shadow-sm p-6 mb-5 max-w-2xl">
         <div className="mb-4">
           <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">
-            Google Таблиця — Прайс товарів *
+            Google Таблиця: Прайс товарів *
           </label>
           <input
             name="sheet_url"
@@ -224,7 +224,7 @@ function CategorySeoTab() {
       <form onSubmit={handlePreview} className="bg-white border border-gray-100 rounded-xl shadow-sm p-6 mb-5 max-w-2xl">
         <div className="mb-4">
           <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">
-            Google Таблиця — SEO категорій *
+            Google Таблиця: SEO категорій *
           </label>
           <input
             name="cat_sheet_url"
@@ -325,7 +325,7 @@ function CategorySeoTab() {
 
       {preview?.ok && preview.rows.length === 0 && (
         <div className="bg-white border border-gray-100 rounded-xl p-6 text-center max-w-2xl">
-          <p className="text-gray-500">Рядків не знайдено. Перевірте назви категорій у таблиці — вони мають збігатися з name_ua у каталозі.</p>
+          <p className="text-gray-500">Рядків не знайдено. Перевірте назви категорій у таблиці: вони мають збігатися з name_ua у каталозі.</p>
         </div>
       )}
     </div>
@@ -352,7 +352,7 @@ export default function ImportPage() {
     <div className="px-4 sm:px-6 py-8">
       <div className="mb-6">
         <h1 className="text-xl font-bold text-gray-900">Імпорт SEO з Google Sheets</h1>
-        <p className="text-sm text-gray-500 mt-0.5">Оновлює тільки SEO-поля (опис, мета). Ціна та фото — завжди з API.</p>
+        <p className="text-sm text-gray-500 mt-0.5">Оновлює тільки SEO-поля (опис, мета). Ціна та фото: завжди з API.</p>
       </div>
 
       <div className="flex gap-1 mb-6 border-b border-gray-200">

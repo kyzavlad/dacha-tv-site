@@ -20,7 +20,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params
   const service = await getServiceBySlug(slug).catch(() => null)
   if (!service) return { title: 'Послугу не знайдено' }
-  const description = service.short_description || `${service.name} — Дача TV`
+  const description = service.short_description || `${service.name}: Дача TV`
   return {
     title: `${service.name}`,
     description,
@@ -46,7 +46,7 @@ export default async function ServiceDetailPage({ params }: Props) {
   const { slug } = await params
 
   // Lavender lives at its dedicated /lavender page (full booking rules, season,
-  // bouquets, two-tier pricing). Keep a single canonical lavender page — never a
+  // bouquets, two-tier pricing). Keep a single canonical lavender page: never a
   // competing duplicate under /services.
   if (slug === 'orenda-lavandovoho-polia') redirect('/lavender')
 
@@ -151,7 +151,7 @@ export default async function ServiceDetailPage({ params }: Props) {
               <div id="booking" className="scroll-mt-24">
                 <h2 className="font-serif text-xl font-bold text-gray-900 mb-1">Забронювати</h2>
                 <p className="text-gray-500 text-sm mb-4">
-                  Оберіть дати заїзду і виїзду — ми підтвердимо бронювання дзвінком.
+                  Оберіть дати заїзду і виїзду: ми підтвердимо бронювання дзвінком.
                 </p>
                 <DailyCalendar
                   serviceSlug={service.slug}
@@ -167,7 +167,7 @@ export default async function ServiceDetailPage({ params }: Props) {
               <div id="booking" className="scroll-mt-24">
                 <h2 className="font-serif text-xl font-bold text-gray-900 mb-1">Забронювати годину</h2>
                 <p className="text-gray-500 text-sm mb-4">
-                  Оберіть дату і зручний час — ми підтвердимо бронювання дзвінком.
+                  Оберіть дату і зручний час: ми підтвердимо бронювання дзвінком.
                 </p>
                 <HourlyCalendar
                   serviceSlug={service.slug}
@@ -184,7 +184,7 @@ export default async function ServiceDetailPage({ params }: Props) {
               <div id="order-form" className="bg-gray-50 rounded-2xl p-6 border border-gray-200">
                 <h2 className="font-serif text-xl font-bold text-gray-900 mb-1">Замовити послугу</h2>
                 <p className="text-gray-500 text-sm mb-5">
-                  Залиште контакти — уточнимо деталі та домовимося про час.
+                  Залиште контакти: уточнимо деталі та домовимося про час.
                 </p>
                 <GeneralContactForm source={`/services/${slug}`} />
               </div>

@@ -157,7 +157,7 @@ export default async function AdminCatalogPage({ searchParams }: PageProps) {
         <div className="bg-white border border-gray-100 rounded-xl shadow-sm overflow-hidden">
           <div className="px-5 py-3 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
             <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-              Каталог — рядки {from + 1}–{from + catalogProducts.length} з {totalCount}
+              Каталог: рядки {from + 1}–{from + catalogProducts.length} з {totalCount}
             </h2>
             <span className="text-xs text-gray-400">стор. {page} / {totalPages}</span>
           </div>

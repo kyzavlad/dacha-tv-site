@@ -87,7 +87,7 @@ function WarehousePicker({
           <option value="">— Оберіть відділення —</option>
           {warehouses.map((w) => (
             <option key={w.internal_id} value={w.internal_id}>
-              {w.name}{w.address ? ` — ${w.address}` : ''}
+              {w.name}{w.address ? `: ${w.address}` : ''}
             </option>
           ))}
         </select>
@@ -220,7 +220,7 @@ export default function CheckoutPage() {
           <div className="lg:col-span-3">
             <div className="bg-white rounded-2xl p-6 border border-honey-100 shadow-sm">
               <form onSubmit={handleSubmit} className="space-y-5">
-                {/* Name — split */}
+                {/* Name: split */}
                 <h2 className="font-serif text-xl font-bold text-bark">Отримувач</h2>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
@@ -384,13 +384,13 @@ export default function CheckoutPage() {
               </div>
 
               <p className="text-xs text-bark/40 mt-3">
-                Доставка — Нова Пошта. Оплата при отриманні або передоплата.
+                Доставка: Нова Пошта. Оплата при отриманні або передоплата.
               </p>
             </div>
 
             <div className="mt-4 space-y-2.5 text-xs text-bark/60">
               {[
-                'Доставка по Україні — Нова Пошта',
+                'Доставка по Україні: Нова Пошта',
                 'Оплата при отриманні або передоплата',
                 'Підтвердимо дзвінком після отримання заявки',
               ].map((text) => (

@@ -10,18 +10,18 @@ import { FlowerCard } from '@/components/flowers/FlowerCard'
 export const metadata: Metadata = {
   title: 'Хризантеми',
   description:
-    'Хризантеми від домашнього розсадника на Харківщині — помпонові, кущові, великоквіткові та рідкісні сорти. Вирощуємо для букетів, подарунків і саду.',
+    'Хризантеми від домашнього розсадника на Харківщині: помпонові, кущові, великоквіткові та рідкісні сорти. Вирощуємо для букетів, подарунків і саду.',
   alternates: { canonical: '/flowers' },
   openGraph: {
     title: 'Хризантеми',
     description: 'Понад 20 сортів хризантем від домашнього розсадника на Харківщині. Помпонові, кущові, великоквіткові.',
     type: 'website',
-    images: [{ url: '/images/dacha-tv/logo-square.png', width: 1200, height: 1200, alt: 'Дача TV — Хризантеми' }],
+    images: [{ url: '/images/dacha-tv/logo-square.png', width: 1200, height: 1200, alt: 'Дача TV: Хризантеми' }],
   },
   twitter: {
     card: 'summary_large_image',
     title: 'Хризантеми',
-    description: 'Хризантеми від домашнього розсадника на Харківщині — помпонові, кущові та великоквіткові сорти.',
+    description: 'Хризантеми від домашнього розсадника на Харківщині: помпонові, кущові та великоквіткові сорти.',
   },
 }
 
@@ -82,7 +82,7 @@ export default async function FlowersPage() {
             </h1>
             <p className="text-white/60 text-lg leading-relaxed mb-8">
               Понад {totalCount} сортів. Помпонові, кущові, великоквіткові і рідкісні.
-              Вирощуємо вдома — для букетів, подарунків і саду.
+              Вирощуємо вдома: для букетів, подарунків і саду.
             </p>
 
             {/* Quick-jump anchors */}

@@ -30,7 +30,7 @@ export default async function AdminFaqPage() {
     const client = getAdminClient()
     const { data } = await client.from('faq_items').select('*').order('display_order', { ascending: true })
     items = (data ?? []) as FaqItem[]
-  } catch { /* env not set — show empty list */ }
+  } catch { /* env not set: show empty list */ }
 
   const grouped = ['products', 'ordering', 'delivery', 'beekeeping'].reduce<Record<string, typeof items>>(
     (acc, cat) => {

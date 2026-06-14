@@ -7,14 +7,14 @@ import { HourlyCalendar } from '@/components/bookings/HourlyCalendar'
 
 export const metadata: Metadata = {
   title: 'Лавандове поле',
-  description: 'Оренда лавандового поля на Харківщині для фотосесій і відпочинку — від 1000 ₴/год. Букети лаванди під замовлення. Сезон: червень–липень.',
+  description: 'Оренда лавандового поля на Харківщині для фотосесій і відпочинку: від 1000 ₴/год. Букети лаванди під замовлення. Сезон: червень–липень.',
   alternates: { canonical: '/lavender' },
   openGraph: {
     title: 'Лавандове поле',
     description: 'Оренда лавандового поля для фотосесій і відпочинку на Харківщині. Букети лаванди під замовлення.',
     siteName: 'Дача TV',
     type: 'website',
-    images: [{ url: '/images/dacha-tv/logo-square.png', width: 1200, height: 1200, alt: 'Дача TV — лавандове поле' }],
+    images: [{ url: '/images/dacha-tv/logo-square.png', width: 1200, height: 1200, alt: 'Дача TV: лавандове поле' }],
   },
 }
 
@@ -52,7 +52,7 @@ export default async function LavenderPage() {
             </h1>
             <p className="text-white/60 text-lg leading-relaxed mb-6">
               Цвітіння у червні–липні. Орендуйте поле для фотосесії, освітніх, культурних і оздоровчих заходів.
-              За бажанням — букети лаванди під замовлення.
+              За бажанням: букети лаванди під замовлення.
             </p>
             <div className="flex flex-col sm:flex-row sm:items-center gap-4">
               <a
@@ -83,7 +83,7 @@ export default async function LavenderPage() {
                 <div className="space-y-2 text-sm">
                   <div className="flex gap-2">
                     <span className="text-purple-600 font-semibold w-28">Ціна:</span>
-                    <span>06:00–15:00 — 1000 ₴/год · 15:00–21:00 — 1200 ₴/год</span>
+                    <span>06:00–15:00: 1000 ₴/год · 15:00–21:00: 1200 ₴/год</span>
                   </div>
                   <div className="flex gap-2">
                     <span className="text-purple-600 font-semibold w-28">Включено:</span>
@@ -106,7 +106,40 @@ export default async function LavenderPage() {
 
               <div>
                 <h3 className="font-semibold text-gray-800 mb-1">Забронювати час</h3>
-                <p className="text-xs text-gray-500 mb-4">Оберіть дату та годину — підтвердимо дзвінком.</p>
+                <p className="text-xs text-gray-500 mb-4">Оберіть дату та годину: підтвердимо дзвінком.</p>
+                
+              <div className="mt-8 rounded-2xl border border-purple-100 bg-purple-50/70 p-5 text-sm text-gray-700 space-y-3">
+                <p className="font-semibold text-purple-800">
+                  Бронювання локації здійснюється за 100% передплатою, реквізити надійдуть вам у повідомленні.
+                </p>
+                <div>
+                  <p className="font-semibold text-bark mb-1">Адреса локації:</p>
+                  <p>Харківська область, смт Коротич, вул. Дачна, 27</p>
+                  <a
+                    href="https://www.google.com/maps/search/?api=1&query=Харківська%20область%20Коротич%20Дачна%2027"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-3 inline-flex items-center text-purple-700 font-semibold hover:text-purple-900"
+                  >
+                    Відкрити геолокацію в Google Maps →
+                  </a>
+                </div>
+                <a
+                  href="https://www.google.com/maps/search/?api=1&query=Харківська%20область%20Коротич%20Дачна%2027"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block overflow-hidden rounded-xl border border-purple-100 bg-white"
+                >
+                  <div className="aspect-[16/9] bg-gradient-to-br from-purple-100 via-purple-50 to-green-50 flex items-center justify-center text-center px-6">
+                    <div>
+                      <div className="text-4xl mb-3">📍</div>
+                      <p className="font-serif text-xl font-bold text-bark">Коротич, вул. Дачна, 27</p>
+                      <p className="text-gray-500 mt-1">Натисніть, щоб відкрити карту</p>
+                    </div>
+                  </div>
+                </a>
+              </div>
+
                 <HourlyCalendar
                   serviceSlug={service.slug}
                   serviceName={service.name}

@@ -36,7 +36,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const ogImage = primaryImg?.url ?? product.image_url ?? null
 
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? ''
-  const description = product.description || `${product.name} від пасіки Дача TV на Харківщині. Пряма комунікація з пасічником — без посередників.`
+  const description = product.description || `${product.name} від пасіки Дача TV на Харківщині. Пряма комунікація з пасічником: без посередників.`
   return {
     title: product.name,
     description,
@@ -166,7 +166,7 @@ export default async function BeekeeperProductPage({ params }: Props) {
 
             {isUnavailable && (
               <div className="bg-gray-100 text-gray-700 rounded-lg px-4 py-3 mb-4 text-sm font-medium">
-                Наразі немає в наявності. Залиште заявку — ми повідомимо, коли з&apos;явиться.
+                Наразі немає в наявності. Залиште заявку: ми повідомимо, коли з&apos;явиться.
               </div>
             )}
 
@@ -244,7 +244,7 @@ export default async function BeekeeperProductPage({ params }: Props) {
                 Залишити заявку
               </h2>
               <p className="text-bark/60 text-sm mb-5">
-                Щоб дізнатись наявність та вартість — залиште заявку або зателефонуйте
+                Щоб дізнатись наявність та вартість: залиште заявку або зателефонуйте
               </p>
               <BeekeeperInquiryForm source={`/beekeeper/${slug}`} />
             </div>

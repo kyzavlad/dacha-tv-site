@@ -13,17 +13,17 @@ import {
 export const metadata: Metadata = {
   title: "Зв'язатись з нами",
   description:
-    "Зателефонуйте або напишіть — пасіка Дача TV відповідає протягом кількох годин. Адреса: Коротич, Пісочинська ОТГ, Харківська область.",
+    "Зателефонуйте або напишіть: пасіка Дача TV відповідає протягом кількох годин. Адреса: Коротич, Пісочинська ОТГ, Харківська область.",
   alternates: { canonical: '/contact' },
   openGraph: {
     title: "Контакти",
     description: "Зв'яжіться з пасікою Дача TV на Харківщині. Телефон, Telegram, адреса.",
-    images: [{ url: '/images/dacha-tv/logo-square.png', width: 1200, height: 1200, alt: 'Дача TV — Контакти' }],
+    images: [{ url: '/images/dacha-tv/logo-square.png', width: 1200, height: 1200, alt: 'Дача TV: Контакти' }],
   },
   twitter: {
     card: 'summary_large_image',
     title: "Контакти",
-    description: "Зателефонуйте або напишіть — пасіка Дача TV відповідає протягом кількох годин.",
+    description: "Зателефонуйте або напишіть: пасіка Дача TV відповідає протягом кількох годин.",
   },
 }
 
@@ -59,7 +59,7 @@ export default async function ContactPage() {
             Зв&apos;язатись з нами
           </h1>
           <p className="text-gray-500 text-lg max-w-xl">
-            Відповідаємо протягом кількох годин. Найшвидший спосіб — зателефонувати.
+            Відповідаємо протягом кількох годин. Найшвидший спосіб: зателефонувати.
           </p>
         </div>
       </div>
@@ -125,7 +125,7 @@ export default async function ContactPage() {
                 Відповідаємо протягом кількох годин
               </p>
               <p className="text-forest-700 text-sm mt-1">
-                Найшвидший спосіб — зателефонувати або написати в Telegram.
+                Найшвидший спосіб: зателефонувати або написати в Telegram.
               </p>
             </div>
 

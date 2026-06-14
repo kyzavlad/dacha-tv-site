@@ -11,7 +11,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: 'FAQ',
     description: 'Часті запитання про мед, замовлення, доставку та бджільництво від пасіки Дача TV.',
-    images: [{ url: '/images/dacha-tv/logo-square.png', width: 1200, height: 1200, alt: 'Дача TV — FAQ' }],
+    images: [{ url: '/images/dacha-tv/logo-square.png', width: 1200, height: 1200, alt: 'Дача TV: FAQ' }],
   },
   twitter: {
     card: 'summary_large_image',
@@ -120,7 +120,7 @@ export default async function FaqPage() {
 
         <div className="bg-honey-50 rounded-2xl p-6 border border-honey-200 text-center">
           <h2 className="font-serif text-xl font-bold text-bark mb-3">Не знайшли відповіді?</h2>
-          <p className="text-bark/70 mb-4">Зателефонуйте або напишіть — відповімо на будь-яке питання</p>
+          <p className="text-bark/70 mb-4">Зателефонуйте або напишіть: відповімо на будь-яке питання</p>
           <a
             href="/contact"
             className="inline-flex items-center gap-2 bg-honey-700 hover:bg-honey-800 text-white font-semibold px-6 py-3 rounded-lg transition-colors min-h-[48px]"
