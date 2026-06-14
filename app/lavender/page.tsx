@@ -116,7 +116,7 @@ export default async function LavenderPage() {
                   <p className="font-semibold text-bark mb-1">Адреса локації:</p>
                   <p>Харківська область, смт Коротич, вул. Дачна, 27</p>
                   <a
-                    href="https://www.google.com/maps/search/?api=1&query=Харківська%20область%20Коротич%20Дачна%2027"
+                    href="https://www.google.com/maps/dir/?api=1&destination=49.9420503,36.0561702"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="mt-3 inline-flex items-center text-purple-700 font-semibold hover:text-purple-900"
@@ -125,7 +125,7 @@ export default async function LavenderPage() {
                   </a>
                 </div>
                 <a
-                  href="https://www.google.com/maps/search/?api=1&query=Харківська%20область%20Коротич%20Дачна%2027"
+                  href="https://www.google.com/maps/dir/?api=1&destination=49.9420503,36.0561702"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="block overflow-hidden rounded-xl border border-purple-100 bg-white"
