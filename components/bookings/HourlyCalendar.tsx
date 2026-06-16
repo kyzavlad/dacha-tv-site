@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useTransition } from 'react'
 import { submitHourlyBooking } from '@/actions/submitBooking'
+import { computeBookingPrice, type HourlyPricingConfig } from '@/lib/bookings/pricing'
 
 interface Props {
   serviceSlug: string
@@ -15,7 +16,6 @@ interface Props {
   // Optional limits/extras (used by the lavender field rental). Omitted →
   // current generic behaviour for other hourly services.
   maxDateISO?: string          // latest selectable date, e.g. '2026-07-20'
-  maxGuests?: number           // cap the guest selector (default 20)
   enableBouquets?: boolean     // show the lavender bouquet upsell
   bouquetPrice?: number        // price per bouquet (default 100)
   requireRules?: boolean       // require a rules-confirmation checkbox
@@ -24,6 +24,10 @@ interface Props {
   // cost eveningPriceUah instead of pricePerHour (used by the lavender field).
   eveningStartHour?: number
   eveningPriceUah?: number
+  // Extra guests above the included capacity (0 → no extra-guest UI).
+  maxExtraGuests?: number
+  // Multi-hour duration (1 → single hour, no duration selector).
+  maxDurationHours?: number
 }
 
 function toISODate(d: Date): string {
@@ -37,8 +41,9 @@ function formatDateUA(d: Date): string {
 export function HourlyCalendar({
   serviceSlug, serviceName, pricePerHour, capacity, extraGuestPrice,
   slotStartHour, slotEndHour, source,
-  maxDateISO, maxGuests = 20, enableBouquets = false, bouquetPrice = 100,
+  maxDateISO, enableBouquets = false, bouquetPrice = 100,
   requireRules = false, rulesLabel, eveningStartHour, eveningPriceUah,
+  maxExtraGuests = 0, maxDurationHours = 1,
 }: Props) {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
@@ -48,13 +53,15 @@ export function HourlyCalendar({
   const [viewMonth, setViewMonth] = useState(new Date(today.getFullYear(), today.getMonth(), 1))
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
   const [selectedHour, setSelectedHour] = useState<number | null>(null)
+  const [duration, setDuration] = useState(1)
   const [bookedHours, setBookedHours] = useState<number[]>([])
   const [loading, setLoading] = useState(false)
 
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
-  const [guestCount, setGuestCount] = useState(1)
   const [comment, setComment] = useState('')
+  const [extraWanted, setExtraWanted] = useState(false)
+  const [extraGuests, setExtraGuests] = useState(1)
   const [bouquetWanted, setBouquetWanted] = useState(false)
   const [bouquetQty, setBouquetQty] = useState(1)
   const [rulesAccepted, setRulesAccepted] = useState(false)
@@ -90,13 +97,34 @@ export function HourlyCalendar({
   const slots: number[] = []
   for (let h = slotStartHour; h < slotEndHour; h++) slots.push(h)
 
-  // Per-slot base rate — two-tier when evening pricing is configured.
-  const hourPrice = (eveningStartHour != null && eveningPriceUah != null && selectedHour != null && selectedHour >= eveningStartHour)
-    ? eveningPriceUah
-    : pricePerHour
-  const extra = Math.max(0, guestCount - capacity) * extraGuestPrice
-  const bouquetCost = enableBouquets && bouquetWanted ? Math.max(0, bouquetQty) * bouquetPrice : 0
-  const total = hourPrice + extra + bouquetCost
+  // Longest run of free, in-hours slots starting at `start` (caps duration).
+  function maxDurationFrom(start: number): number {
+    let run = 0
+    for (let h = start; h < slotEndHour && !bookedHours.includes(h) && run < maxDurationHours; h++) run++
+    return Math.max(1, run)
+  }
+  const maxDur = selectedHour != null ? maxDurationFrom(selectedHour) : 1
+
+  // Keep duration within the valid range whenever the start hour changes.
+  useEffect(() => {
+    setDuration(d => Math.min(Math.max(1, d), maxDur))
+  }, [selectedHour, maxDur])
+
+  const cfg: HourlyPricingConfig = {
+    flatPricePerHour: pricePerHour,
+    dayPriceUah: pricePerHour,
+    eveningStartHour,
+    eveningPriceUah,
+  }
+  const price = computeBookingPrice({
+    startHour: selectedHour ?? slotStartHour,
+    durationHours: duration,
+    extraGuests: maxExtraGuests > 0 && extraWanted ? Math.max(1, extraGuests) : 0,
+    extraGuestPrice,
+    bouquetQty: enableBouquets && bouquetWanted ? Math.max(1, bouquetQty) : 0,
+    bouquetPrice,
+    cfg,
+  })
 
   // Disable the "next month" arrow once we'd move past the max bookable date.
   const canGoNext = !maxDate || new Date(viewMonth.getFullYear(), viewMonth.getMonth() + 1, 1) <= maxDate
@@ -112,8 +140,6 @@ export function HourlyCalendar({
       return
     }
 
-    const qty = enableBouquets && bouquetWanted ? Math.max(1, Math.floor(bouquetQty)) : 0
-
     const fd = new FormData()
     fd.append('serviceSlug', serviceSlug)
     fd.append('serviceName', serviceName)
@@ -121,8 +147,9 @@ export function HourlyCalendar({
     fd.append('phone', phone)
     fd.append('bookingDate', toISODate(selectedDate))
     fd.append('bookingHour', String(selectedHour))
-    fd.append('guestCount', String(guestCount))
-    fd.append('bouquetQty', String(qty))
+    fd.append('durationHours', String(duration))
+    fd.append('extraGuestsCount', String(price.extraGuests))
+    fd.append('bouquetQty', String(price.bouquetQty))
     fd.append('rulesAccepted', requireRules ? (rulesAccepted ? 'true' : 'false') : 'true')
     fd.append('comment', comment)
     fd.append('source', source ?? '')
@@ -148,7 +175,7 @@ export function HourlyCalendar({
           Ми зв'яжемось з вами за номером <strong>{phone}</strong> для підтвердження.
         </p>
         <button
-          onClick={() => { setSuccess(false); setSelectedDate(null); setSelectedHour(null); setName(''); setPhone(''); setGuestCount(1); setComment(''); setBouquetWanted(false); setBouquetQty(1); setRulesAccepted(false) }}
+          onClick={() => { setSuccess(false); setSelectedDate(null); setSelectedHour(null); setDuration(1); setName(''); setPhone(''); setComment(''); setExtraWanted(false); setExtraGuests(1); setBouquetWanted(false); setBouquetQty(1); setRulesAccepted(false) }}
           className="mt-4 text-xs text-purple-600 underline"
         >
           Забронювати ще
@@ -156,6 +183,8 @@ export function HourlyCalendar({
       </div>
     )
   }
+
+  const endHour = (selectedHour ?? slotStartHour) + duration
 
   return (
     <div className="space-y-6">
@@ -203,7 +232,7 @@ export function HourlyCalendar({
       {selectedDate && (
         <div>
           <p className="text-sm font-semibold text-gray-700 mb-3">
-            Вибір часу · {formatDateUA(selectedDate)}
+            Початок · {formatDateUA(selectedDate)}
           </p>
           {loading ? (
             <p className="text-xs text-gray-400">Завантаження…</p>
@@ -237,8 +266,23 @@ export function HourlyCalendar({
       {selectedDate && selectedHour !== null && (
         <form onSubmit={handleSubmit} className="bg-gray-50 rounded-2xl p-5 space-y-4">
           <div className="text-sm font-semibold text-gray-800">
-            {formatDateUA(selectedDate)} · {String(selectedHour).padStart(2, '0')}:00–{String(selectedHour + 1).padStart(2, '0')}:00
+            {formatDateUA(selectedDate)} · {String(selectedHour).padStart(2, '0')}:00–{String(endHour).padStart(2, '0')}:00
           </div>
+
+          {/* Duration */}
+          {maxDurationHours > 1 && (
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Тривалість</label>
+              <select
+                value={duration} onChange={e => setDuration(Number(e.target.value))}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-purple-500"
+              >
+                {Array.from({ length: maxDur }, (_, i) => i + 1).map(h => (
+                  <option key={h} value={h}>{h} {h === 1 ? 'година' : h < 5 ? 'години' : 'годин'}</option>
+                ))}
+              </select>
+            </div>
+          )}
 
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Ваше ім'я *</label>
@@ -260,17 +304,33 @@ export function HourlyCalendar({
             {fieldErrors.phone && <p className="text-xs text-red-500 mt-0.5">{fieldErrors.phone[0]}</p>}
           </div>
 
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Кількість гостей</label>
-            <select
-              value={guestCount} onChange={e => setGuestCount(Number(e.target.value))}
-              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-purple-500"
-            >
-              {Array.from({ length: Math.max(1, maxGuests) }, (_, i) => i + 1).map(n => (
-                <option key={n} value={n}>{n} {n === 1 ? 'особа' : n < 5 ? 'особи' : 'осіб'}</option>
-              ))}
-            </select>
-          </div>
+          {/* Included guests + optional extra guests */}
+          {maxExtraGuests > 0 && (
+            <div className="rounded-xl border border-purple-100 bg-purple-50/50 p-3">
+              <p className="text-sm text-gray-700 mb-2">
+                Включено <strong>{capacity}</strong> {capacity === 1 ? 'особа' : capacity < 5 ? 'особи' : 'осіб'}.
+              </p>
+              <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                <input
+                  type="checkbox" checked={extraWanted}
+                  onChange={e => setExtraWanted(e.target.checked)}
+                  className="w-4 h-4 accent-purple-700"
+                />
+                Будуть додаткові гості (понад {capacity})? +{extraGuestPrice} ₴/особа
+              </label>
+              {extraWanted && (
+                <div className="mt-3 flex items-center gap-2">
+                  <span className="text-xs text-gray-600">Додатково людей:</span>
+                  <input
+                    type="number" min={1} max={maxExtraGuests} step={1} value={extraGuests}
+                    onChange={e => setExtraGuests(Math.min(maxExtraGuests, Math.max(1, Math.floor(Number(e.target.value) || 1))))}
+                    className="w-20 border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:border-purple-500"
+                  />
+                  <span className="text-xs text-gray-500">= +{price.extraTotal.toLocaleString('uk-UA')} ₴</span>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Bouquet upsell */}
           {enableBouquets && (
@@ -291,26 +351,34 @@ export function HourlyCalendar({
                     onChange={e => setBouquetQty(Math.max(1, Math.floor(Number(e.target.value) || 1)))}
                     className="w-20 border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:border-purple-500"
                   />
-                  <span className="text-xs text-gray-500">
-                    = {(Math.max(1, bouquetQty) * bouquetPrice).toLocaleString('uk-UA')} ₴
-                  </span>
+                  <span className="text-xs text-gray-500">= +{price.bouquetTotal.toLocaleString('uk-UA')} ₴</span>
                 </div>
               )}
             </div>
           )}
 
-          <div className="text-sm text-gray-700">
-            Вартість: <strong>{total.toLocaleString('uk-UA')} ₴</strong>
-            {guestCount > capacity && (
-              <span className="text-xs text-gray-500 ml-1">
-                ({hourPrice.toLocaleString('uk-UA')} + {extra.toLocaleString('uk-UA')} за {guestCount - capacity} додат. {(guestCount - capacity) === 1 ? 'гостя' : 'гостей'})
-              </span>
+          {/* Price breakdown */}
+          <div className="rounded-xl border border-gray-200 bg-white p-3 text-sm text-gray-700 space-y-1">
+            <div className="flex justify-between">
+              <span>Оренда{duration > 1 ? ` · ${duration} год` : ''}</span>
+              <span>{price.base.toLocaleString('uk-UA')} ₴</span>
+            </div>
+            {price.extraTotal > 0 && (
+              <div className="flex justify-between text-gray-500">
+                <span>Додатково гостей: +{price.extraGuests}</span>
+                <span>+{price.extraTotal.toLocaleString('uk-UA')} ₴</span>
+              </div>
             )}
-            {bouquetCost > 0 && (
-              <span className="text-xs text-gray-500 ml-1">
-                (включно з букетами: {bouquetCost.toLocaleString('uk-UA')} ₴)
-              </span>
+            {price.bouquetTotal > 0 && (
+              <div className="flex justify-between text-gray-500">
+                <span>Букети лаванди: {price.bouquetQty} шт</span>
+                <span>+{price.bouquetTotal.toLocaleString('uk-UA')} ₴</span>
+              </div>
             )}
+            <div className="flex justify-between font-bold text-gray-900 border-t border-gray-100 pt-1 mt-1">
+              <span>Разом</span>
+              <span>{price.total.toLocaleString('uk-UA')} ₴</span>
+            </div>
           </div>
 
           {/* Rules confirmation */}

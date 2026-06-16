@@ -3,23 +3,38 @@
 import { z } from 'zod'
 import { getAdminClient } from '@/lib/supabase/admin'
 import { sendTelegramNotification } from '@/lib/notifications/telegram'
+import { findConfirmedHourConflict, type Booking } from '@/lib/bookings/queries'
+import {
+  LAVENDER_SLUG,
+  LAVENDER_INCLUDED_GUESTS,
+  LAVENDER_EXTRA_GUEST_PRICE_UAH,
+  LAVENDER_MAX_EXTRA_GUESTS,
+  LAVENDER_BOUQUET_PRICE_UAH,
+  LAVENDER_DAY_PRICE_UAH,
+  LAVENDER_EVENING_PRICE_UAH,
+  LAVENDER_EVENING_FROM_HOUR,
+  LAVENDER_MAX_DURATION_HOURS,
+  computeBookingPrice,
+  type HourlyPricingConfig,
+} from '@/lib/bookings/pricing'
 
 const ukrainianPhone = /^(\+380|0)\d{9}$/
 
-// Lavender field rental — special rules: season ends 20 July, max 5 guests, a
-// rules-confirmation checkbox is required, and an optional bouquet upsell.
-const LAVENDER_SLUG = 'orenda-lavandovoho-polia'
-const LAVENDER_MAX_GUESTS = 5
-const BOUQUET_PRICE_UAH = 100
+const BOUQUET_PRICE_UAH = LAVENDER_BOUQUET_PRICE_UAH
 const lavenderMaxDate = () => `${new Date().getFullYear()}-07-20`
 
-// Two-tier lavender hourly pricing: 06:00–15:00 = 1000 ₴, 15:00–21:00 = 1200 ₴.
-const LAVENDER_DAY_PRICE_UAH = 1000
-const LAVENDER_EVENING_PRICE_UAH = 1200
-const LAVENDER_EVENING_FROM_HOUR = 15
-
-function lavenderHourPrice(hour: number): number {
-  return hour >= LAVENDER_EVENING_FROM_HOUR ? LAVENDER_EVENING_PRICE_UAH : LAVENDER_DAY_PRICE_UAH
+// Build the hourly pricing config for a service. Lavender uses the two-tier
+// (day/evening) rate; every other hourly service uses its flat price.
+function pricingConfig(slug: string, flatPricePerHour: number): HourlyPricingConfig {
+  if (slug === LAVENDER_SLUG) {
+    return {
+      flatPricePerHour: LAVENDER_DAY_PRICE_UAH,
+      dayPriceUah: LAVENDER_DAY_PRICE_UAH,
+      eveningStartHour: LAVENDER_EVENING_FROM_HOUR,
+      eveningPriceUah: LAVENDER_EVENING_PRICE_UAH,
+    }
+  }
+  return { flatPricePerHour }
 }
 
 // Public site URL for clean notification links (never a raw internal path).
@@ -46,7 +61,8 @@ const hourlyBookingSchema = z.object({
   phone: z.string().regex(ukrainianPhone, 'Введіть коректний номер телефону (+380XXXXXXXXX або 0XXXXXXXXX)'),
   bookingDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Невірний формат дати'),
   bookingHour: z.coerce.number().int().min(0).max(23),
-  guestCount: z.coerce.number().int().min(1).max(50),
+  durationHours: z.coerce.number().int().min(1).max(24).optional(),
+  extraGuestsCount: z.coerce.number().int().min(0).max(100).optional(),
   bouquetQty: z.coerce.number().int().min(0).max(99).optional(),
   rulesAccepted: z.string().optional(),
   comment: z.string().max(500).optional(),
@@ -96,7 +112,8 @@ export async function submitHourlyBooking(formData: FormData): Promise<ActionRes
     phone: formData.get('phone'),
     bookingDate: formData.get('bookingDate'),
     bookingHour: formData.get('bookingHour'),
-    guestCount: formData.get('guestCount') ?? '1',
+    durationHours: formData.get('durationHours') ?? '1',
+    extraGuestsCount: formData.get('extraGuestsCount') ?? '0',
     bouquetQty: formData.get('bouquetQty') ?? '0',
     rulesAccepted: formData.get('rulesAccepted') ?? undefined,
     comment: formData.get('comment') ?? undefined,
@@ -108,44 +125,57 @@ export async function submitHourlyBooking(formData: FormData): Promise<ActionRes
   if (!parsed.success) return { success: false, error: 'Перевірте правильність введених даних', fieldErrors: fieldErrors(parsed.error) }
 
   const d = parsed.data
+  const isLavender = d.serviceSlug === LAVENDER_SLUG
 
   // Lavender-specific server-side rules (mirror the form). Other hourly services
   // are unaffected.
-  if (d.serviceSlug === LAVENDER_SLUG) {
+  if (isLavender) {
     if (d.bookingDate > lavenderMaxDate()) {
       return { success: false, error: 'Бронювання лавандового поля доступне лише до 20 липня.', fieldErrors: { bookingDate: ['Дата після 20 липня недоступна'] } }
     }
-    if (d.guestCount > LAVENDER_MAX_GUESTS) {
-      return { success: false, error: `Максимум ${LAVENDER_MAX_GUESTS} гостей на бронювання.`, fieldErrors: { guestCount: [`Максимум ${LAVENDER_MAX_GUESTS} гостей`] } }
+    if ((d.extraGuestsCount ?? 0) > LAVENDER_MAX_EXTRA_GUESTS) {
+      return { success: false, error: `Максимум ${LAVENDER_MAX_EXTRA_GUESTS} додаткових гостей.`, fieldErrors: { extraGuestsCount: [`Максимум ${LAVENDER_MAX_EXTRA_GUESTS} додаткових гостей`] } }
     }
     if (d.rulesAccepted !== 'true') {
       return { success: false, error: 'Підтвердіть, що ознайомлені з правилами відвідування лавандового поля.', fieldErrors: { rulesAccepted: ['Потрібно підтвердити правила'] } }
     }
   }
 
-  const bouquetQty = d.bouquetQty && d.bouquetQty > 0 ? d.bouquetQty : 0
-  const bouquetTotal = bouquetQty * BOUQUET_PRICE_UAH
-
   try {
     const client = getAdminClient()
     const { data: svc } = await client
       .from('services')
-      .select('id, price_uah, capacity, extra_guest_price_uah')
+      .select('id, price_uah, capacity, extra_guest_price_uah, slot_start_hour, slot_end_hour')
       .eq('slug', d.serviceSlug)
       .single()
 
-    // Lavender uses a two-tier hourly rate by start hour; other hourly services
-    // use the flat service price.
-    const basePrice = d.serviceSlug === LAVENDER_SLUG
-      ? lavenderHourPrice(d.bookingHour)
-      : (svc?.price_uah ?? 1000)
-    const capacity = svc?.capacity ?? 5
-    const extraRate = svc?.extra_guest_price_uah ?? 200
-    const extra = Math.max(0, d.guestCount - capacity) * extraRate
-    const total = basePrice + extra + bouquetTotal
+    const capacity = svc?.capacity ?? LAVENDER_INCLUDED_GUESTS
+    const extraRate = svc?.extra_guest_price_uah ?? LAVENDER_EXTRA_GUEST_PRICE_UAH
+    const slotEnd = svc?.slot_end_hour ?? 21
+
+    // Clamp duration so it never runs past the service's closing hour.
+    const maxDuration = Math.max(1, Math.min(LAVENDER_MAX_DURATION_HOURS, slotEnd - d.bookingHour))
+    const durationHours = Math.min(Math.max(1, d.durationHours ?? 1), maxDuration)
+    const extraGuests = Math.max(0, d.extraGuestsCount ?? 0)
+    const bouquetQty = d.bouquetQty && d.bouquetQty > 0 ? d.bouquetQty : 0
+
+    // Server-authoritative price (never trust any client-sent total).
+    const price = computeBookingPrice({
+      startHour: d.bookingHour,
+      durationHours,
+      extraGuests,
+      extraGuestPrice: extraRate,
+      bouquetQty,
+      bouquetPrice: isLavender ? BOUQUET_PRICE_UAH : 0,
+      cfg: pricingConfig(d.serviceSlug, svc?.price_uah ?? 1000),
+    })
+    const total = price.total
+    const guestCount = capacity + extraGuests
 
     // Save the booking to Supabase FIRST. Notifications are best-effort and run
     // only after a confirmed save, so they can never break the booking itself.
+    // New bookings are status='new' and do NOT block the calendar until an admin
+    // confirms them.
     const bookingRow: Record<string, unknown> = {
       service_id: svc?.id ?? null,
       service_slug: d.serviceSlug,
@@ -154,7 +184,9 @@ export async function submitHourlyBooking(formData: FormData): Promise<ActionRes
       phone: d.phone,
       booking_date: d.bookingDate,
       booking_hour: d.bookingHour,
-      guest_count: d.guestCount,
+      duration_hours: durationHours,
+      guest_count: guestCount,
+      extra_guests_count: extraGuests,
       bouquet_qty: bouquetQty,
       total_price_uah: total,
       comment: d.comment ?? null,
@@ -162,15 +194,15 @@ export async function submitHourlyBooking(formData: FormData): Promise<ActionRes
       status: 'new',
     }
 
-    let { error } = await client.from('bookings').insert(bookingRow)
-
-    // Graceful degradation: if bouquet_qty hasn't been migrated yet (056),
-    // retry without it so the booking still saves. Clear server log either way.
-    if (error && isMissingColumn(error, 'bouquet_qty')) {
-      console.error('[booking] bookings.bouquet_qty missing — apply migration 056_booking_bouquets.sql. Saving booking without bouquet_qty for now.')
-      const fallbackRow = { ...bookingRow }
-      delete fallbackRow.bouquet_qty
-      ;({ error } = await client.from('bookings').insert(fallbackRow))
+    // Drop any column the DB hasn't migrated yet (058/056) and retry, so the
+    // booking always saves even on an older schema. Clear server log either way.
+    let error = (await client.from('bookings').insert(bookingRow)).error
+    for (const col of ['duration_hours', 'extra_guests_count', 'bouquet_qty']) {
+      if (error && isMissingColumn(error, col)) {
+        console.error(`[booking] bookings.${col} missing — apply migrations 056/058. Saving without it for now.`)
+        delete bookingRow[col]
+        error = (await client.from('bookings').insert(bookingRow)).error
+      }
     }
 
     if (error) {
@@ -179,15 +211,20 @@ export async function submitHourlyBooking(formData: FormData): Promise<ActionRes
     }
 
     const pageLink = publicUrl(d.source || '/lavender')
+    const endHour = d.bookingHour + durationHours
+    const timing = `${d.bookingDate} ${String(d.bookingHour).padStart(2, '0')}:00–${String(endHour).padStart(2, '0')}:00`
 
-    // Telegram — clean, readable message (no internal ID, public page link).
+    // Telegram — structured, readable message explaining every price component.
     sendTelegramNotification({
       type: 'lavender_booking',
       name: d.name,
       phone: d.phone,
       product: d.serviceName,
-      timing: `${d.bookingDate} о ${String(d.bookingHour).padStart(2, '0')}:00`,
-      quantity: String(d.guestCount),
+      timing,
+      duration_hours: durationHours,
+      quantity: String(capacity),
+      extra_guests: extraGuests || undefined,
+      extra_guests_price: extraGuests > 0 ? price.extraTotal : undefined,
       bouquet_qty: bouquetQty || undefined,
       bouquet_unit_price: BOUQUET_PRICE_UAH,
       total_price_uah: total,
@@ -205,10 +242,14 @@ export async function submitHourlyBooking(formData: FormData): Promise<ActionRes
       page_url: pageLink,
       date: d.bookingDate,
       time: `${String(d.bookingHour).padStart(2, '0')}:00`,
-      guests: d.guestCount,
+      duration_hours: durationHours,
+      guests_included: capacity,
+      extra_guests: extraGuests,
+      extra_guests_total: price.extraTotal,
       bouquet_qty: bouquetQty,
       bouquet_unit_price: bouquetQty > 0 ? BOUQUET_PRICE_UAH : 0,
-      bouquet_total: bouquetTotal,
+      bouquet_total: price.bouquetTotal,
+      base_total: price.base,
       total_price: total,
       message: d.comment ?? null,
     })
@@ -311,18 +352,105 @@ export async function submitDailyBooking(formData: FormData): Promise<ActionResu
   return { success: true }
 }
 
+// Update status / notes. Confirming runs a server-side conflict check so two
+// confirmed bookings can never occupy the same slot. Cancelling never deletes
+// the row (history is preserved) and releases the slot for others.
 export async function adminUpdateBookingStatus(
   id: string,
-  status: 'new' | 'confirmed' | 'cancelled' | 'completed' | 'blocked',
+  status: Booking['status'],
   adminNotes?: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const client = getAdminClient()
+
+    if (status === 'confirmed') {
+      const { data: b } = await client
+        .from('bookings')
+        .select('service_slug, booking_type, booking_date, booking_hour, duration_hours')
+        .eq('id', id)
+        .single()
+      if (b?.booking_type === 'hourly' && b.booking_date && b.booking_hour != null) {
+        const res = await findConfirmedHourConflict(b.service_slug, b.booking_date, b.booking_hour, b.duration_hours ?? 1, id)
+        if (res.conflict) {
+          return { success: false, error: 'Цей час уже зайнятий іншим підтвердженим бронюванням. Підтвердження скасовано.' }
+        }
+      }
+    }
+
     const payload: Record<string, unknown> = { status }
     if (adminNotes !== undefined) payload.admin_notes = adminNotes
     const { error } = await client.from('bookings').update(payload).eq('id', id)
     if (error) return { success: false, error: error.message }
     return { success: true }
+  } catch (e) {
+    return { success: false, error: e instanceof Error ? e.message : String(e) }
+  }
+}
+
+// Edit an hourly booking's date / start hour / duration. Recalculates the price
+// for the new schedule and re-runs the conflict check when the booking is (or is
+// being) confirmed.
+export async function adminUpdateBookingSchedule(
+  id: string,
+  input: { bookingDate: string; bookingHour: number; durationHours: number },
+  alsoConfirm = false,
+): Promise<{ success: boolean; error?: string; total?: number; durationHours?: number }> {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.bookingDate)) return { success: false, error: 'Невірний формат дати' }
+  const bookingHour = Math.min(23, Math.max(0, Math.floor(input.bookingHour)))
+  let durationHours = Math.min(LAVENDER_MAX_DURATION_HOURS, Math.max(1, Math.floor(input.durationHours || 1)))
+
+  try {
+    const client = getAdminClient()
+    const { data: b } = await client
+      .from('bookings')
+      .select('service_slug, status, extra_guests_count, bouquet_qty')
+      .eq('id', id)
+      .single()
+    if (!b) return { success: false, error: 'Бронювання не знайдено' }
+
+    const willBeConfirmed = alsoConfirm || b.status === 'confirmed'
+    if (willBeConfirmed) {
+      const res = await findConfirmedHourConflict(b.service_slug, input.bookingDate, bookingHour, durationHours, id)
+      if (res.conflict) {
+        return { success: false, error: 'Цей час уже зайнятий іншим підтвердженим бронюванням.' }
+      }
+    }
+
+    const { data: svc } = await client
+      .from('services')
+      .select('price_uah, capacity, extra_guest_price_uah, slot_end_hour')
+      .eq('slug', b.service_slug)
+      .single()
+    const slotEnd = svc?.slot_end_hour ?? 21
+    durationHours = Math.min(durationHours, Math.max(1, slotEnd - bookingHour))
+    const extraGuests = Math.max(0, b.extra_guests_count ?? 0)
+    const bouquetQty = Math.max(0, b.bouquet_qty ?? 0)
+
+    const price = computeBookingPrice({
+      startHour: bookingHour,
+      durationHours,
+      extraGuests,
+      extraGuestPrice: svc?.extra_guest_price_uah ?? LAVENDER_EXTRA_GUEST_PRICE_UAH,
+      bouquetQty,
+      bouquetPrice: b.service_slug === LAVENDER_SLUG ? BOUQUET_PRICE_UAH : 0,
+      cfg: pricingConfig(b.service_slug, svc?.price_uah ?? 1000),
+    })
+
+    const payload: Record<string, unknown> = {
+      booking_date: input.bookingDate,
+      booking_hour: bookingHour,
+      duration_hours: durationHours,
+      total_price_uah: price.total,
+    }
+    if (alsoConfirm) payload.status = 'confirmed'
+
+    let error = (await client.from('bookings').update(payload).eq('id', id)).error
+    if (error && isMissingColumn(error, 'duration_hours')) {
+      delete payload.duration_hours
+      error = (await client.from('bookings').update(payload).eq('id', id)).error
+    }
+    if (error) return { success: false, error: error.message }
+    return { success: true, total: price.total, durationHours }
   } catch (e) {
     return { success: false, error: e instanceof Error ? e.message : String(e) }
   }

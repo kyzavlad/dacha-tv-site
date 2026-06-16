@@ -1,11 +1,11 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { adminUpdateBookingStatus } from '@/actions/submitBooking'
+import { adminUpdateBookingStatus, adminUpdateBookingSchedule } from '@/actions/submitBooking'
 import type { Booking } from '@/lib/bookings/queries'
 
 const STATUS_LABELS: Record<Booking['status'], string> = {
-  new: 'Нове',
+  new: 'Нове (не блокує)',
   confirmed: 'Підтверджено',
   cancelled: 'Скасовано',
   completed: 'Завершено',
@@ -34,20 +34,44 @@ function fmtDateTime(iso: string): string {
   return new Date(iso).toLocaleDateString('uk-UA', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
 }
 
-function BookingRow({ booking, onUpdate }: { booking: Booking; onUpdate: (id: string, status: Booking['status']) => void }) {
+function BookingRow({ booking, onUpdate }: { booking: Booking; onUpdate: (id: string, patch: Partial<Booking>) => void }) {
   const [open, setOpen] = useState(false)
   const [pending, start] = useTransition()
   const [notes, setNotes] = useState(booking.admin_notes ?? '')
+  const [error, setError] = useState<string | null>(null)
+  const [okMsg, setOkMsg] = useState<string | null>(null)
 
-  function updateStatus(status: Booking['status']) {
+  // Editable schedule (hourly only)
+  const [date, setDate] = useState(booking.booking_date ?? '')
+  const [hour, setHour] = useState(booking.booking_hour ?? 6)
+  const [duration, setDuration] = useState(booking.duration_hours ?? 1)
+
+  function run(fn: () => Promise<{ success: boolean; error?: string; total?: number; durationHours?: number }>, okText: string, patch?: Partial<Booking>) {
+    setError(null); setOkMsg(null)
     start(async () => {
-      await adminUpdateBookingStatus(booking.id, status, notes || undefined)
-      onUpdate(booking.id, status)
+      const res = await fn()
+      if (res.success) {
+        setOkMsg(okText)
+        onUpdate(booking.id, { ...patch, ...(res.total != null ? { total_price_uah: res.total } : {}), ...(res.durationHours != null ? { duration_hours: res.durationHours } : {}) })
+      } else {
+        setError(res.error ?? 'Помилка')
+      }
     })
   }
 
-  const when = booking.booking_type === 'hourly'
-    ? `${fmtDate(booking.booking_date)} ${booking.booking_hour != null ? `${String(booking.booking_hour).padStart(2, '0')}:00` : ''}`
+  const setStatus = (status: Booking['status']) =>
+    run(() => adminUpdateBookingStatus(booking.id, status, notes || undefined), 'Збережено', { status })
+
+  const saveSchedule = (alsoConfirm: boolean) =>
+    run(
+      () => adminUpdateBookingSchedule(booking.id, { bookingDate: date, bookingHour: Number(hour), durationHours: Number(duration) }, alsoConfirm),
+      alsoConfirm ? 'Збережено та підтверджено' : 'Час збережено',
+      { booking_date: date, booking_hour: Number(hour), ...(alsoConfirm ? { status: 'confirmed' as const } : {}) },
+    )
+
+  const isHourly = booking.booking_type === 'hourly'
+  const when = isHourly
+    ? `${fmtDate(booking.booking_date)} ${booking.booking_hour != null ? `${String(booking.booking_hour).padStart(2, '0')}:00` : ''}${booking.duration_hours && booking.duration_hours > 1 ? `–${String((booking.booking_hour ?? 0) + booking.duration_hours).padStart(2, '0')}:00` : ''}`
     : `${fmtDate(booking.check_in)} → ${fmtDate(booking.check_out)}`
 
   return (
@@ -62,6 +86,7 @@ function BookingRow({ booking, onUpdate }: { booking: Booking; onUpdate: (id: st
           </div>
           <div className="text-xs text-gray-500">
             {SERVICE_LABELS[booking.service_slug] ?? booking.service_slug} · {when} · {booking.guest_count} ос.
+            {booking.extra_guests_count ? ` (+${booking.extra_guests_count})` : ''}
             {booking.bouquet_qty ? ` · 💐 ${booking.bouquet_qty}` : ''}
             {booking.total_price_uah ? ` · ${booking.total_price_uah.toLocaleString('uk-UA')} ₴` : ''}
           </div>
@@ -75,6 +100,12 @@ function BookingRow({ booking, onUpdate }: { booking: Booking; onUpdate: (id: st
           <div className="grid grid-cols-2 gap-2 text-xs">
             <div><span className="text-gray-400">Телефон:</span> <a href={`tel:${booking.phone}`} className="text-blue-600 font-medium">{booking.phone}</a></div>
             <div><span className="text-gray-400">Гостей:</span> {booking.guest_count}</div>
+            {booking.extra_guests_count ? (
+              <div><span className="text-gray-400">Додатково людей:</span> +{booking.extra_guests_count}</div>
+            ) : null}
+            {isHourly && booking.duration_hours ? (
+              <div><span className="text-gray-400">Тривалість:</span> {booking.duration_hours} год</div>
+            ) : null}
             {booking.bouquet_qty ? (
               <div><span className="text-gray-400">Букети лаванди:</span> {booking.bouquet_qty} шт × 100 ₴</div>
             ) : null}
@@ -85,6 +116,39 @@ function BookingRow({ booking, onUpdate }: { booking: Booking; onUpdate: (id: st
             {booking.source && <div className="col-span-2"><span className="text-gray-400">Сторінка:</span> {booking.source}</div>}
           </div>
 
+          {/* Schedule editor (hourly) */}
+          {isHourly && (
+            <div className="rounded-lg border border-gray-200 p-3 space-y-2">
+              <p className="text-xs font-semibold text-gray-600">Дата / час / тривалість</p>
+              <div className="flex flex-wrap gap-2">
+                <input type="date" value={date} onChange={e => setDate(e.target.value)}
+                  className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs" />
+                <select value={hour} onChange={e => setHour(Number(e.target.value))}
+                  className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs">
+                  {Array.from({ length: 24 }, (_, i) => i).map(h => (
+                    <option key={h} value={h}>{String(h).padStart(2, '0')}:00</option>
+                  ))}
+                </select>
+                <select value={duration} onChange={e => setDuration(Number(e.target.value))}
+                  className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs">
+                  {Array.from({ length: 12 }, (_, i) => i + 1).map(h => (
+                    <option key={h} value={h}>{h} год</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button onClick={() => saveSchedule(false)} disabled={pending}
+                  className="text-xs bg-gray-700 text-white px-3 py-1.5 rounded-full hover:bg-gray-800 disabled:opacity-40">
+                  Зберегти час
+                </button>
+                <button onClick={() => saveSchedule(true)} disabled={pending}
+                  className="text-xs bg-green-700 text-white px-3 py-1.5 rounded-full hover:bg-green-800 disabled:opacity-40">
+                  Зберегти і підтвердити
+                </button>
+              </div>
+            </div>
+          )}
+
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Нотатки адміна / повернення</label>
             <textarea
@@ -94,25 +158,34 @@ function BookingRow({ booking, onUpdate }: { booking: Booking; onUpdate: (id: st
             />
           </div>
 
+          {error && <p className="text-xs text-red-600">{error}</p>}
+          {okMsg && <p className="text-xs text-green-600">{okMsg}</p>}
+
           <div className="flex flex-wrap gap-2">
-            <button onClick={() => updateStatus(booking.status)} disabled={pending}
+            <button onClick={() => setStatus(booking.status)} disabled={pending}
               className="text-xs bg-gray-800 text-white px-3 py-1.5 rounded-full hover:bg-gray-900 disabled:opacity-40">
               Зберегти нотатки
             </button>
-            {booking.status === 'new' && (
-              <button onClick={() => updateStatus('confirmed')} disabled={pending}
+            {booking.status !== 'confirmed' && booking.status !== 'cancelled' && (
+              <button onClick={() => setStatus('confirmed')} disabled={pending}
                 className="text-xs bg-green-700 text-white px-3 py-1.5 rounded-full hover:bg-green-800 disabled:opacity-40">
                 Підтвердити
               </button>
             )}
             {(booking.status === 'new' || booking.status === 'confirmed') && (
-              <button onClick={() => updateStatus('cancelled')} disabled={pending}
+              <button onClick={() => setStatus('cancelled')} disabled={pending}
                 className="text-xs bg-red-600 text-white px-3 py-1.5 rounded-full hover:bg-red-700 disabled:opacity-40">
-                Скасувати
+                Скасувати (звільнити слот)
+              </button>
+            )}
+            {booking.status === 'cancelled' && (
+              <button onClick={() => setStatus('new')} disabled={pending}
+                className="text-xs bg-yellow-600 text-white px-3 py-1.5 rounded-full hover:bg-yellow-700 disabled:opacity-40">
+                Відновити (нове)
               </button>
             )}
             {booking.status === 'confirmed' && (
-              <button onClick={() => updateStatus('completed')} disabled={pending}
+              <button onClick={() => setStatus('completed')} disabled={pending}
                 className="text-xs bg-blue-700 text-white px-3 py-1.5 rounded-full hover:bg-blue-800 disabled:opacity-40">
                 Завершити
               </button>
@@ -133,8 +206,8 @@ export function AdminBookingsClient({ initialBookings }: { initialBookings: Book
   const [filterType, setFilterType] = useState<FilterType>('all')
   const [filterSlug, setFilterSlug] = useState<string>('all')
 
-  function handleUpdate(id: string, status: Booking['status']) {
-    setBookings(bs => bs.map(b => b.id === id ? { ...b, status } : b))
+  function handleUpdate(id: string, patch: Partial<Booking>) {
+    setBookings(bs => bs.map(b => b.id === id ? { ...b, ...patch } : b))
   }
 
   const filtered = bookings.filter(b => {

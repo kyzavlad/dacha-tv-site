@@ -1,5 +1,6 @@
 import { getAdminClient } from '@/lib/supabase/admin'
 import { getSupabaseClient } from '@/lib/supabase/client'
+import { occupiedHours, rangesOverlap } from '@/lib/bookings/pricing'
 
 export interface BookingService {
   id: string
@@ -28,6 +29,8 @@ export interface Booking {
   check_out: string | null
   guest_count: number
   bouquet_qty: number | null
+  extra_guests_count: number | null
+  duration_hours: number | null
   total_price_uah: number | null
   comment: string | null
   status: 'new' | 'confirmed' | 'cancelled' | 'completed' | 'blocked'
@@ -59,16 +62,65 @@ export async function getBookingService(slug: string): Promise<BookingService | 
   return data as BookingService
 }
 
+// Hours occupied for a date. Only CONFIRMED bookings block the public calendar
+// (new/pending do NOT block); each confirmed booking occupies its full duration.
 export async function getBookedHours(serviceSlug: string, date: string): Promise<number[]> {
   const client = getSupabaseClient()
   if (!client) return []
   const { data } = await client
     .from('bookings')
-    .select('booking_hour')
+    .select('booking_hour, duration_hours')
     .eq('service_slug', serviceSlug)
     .eq('booking_date', date)
-    .in('status', ['new', 'confirmed'])
-  return (data ?? []).map((r: { booking_hour: number | null }) => r.booking_hour).filter((h): h is number => h !== null)
+    .eq('status', 'confirmed')
+  const hours = new Set<number>()
+  for (const r of (data ?? []) as { booking_hour: number | null; duration_hours: number | null }[]) {
+    if (r.booking_hour == null) continue
+    for (const h of occupiedHours(r.booking_hour, r.duration_hours ?? 1)) hours.add(h)
+  }
+  return [...hours]
+}
+
+// Server-side conflict check used before confirming / rescheduling. Returns the
+// overlapping confirmed booking id (excluding `excludeId`) or null. A manual
+// booking_block on any overlapping hour also counts as a conflict.
+export async function findConfirmedHourConflict(
+  serviceSlug: string,
+  date: string,
+  startHour: number,
+  durationHours: number,
+  excludeId?: string,
+): Promise<{ conflict: true; bookingId: string | null } | { conflict: false }> {
+  const client = getAdminClient()
+  const dur = Math.max(1, Math.floor(durationHours || 1))
+
+  const { data: confirmed } = await client
+    .from('bookings')
+    .select('id, booking_hour, duration_hours')
+    .eq('service_slug', serviceSlug)
+    .eq('booking_date', date)
+    .eq('status', 'confirmed')
+  for (const b of (confirmed ?? []) as { id: string; booking_hour: number | null; duration_hours: number | null }[]) {
+    if (excludeId && b.id === excludeId) continue
+    if (b.booking_hour == null) continue
+    if (rangesOverlap(startHour, dur, b.booking_hour, b.duration_hours ?? 1)) {
+      return { conflict: true, bookingId: b.id }
+    }
+  }
+
+  const targetHours = occupiedHours(startHour, dur)
+  const { data: blocks } = await client
+    .from('booking_blocks')
+    .select('block_hour')
+    .eq('service_slug', serviceSlug)
+    .eq('block_date', date)
+  for (const bl of (blocks ?? []) as { block_hour: number | null }[]) {
+    if (bl.block_hour != null && targetHours.includes(bl.block_hour)) {
+      return { conflict: true, bookingId: null }
+    }
+  }
+
+  return { conflict: false }
 }
 
 export async function getBlockedHours(serviceSlug: string, date: string): Promise<number[]> {
@@ -89,7 +141,7 @@ export async function getBookedDates(serviceSlug: string, fromDate: string, toDa
     .from('bookings')
     .select('check_in, check_out')
     .eq('service_slug', serviceSlug)
-    .in('status', ['new', 'confirmed'])
+    .eq('status', 'confirmed')
     .gte('check_out', fromDate)
     .lte('check_in', toDate)
   const dates: Set<string> = new Set()
