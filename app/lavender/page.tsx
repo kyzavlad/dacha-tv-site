@@ -156,7 +156,8 @@ export default async function LavenderPage() {
                   slotEndHour={service.slot_end_hour ?? 21}
                   source="/lavender"
                   maxDateISO={maxDateISO}
-                  maxGuests={5}
+                  maxExtraGuests={20}
+                  maxDurationHours={12}
                   enableBouquets
                   bouquetPrice={100}
                   requireRules

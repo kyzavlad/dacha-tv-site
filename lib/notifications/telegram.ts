@@ -32,14 +32,23 @@ function formatTelegramMessage(inquiry: InquiryData): string {
   if (inquiry.product) lines.push(`Послуга: ${inquiry.product}`)
   if (inquiry.packaging) lines.push(`Упаковка: ${inquiry.packaging}`)
   if (inquiry.breed) lines.push(`Порода: ${inquiry.breed}`)
-  if (inquiry.quantity) lines.push(`Гостей: ${inquiry.quantity}`)
-  if (inquiry.timing) lines.push(`Час: ${inquiry.timing}`)
+  if (inquiry.timing) lines.push(`Дата/час: ${inquiry.timing}`)
+  if (inquiry.duration_hours && inquiry.duration_hours > 0) {
+    lines.push(`Тривалість: ${inquiry.duration_hours} год`)
+  }
+  // For bookings `quantity` carries the included guests (e.g. 5). For other
+  // inquiry types it is a generic quantity.
+  if (inquiry.quantity) lines.push(`Гості: ${inquiry.quantity} осіб`)
+  if (inquiry.extra_guests && inquiry.extra_guests > 0) {
+    const extraSum = inquiry.extra_guests_price != null ? ` (+${inquiry.extra_guests_price.toLocaleString('uk-UA')} ₴)` : ''
+    lines.push(`Додатково людей: +${inquiry.extra_guests}${extraSum}`)
+  }
   if (inquiry.bouquet_qty && inquiry.bouquet_qty > 0) {
     const unit = inquiry.bouquet_unit_price ?? 100
-    lines.push(`Букети лаванди: ${inquiry.bouquet_qty} шт × ${unit} ₴ = ${(inquiry.bouquet_qty * unit).toLocaleString('uk-UA')} ₴`)
+    lines.push(`Букет лаванди: так — ${inquiry.bouquet_qty} шт × ${unit} ₴ = ${(inquiry.bouquet_qty * unit).toLocaleString('uk-UA')} ₴`)
   }
   if (inquiry.total_price_uah != null) lines.push(`Вартість: ${inquiry.total_price_uah.toLocaleString('uk-UA')} ₴`)
-  if (inquiry.message) lines.push(`Повідомлення: ${inquiry.message}`)
+  if (inquiry.message) lines.push(`Коментар: ${inquiry.message}`)
   if (inquiry.source) lines.push(`Сторінка: ${inquiry.source}`)
 
   lines.push(`⏰ ${timestamp}`)

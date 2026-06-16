@@ -363,6 +363,9 @@ export interface InquiryData {
   options?: Record<string, unknown> | null
   // Booking extras (lavender) — rendered into the Telegram message when present.
   total_price_uah?: number
+  duration_hours?: number
+  extra_guests?: number
+  extra_guests_price?: number
   bouquet_qty?: number
   bouquet_unit_price?: number
 }
