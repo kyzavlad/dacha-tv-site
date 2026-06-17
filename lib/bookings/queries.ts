@@ -1,6 +1,6 @@
 import { getAdminClient } from '@/lib/supabase/admin'
 import { getSupabaseClient } from '@/lib/supabase/client'
-import { occupiedHours, rangesOverlap } from '@/lib/bookings/pricing'
+import { occupiedHours, rangesOverlap, ACTIVE_BOOKING_STATUSES } from '@/lib/bookings/pricing'
 
 export interface BookingService {
   id: string
@@ -33,7 +33,7 @@ export interface Booking {
   duration_hours: number | null
   total_price_uah: number | null
   comment: string | null
-  status: 'new' | 'confirmed' | 'cancelled' | 'completed' | 'blocked'
+  status: 'new' | 'pending' | 'confirmed' | 'cancelled' | 'declined' | 'expired' | 'completed' | 'blocked'
   admin_notes: string | null
   source: string | null
   created_at: string
@@ -74,7 +74,7 @@ export async function getBookedHours(serviceSlug: string, date: string): Promise
     .select('booking_hour, duration_hours')
     .eq('service_slug', serviceSlug)
     .eq('booking_date', date)
-    .neq('status', 'cancelled')
+    .in('status', [...ACTIVE_BOOKING_STATUSES])
   const hours = new Set<number>()
   for (const r of (data ?? []) as { booking_hour: number | null; duration_hours: number | null }[]) {
     if (r.booking_hour == null) continue
@@ -102,7 +102,7 @@ export async function findActiveHourConflict(
     .select('id, booking_hour, duration_hours')
     .eq('service_slug', serviceSlug)
     .eq('booking_date', date)
-    .neq('status', 'cancelled')
+    .in('status', [...ACTIVE_BOOKING_STATUSES])
   for (const b of (active ?? []) as { id: string; booking_hour: number | null; duration_hours: number | null }[]) {
     if (excludeId && b.id === excludeId) continue
     if (b.booking_hour == null) continue
@@ -144,7 +144,7 @@ export async function getBookedDates(serviceSlug: string, fromDate: string, toDa
     .from('bookings')
     .select('check_in, check_out')
     .eq('service_slug', serviceSlug)
-    .neq('status', 'cancelled')
+    .in('status', [...ACTIVE_BOOKING_STATUSES])
     .gte('check_out', fromDate)
     .lte('check_in', toDate)
   const dates: Set<string> = new Set()

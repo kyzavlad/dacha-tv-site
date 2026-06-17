@@ -167,7 +167,7 @@ export async function submitHourlyBooking(formData: FormData): Promise<ActionRes
     // (non-cancelled) booking — the slot is taken the moment a request is sent.
     const conflict = await findActiveHourConflict(d.serviceSlug, d.bookingDate, d.bookingHour, durationHours)
     if (conflict.conflict) {
-      return { success: false, error: 'Цей час уже заброньовано. Будь ласка, оберіть інший час.', fieldErrors: { bookingHour: ['Час уже зайнятий'] } }
+      return { success: false, error: 'Цей час вже зайнятий. Будь ласка, оберіть інший час.', fieldErrors: { bookingHour: ['Час уже зайнятий'] } }
     }
 
     // Server-authoritative price (never trust any client-sent total). Base sums
