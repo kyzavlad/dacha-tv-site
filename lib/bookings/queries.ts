@@ -33,7 +33,9 @@ export interface Booking {
   duration_hours: number | null
   total_price_uah: number | null
   comment: string | null
-  status: 'new' | 'pending' | 'confirmed' | 'cancelled' | 'declined' | 'expired' | 'completed' | 'blocked'
+  // Migration-safe statuses only (original 042 CHECK constraint). pending /
+  // declined / expired require migration 059 and are intentionally NOT used.
+  status: 'new' | 'confirmed' | 'cancelled' | 'completed' | 'blocked'
   admin_notes: string | null
   source: string | null
   created_at: string
