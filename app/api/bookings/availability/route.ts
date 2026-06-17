@@ -1,15 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseClient } from '@/lib/supabase/client'
-import { occupiedHours, ACTIVE_BOOKING_STATUSES } from '@/lib/bookings/pricing'
+import { occupiedHours, ACTIVE_BOOKING_STATUSES, LAVENDER_SLUG } from '@/lib/bookings/pricing'
+
+// Map a friendly ?type= to the actual service slug, so callers can use either
+// ?slug=orenda-lavandovoho-polia or ?type=lavender.
+const TYPE_TO_SLUG: Record<string, string> = {
+  lavender: LAVENDER_SLUG,
+}
 
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl
-  const slug = searchParams.get('slug')
+  const type = searchParams.get('type')
+  const slug = searchParams.get('slug') || (type ? TYPE_TO_SLUG[type] : undefined)
   const date = searchParams.get('date')
   const from = searchParams.get('from')
   const to = searchParams.get('to')
 
-  if (!slug) return NextResponse.json({ error: 'slug required' }, { status: 400 })
+  if (!slug) return NextResponse.json({ error: 'slug or known type required' }, { status: 400 })
 
   const client = getSupabaseClient()
   if (!client) return NextResponse.json({ error: 'unavailable' }, { status: 503 })

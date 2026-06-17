@@ -5,9 +5,12 @@
 
 export const LAVENDER_SLUG = 'orenda-lavandovoho-polia'
 
-// Booking statuses that block a slot on the public calendar. Everything else
-// (declined / cancelled / expired / completed) RELEASES the slot.
-export const ACTIVE_BOOKING_STATUSES: readonly string[] = ['new', 'pending', 'confirmed']
+// Booking statuses that block a slot on the public calendar. Only the
+// migration-safe statuses from the original schema are used here (new +
+// confirmed), so availability never depends on statuses (pending/declined/
+// expired) that require migration 059 to be applied. Everything else
+// (cancelled / completed / …) RELEASES the slot.
+export const ACTIVE_BOOKING_STATUSES: readonly string[] = ['new', 'confirmed']
 
 // Two-tier lavender hourly pricing: 06:00–15:00 = 1000 ₴, 15:00–21:00 = 1200 ₴.
 export const LAVENDER_DAY_PRICE_UAH = 1000
