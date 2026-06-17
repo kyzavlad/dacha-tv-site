@@ -3,7 +3,7 @@
 import { z } from 'zod'
 import { getAdminClient } from '@/lib/supabase/admin'
 import { sendTelegramNotification } from '@/lib/notifications/telegram'
-import { findConfirmedHourConflict, type Booking } from '@/lib/bookings/queries'
+import { findActiveHourConflict, type Booking } from '@/lib/bookings/queries'
 import {
   LAVENDER_SLUG,
   LAVENDER_INCLUDED_GUESTS,
@@ -62,7 +62,8 @@ const hourlyBookingSchema = z.object({
   bookingDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Невірний формат дати'),
   bookingHour: z.coerce.number().int().min(0).max(23),
   durationHours: z.coerce.number().int().min(1).max(24).optional(),
-  extraGuestsCount: z.coerce.number().int().min(0).max(100).optional(),
+  // Total guests (1 = min/default). Included up to 5; each above 5 is +200 ₴.
+  guestCount: z.coerce.number().int().min(1).max(100),
   bouquetQty: z.coerce.number().int().min(0).max(99).optional(),
   rulesAccepted: z.string().optional(),
   comment: z.string().max(500).optional(),
@@ -113,7 +114,7 @@ export async function submitHourlyBooking(formData: FormData): Promise<ActionRes
     bookingDate: formData.get('bookingDate'),
     bookingHour: formData.get('bookingHour'),
     durationHours: formData.get('durationHours') ?? '1',
-    extraGuestsCount: formData.get('extraGuestsCount') ?? '0',
+    guestCount: formData.get('guestCount') ?? '1',
     bouquetQty: formData.get('bouquetQty') ?? '0',
     rulesAccepted: formData.get('rulesAccepted') ?? undefined,
     comment: formData.get('comment') ?? undefined,
@@ -133,8 +134,8 @@ export async function submitHourlyBooking(formData: FormData): Promise<ActionRes
     if (d.bookingDate > lavenderMaxDate()) {
       return { success: false, error: 'Бронювання лавандового поля доступне лише до 20 липня.', fieldErrors: { bookingDate: ['Дата після 20 липня недоступна'] } }
     }
-    if ((d.extraGuestsCount ?? 0) > LAVENDER_MAX_EXTRA_GUESTS) {
-      return { success: false, error: `Максимум ${LAVENDER_MAX_EXTRA_GUESTS} додаткових гостей.`, fieldErrors: { extraGuestsCount: [`Максимум ${LAVENDER_MAX_EXTRA_GUESTS} додаткових гостей`] } }
+    if (d.guestCount > LAVENDER_INCLUDED_GUESTS + LAVENDER_MAX_EXTRA_GUESTS) {
+      return { success: false, error: `Максимум ${LAVENDER_INCLUDED_GUESTS + LAVENDER_MAX_EXTRA_GUESTS} гостей. Для більших груп зв’яжіться з нами.`, fieldErrors: { guestCount: ['Забагато гостей'] } }
     }
     if (d.rulesAccepted !== 'true') {
       return { success: false, error: 'Підтвердіть, що ознайомлені з правилами відвідування лавандового поля.', fieldErrors: { rulesAccepted: ['Потрібно підтвердити правила'] } }
@@ -149,17 +150,28 @@ export async function submitHourlyBooking(formData: FormData): Promise<ActionRes
       .eq('slug', d.serviceSlug)
       .single()
 
-    const capacity = svc?.capacity ?? LAVENDER_INCLUDED_GUESTS
+    // Lavender always includes 5 guests by business rule (do NOT trust the DB
+    // capacity column, which can be 0 and caused "Гості: 0 осіб").
+    const includedGuests = isLavender ? LAVENDER_INCLUDED_GUESTS : (svc?.capacity ?? 1)
     const extraRate = svc?.extra_guest_price_uah ?? LAVENDER_EXTRA_GUEST_PRICE_UAH
     const slotEnd = svc?.slot_end_hour ?? 21
 
     // Clamp duration so it never runs past the service's closing hour.
     const maxDuration = Math.max(1, Math.min(LAVENDER_MAX_DURATION_HOURS, slotEnd - d.bookingHour))
     const durationHours = Math.min(Math.max(1, d.durationHours ?? 1), maxDuration)
-    const extraGuests = Math.max(0, d.extraGuestsCount ?? 0)
+    const guestCount = Math.max(1, d.guestCount)
+    const extraGuests = Math.max(0, guestCount - includedGuests)
     const bouquetQty = d.bouquetQty && d.bouquetQty > 0 ? d.bouquetQty : 0
 
-    // Server-authoritative price (never trust any client-sent total).
+    // Reject immediately if any hour in the requested range overlaps an active
+    // (non-cancelled) booking — the slot is taken the moment a request is sent.
+    const conflict = await findActiveHourConflict(d.serviceSlug, d.bookingDate, d.bookingHour, durationHours)
+    if (conflict.conflict) {
+      return { success: false, error: 'Цей час уже заброньовано. Будь ласка, оберіть інший час.', fieldErrors: { bookingHour: ['Час уже зайнятий'] } }
+    }
+
+    // Server-authoritative price (never trust any client-sent total). Base sums
+    // each hourly slot's tariff (1000 day / 1200 evening) across the duration.
     const price = computeBookingPrice({
       startHour: d.bookingHour,
       durationHours,
@@ -170,12 +182,7 @@ export async function submitHourlyBooking(formData: FormData): Promise<ActionRes
       cfg: pricingConfig(d.serviceSlug, svc?.price_uah ?? 1000),
     })
     const total = price.total
-    const guestCount = capacity + extraGuests
 
-    // Save the booking to Supabase FIRST. Notifications are best-effort and run
-    // only after a confirmed save, so they can never break the booking itself.
-    // New bookings are status='new' and do NOT block the calendar until an admin
-    // confirms them.
     const bookingRow: Record<string, unknown> = {
       service_id: svc?.id ?? null,
       service_slug: d.serviceSlug,
@@ -211,47 +218,64 @@ export async function submitHourlyBooking(formData: FormData): Promise<ActionRes
     }
 
     const pageLink = publicUrl(d.source || '/lavender')
-    const endHour = d.bookingHour + durationHours
-    const timing = `${d.bookingDate} ${String(d.bookingHour).padStart(2, '0')}:00–${String(endHour).padStart(2, '0')}:00`
+    const pad = (h: number) => `${String(h).padStart(2, '0')}:00`
+    const time = pad(d.bookingHour)
+    const timeEnd = pad(d.bookingHour + durationHours)
+    const timingText = `${d.bookingDate} · ${time}–${timeEnd} · ${durationHours} год.`
+    const guestWord = (n: number) => (n === 1 ? 'особа' : n >= 2 && n <= 4 ? 'особи' : 'осіб')
+    const guestsText = extraGuests > 0
+      ? `${guestCount} ${guestWord(guestCount)} (включено ${includedGuests}, додатково +${extraGuests})`
+      : `${guestCount} ${guestWord(guestCount)}`
+    const bouquetLine = bouquetQty > 0
+      ? `Букети лаванди: ${bouquetQty} шт × ${BOUQUET_PRICE_UAH} ₴ = ${price.bouquetTotal.toLocaleString('uk-UA')} ₴`
+      : ''
 
-    // Telegram — structured, readable message explaining every price component.
+    // Telegram — structured message; guests_text/bouquet_line are preformatted
+    // so the message can never show "0 осіб" or drop the bouquet line.
     sendTelegramNotification({
       type: 'lavender_booking',
       name: d.name,
       phone: d.phone,
       product: d.serviceName,
-      timing,
-      duration_hours: durationHours,
-      quantity: String(capacity),
-      extra_guests: extraGuests || undefined,
-      extra_guests_price: extraGuests > 0 ? price.extraTotal : undefined,
-      bouquet_qty: bouquetQty || undefined,
-      bouquet_unit_price: BOUQUET_PRICE_UAH,
+      timing: timingText,
+      guests_text: guestsText,
+      bouquet_line: bouquetLine || undefined,
       total_price_uah: total,
       message: d.comment,
       source: pageLink,
     }, { skipWebhook: true }).catch(() => {})
 
-    // n8n webhook — normalized payload (no booking_id, public page_url).
+    // n8n webhook — complete normalized payload. Includes new explicit fields AND
+    // legacy-compatible names so the Edit Fields node never drops data.
     sendBookingWebhook({
       type: 'lavender_booking',
+      source: 'website',
       name: d.name,
       phone: d.phone,
+      product: d.serviceName,
       service_name: d.serviceName,
-      slug: d.serviceSlug,
       page_url: pageLink,
+      slug: d.serviceSlug,
       date: d.bookingDate,
-      time: `${String(d.bookingHour).padStart(2, '0')}:00`,
+      time,
+      time_end: timeEnd,
       duration_hours: durationHours,
-      guests_included: capacity,
+      guest_count: guestCount,
+      guests: guestCount,
+      included_guests: includedGuests,
       extra_guests: extraGuests,
       extra_guests_total: price.extraTotal,
-      bouquet_qty: bouquetQty,
-      bouquet_unit_price: bouquetQty > 0 ? BOUQUET_PRICE_UAH : 0,
+      bouquet_quantity: bouquetQty,
+      bouquet_unit_price: BOUQUET_PRICE_UAH,
       bouquet_total: price.bouquetTotal,
       base_total: price.base,
       total_price: total,
+      timing: timingText,
+      timing_text: timingText,
+      guests_text: guestsText,
+      bouquet_line: bouquetLine,
       message: d.comment ?? null,
+      comment: d.comment ?? null,
     })
   } catch (e) {
     console.error('[booking] unexpected error saving hourly booking:', e)
@@ -370,7 +394,7 @@ export async function adminUpdateBookingStatus(
         .eq('id', id)
         .single()
       if (b?.booking_type === 'hourly' && b.booking_date && b.booking_hour != null) {
-        const res = await findConfirmedHourConflict(b.service_slug, b.booking_date, b.booking_hour, b.duration_hours ?? 1, id)
+        const res = await findActiveHourConflict(b.service_slug, b.booking_date, b.booking_hour, b.duration_hours ?? 1, id)
         if (res.conflict) {
           return { success: false, error: 'Цей час уже зайнятий іншим підтвердженим бронюванням. Підтвердження скасовано.' }
         }
@@ -410,7 +434,7 @@ export async function adminUpdateBookingSchedule(
 
     const willBeConfirmed = alsoConfirm || b.status === 'confirmed'
     if (willBeConfirmed) {
-      const res = await findConfirmedHourConflict(b.service_slug, input.bookingDate, bookingHour, durationHours, id)
+      const res = await findActiveHourConflict(b.service_slug, input.bookingDate, bookingHour, durationHours, id)
       if (res.conflict) {
         return { success: false, error: 'Цей час уже зайнятий іншим підтвердженим бронюванням.' }
       }
