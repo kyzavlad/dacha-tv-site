@@ -368,6 +368,9 @@ export interface InquiryData {
   extra_guests_price?: number
   bouquet_qty?: number
   bouquet_unit_price?: number
+  // Preformatted booking lines (server builds these once for Telegram + webhook).
+  guests_text?: string
+  bouquet_line?: string
 }
 
 // ─── Store core — Orders ───────────────────────────────────────────────────

@@ -32,20 +32,20 @@ function formatTelegramMessage(inquiry: InquiryData): string {
   if (inquiry.product) lines.push(`Послуга: ${inquiry.product}`)
   if (inquiry.packaging) lines.push(`Упаковка: ${inquiry.packaging}`)
   if (inquiry.breed) lines.push(`Порода: ${inquiry.breed}`)
-  if (inquiry.timing) lines.push(`Дата/час: ${inquiry.timing}`)
-  if (inquiry.duration_hours && inquiry.duration_hours > 0) {
-    lines.push(`Тривалість: ${inquiry.duration_hours} год`)
+  // For lavender bookings `timing` is the full range+duration ("date · 18:00–21:00 · 3 год.").
+  if (inquiry.timing) lines.push(`Час: ${inquiry.timing}`)
+  // Prefer the server-built guests/bouquet lines (correct count + bouquet sum);
+  // fall back to generic fields for other inquiry types.
+  if (inquiry.guests_text) {
+    lines.push(`Гості: ${inquiry.guests_text}`)
+  } else if (inquiry.quantity) {
+    lines.push(`Гості: ${inquiry.quantity} осіб`)
   }
-  // For bookings `quantity` carries the included guests (e.g. 5). For other
-  // inquiry types it is a generic quantity.
-  if (inquiry.quantity) lines.push(`Гості: ${inquiry.quantity} осіб`)
-  if (inquiry.extra_guests && inquiry.extra_guests > 0) {
-    const extraSum = inquiry.extra_guests_price != null ? ` (+${inquiry.extra_guests_price.toLocaleString('uk-UA')} ₴)` : ''
-    lines.push(`Додатково людей: +${inquiry.extra_guests}${extraSum}`)
-  }
-  if (inquiry.bouquet_qty && inquiry.bouquet_qty > 0) {
+  if (inquiry.bouquet_line) {
+    lines.push(inquiry.bouquet_line)
+  } else if (inquiry.bouquet_qty && inquiry.bouquet_qty > 0) {
     const unit = inquiry.bouquet_unit_price ?? 100
-    lines.push(`Букет лаванди: так — ${inquiry.bouquet_qty} шт × ${unit} ₴ = ${(inquiry.bouquet_qty * unit).toLocaleString('uk-UA')} ₴`)
+    lines.push(`Букети лаванди: ${inquiry.bouquet_qty} шт × ${unit} ₴ = ${(inquiry.bouquet_qty * unit).toLocaleString('uk-UA')} ₴`)
   }
   if (inquiry.total_price_uah != null) lines.push(`Вартість: ${inquiry.total_price_uah.toLocaleString('uk-UA')} ₴`)
   if (inquiry.message) lines.push(`Коментар: ${inquiry.message}`)

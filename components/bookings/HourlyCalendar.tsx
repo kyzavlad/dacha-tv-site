@@ -24,8 +24,10 @@ interface Props {
   // cost eveningPriceUah instead of pricePerHour (used by the lavender field).
   eveningStartHour?: number
   eveningPriceUah?: number
-  // Extra guests above the included capacity (0 → no extra-guest UI).
-  maxExtraGuests?: number
+  // Total-guests selector. includedGuests are free; each guest above that costs
+  // extraGuestPrice. maxGuests=0 → no guest UI (generic hourly services).
+  includedGuests?: number
+  maxGuests?: number
   // Multi-hour duration (1 → single hour, no duration selector).
   maxDurationHours?: number
 }
@@ -39,11 +41,11 @@ function formatDateUA(d: Date): string {
 }
 
 export function HourlyCalendar({
-  serviceSlug, serviceName, pricePerHour, capacity, extraGuestPrice,
+  serviceSlug, serviceName, pricePerHour, extraGuestPrice,
   slotStartHour, slotEndHour, source,
   maxDateISO, enableBouquets = false, bouquetPrice = 100,
   requireRules = false, rulesLabel, eveningStartHour, eveningPriceUah,
-  maxExtraGuests = 0, maxDurationHours = 1,
+  includedGuests = 5, maxGuests = 0, maxDurationHours = 1,
 }: Props) {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
@@ -60,8 +62,7 @@ export function HourlyCalendar({
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
   const [comment, setComment] = useState('')
-  const [extraWanted, setExtraWanted] = useState(false)
-  const [extraGuests, setExtraGuests] = useState(1)
+  const [guestCount, setGuestCount] = useState(1)
   const [bouquetWanted, setBouquetWanted] = useState(false)
   const [bouquetQty, setBouquetQty] = useState(1)
   const [rulesAccepted, setRulesAccepted] = useState(false)
@@ -119,7 +120,7 @@ export function HourlyCalendar({
   const price = computeBookingPrice({
     startHour: selectedHour ?? slotStartHour,
     durationHours: duration,
-    extraGuests: maxExtraGuests > 0 && extraWanted ? Math.max(1, extraGuests) : 0,
+    extraGuests: maxGuests > 0 ? Math.max(0, guestCount - includedGuests) : 0,
     extraGuestPrice,
     bouquetQty: enableBouquets && bouquetWanted ? Math.max(1, bouquetQty) : 0,
     bouquetPrice,
@@ -148,7 +149,7 @@ export function HourlyCalendar({
     fd.append('bookingDate', toISODate(selectedDate))
     fd.append('bookingHour', String(selectedHour))
     fd.append('durationHours', String(duration))
-    fd.append('extraGuestsCount', String(price.extraGuests))
+    fd.append('guestCount', String(Math.max(1, guestCount)))
     fd.append('bouquetQty', String(price.bouquetQty))
     fd.append('rulesAccepted', requireRules ? (rulesAccepted ? 'true' : 'false') : 'true')
     fd.append('comment', comment)
@@ -175,7 +176,7 @@ export function HourlyCalendar({
           Ми зв'яжемось з вами за номером <strong>{phone}</strong> для підтвердження.
         </p>
         <button
-          onClick={() => { setSuccess(false); setSelectedDate(null); setSelectedHour(null); setDuration(1); setName(''); setPhone(''); setComment(''); setExtraWanted(false); setExtraGuests(1); setBouquetWanted(false); setBouquetQty(1); setRulesAccepted(false) }}
+          onClick={() => { setSuccess(false); setSelectedDate(null); setSelectedHour(null); setDuration(1); setName(''); setPhone(''); setComment(''); setGuestCount(1); setBouquetWanted(false); setBouquetQty(1); setRulesAccepted(false) }}
           className="mt-4 text-xs text-purple-600 underline"
         >
           Забронювати ще
@@ -304,31 +305,22 @@ export function HourlyCalendar({
             {fieldErrors.phone && <p className="text-xs text-red-500 mt-0.5">{fieldErrors.phone[0]}</p>}
           </div>
 
-          {/* Included guests + optional extra guests */}
-          {maxExtraGuests > 0 && (
+          {/* Total guests — included free up to includedGuests, then +price each */}
+          {maxGuests > 0 && (
             <div className="rounded-xl border border-purple-100 bg-purple-50/50 p-3">
-              <p className="text-sm text-gray-700 mb-2">
-                Включено <strong>{capacity}</strong> {capacity === 1 ? 'особа' : capacity < 5 ? 'особи' : 'осіб'}.
+              <label className="block text-sm font-medium text-gray-700 mb-1">Кількість гостей *</label>
+              <select
+                value={guestCount} onChange={e => setGuestCount(Number(e.target.value))}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-purple-500"
+              >
+                {Array.from({ length: Math.max(1, maxGuests) }, (_, i) => i + 1).map(n => (
+                  <option key={n} value={n}>{n} {n === 1 ? 'особа' : n < 5 ? 'особи' : 'осіб'}</option>
+                ))}
+              </select>
+              <p className="text-xs text-gray-400 mt-1">
+                Включено {includedGuests} осіб; кожна понад {includedGuests} — +{extraGuestPrice} ₴.
+                {price.extraGuests > 0 && <> Додатково {price.extraGuests}: +{price.extraTotal.toLocaleString('uk-UA')} ₴.</>}
               </p>
-              <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-                <input
-                  type="checkbox" checked={extraWanted}
-                  onChange={e => setExtraWanted(e.target.checked)}
-                  className="w-4 h-4 accent-purple-700"
-                />
-                Будуть додаткові гості (понад {capacity})? +{extraGuestPrice} ₴/особа
-              </label>
-              {extraWanted && (
-                <div className="mt-3 flex items-center gap-2">
-                  <span className="text-xs text-gray-600">Додатково людей:</span>
-                  <input
-                    type="number" min={1} max={maxExtraGuests} step={1} value={extraGuests}
-                    onChange={e => setExtraGuests(Math.min(maxExtraGuests, Math.max(1, Math.floor(Number(e.target.value) || 1))))}
-                    className="w-20 border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:border-purple-500"
-                  />
-                  <span className="text-xs text-gray-500">= +{price.extraTotal.toLocaleString('uk-UA')} ₴</span>
-                </div>
-              )}
             </div>
           )}
 

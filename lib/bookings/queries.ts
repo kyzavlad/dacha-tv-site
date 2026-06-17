@@ -62,8 +62,10 @@ export async function getBookingService(slug: string): Promise<BookingService | 
   return data as BookingService
 }
 
-// Hours occupied for a date. Only CONFIRMED bookings block the public calendar
-// (new/pending do NOT block); each confirmed booking occupies its full duration.
+// Hours occupied for a date. ALL active (non-cancelled) bookings block the
+// public calendar immediately — a new/pending request blocks just like a
+// confirmed one — so a slot can never be double-booked. Each booking occupies
+// its full duration.
 export async function getBookedHours(serviceSlug: string, date: string): Promise<number[]> {
   const client = getSupabaseClient()
   if (!client) return []
@@ -72,7 +74,7 @@ export async function getBookedHours(serviceSlug: string, date: string): Promise
     .select('booking_hour, duration_hours')
     .eq('service_slug', serviceSlug)
     .eq('booking_date', date)
-    .eq('status', 'confirmed')
+    .neq('status', 'cancelled')
   const hours = new Set<number>()
   for (const r of (data ?? []) as { booking_hour: number | null; duration_hours: number | null }[]) {
     if (r.booking_hour == null) continue
@@ -81,10 +83,11 @@ export async function getBookedHours(serviceSlug: string, date: string): Promise
   return [...hours]
 }
 
-// Server-side conflict check used before confirming / rescheduling. Returns the
-// overlapping confirmed booking id (excluding `excludeId`) or null. A manual
-// booking_block on any overlapping hour also counts as a conflict.
-export async function findConfirmedHourConflict(
+// Server-side conflict check used before creating / confirming / rescheduling.
+// Returns the overlapping ACTIVE (non-cancelled) booking id (excluding
+// `excludeId`) or null. A manual booking_block on any overlapping hour also
+// counts as a conflict — this is what makes a slot taken immediately.
+export async function findActiveHourConflict(
   serviceSlug: string,
   date: string,
   startHour: number,
@@ -94,13 +97,13 @@ export async function findConfirmedHourConflict(
   const client = getAdminClient()
   const dur = Math.max(1, Math.floor(durationHours || 1))
 
-  const { data: confirmed } = await client
+  const { data: active } = await client
     .from('bookings')
     .select('id, booking_hour, duration_hours')
     .eq('service_slug', serviceSlug)
     .eq('booking_date', date)
-    .eq('status', 'confirmed')
-  for (const b of (confirmed ?? []) as { id: string; booking_hour: number | null; duration_hours: number | null }[]) {
+    .neq('status', 'cancelled')
+  for (const b of (active ?? []) as { id: string; booking_hour: number | null; duration_hours: number | null }[]) {
     if (excludeId && b.id === excludeId) continue
     if (b.booking_hour == null) continue
     if (rangesOverlap(startHour, dur, b.booking_hour, b.duration_hours ?? 1)) {
@@ -141,7 +144,7 @@ export async function getBookedDates(serviceSlug: string, fromDate: string, toDa
     .from('bookings')
     .select('check_in, check_out')
     .eq('service_slug', serviceSlug)
-    .eq('status', 'confirmed')
+    .neq('status', 'cancelled')
     .gte('check_out', fromDate)
     .lte('check_in', toDate)
   const dates: Set<string> = new Set()

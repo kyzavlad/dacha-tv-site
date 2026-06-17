@@ -14,11 +14,11 @@ export async function GET(request: NextRequest) {
   const client = getSupabaseClient()
   if (!client) return NextResponse.json({ error: 'unavailable' }, { status: 503 })
 
-  // Hourly: return booked hours for a specific date. Only CONFIRMED bookings
-  // block the slot (new/pending do not); each occupies its full duration.
+  // Hourly: return booked hours for a specific date. All active (non-cancelled) bookings
+  // block the slot immediately; each occupies its full duration.
   if (date) {
     const [bookings, blocks] = await Promise.all([
-      client.from('bookings').select('booking_hour, duration_hours').eq('service_slug', slug).eq('booking_date', date).eq('status', 'confirmed'),
+      client.from('bookings').select('booking_hour, duration_hours').eq('service_slug', slug).eq('booking_date', date).neq('status', 'cancelled'),
       client.from('booking_blocks').select('block_hour').eq('service_slug', slug).eq('block_date', date),
     ])
     const hours = new Set<number>()
@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
   // Daily: return booked date ranges
   if (from && to) {
     const [bookings, blocks] = await Promise.all([
-      client.from('bookings').select('check_in, check_out').eq('service_slug', slug).eq('status', 'confirmed').gte('check_out', from).lte('check_in', to),
+      client.from('bookings').select('check_in, check_out').eq('service_slug', slug).neq('status', 'cancelled').gte('check_out', from).lte('check_in', to),
       client.from('booking_blocks').select('block_date').eq('service_slug', slug).gte('block_date', from).lte('block_date', to).is('block_hour', null),
     ])
     const dates: Set<string> = new Set()
