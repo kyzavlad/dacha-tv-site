@@ -5,6 +5,10 @@
 
 export const LAVENDER_SLUG = 'orenda-lavandovoho-polia'
 
+// Booking statuses that block a slot on the public calendar. Everything else
+// (declined / cancelled / expired / completed) RELEASES the slot.
+export const ACTIVE_BOOKING_STATUSES: readonly string[] = ['new', 'pending', 'confirmed']
+
 // Two-tier lavender hourly pricing: 06:00–15:00 = 1000 ₴, 15:00–21:00 = 1200 ₴.
 export const LAVENDER_DAY_PRICE_UAH = 1000
 export const LAVENDER_EVENING_PRICE_UAH = 1200

@@ -4,18 +4,26 @@ import { useState, useTransition } from 'react'
 import { adminUpdateBookingStatus, adminUpdateBookingSchedule } from '@/actions/submitBooking'
 import type { Booking } from '@/lib/bookings/queries'
 
+// Active statuses (block the slot): new, pending, confirmed.
+// Released statuses (free the slot): cancelled, declined, expired, completed.
 const STATUS_LABELS: Record<Booking['status'], string> = {
-  new: 'Нове (не блокує)',
-  confirmed: 'Підтверджено',
-  cancelled: 'Скасовано',
+  new: 'Нове (блокує)',
+  pending: 'Очікує (блокує)',
+  confirmed: 'Підтверджено (блокує)',
+  cancelled: 'Скасовано (вільно)',
+  declined: 'Відхилено (вільно)',
+  expired: 'Прострочено (вільно)',
   completed: 'Завершено',
   blocked: 'Заблоковано',
 }
 
 const STATUS_COLORS: Record<Booking['status'], string> = {
   new: 'bg-yellow-100 text-yellow-800',
+  pending: 'bg-amber-100 text-amber-800',
   confirmed: 'bg-green-100 text-green-800',
   cancelled: 'bg-gray-100 text-gray-500',
+  declined: 'bg-gray-100 text-gray-500',
+  expired: 'bg-gray-100 text-gray-500',
   completed: 'bg-blue-100 text-blue-800',
   blocked: 'bg-red-100 text-red-700',
 }
@@ -166,19 +174,25 @@ function BookingRow({ booking, onUpdate }: { booking: Booking; onUpdate: (id: st
               className="text-xs bg-gray-800 text-white px-3 py-1.5 rounded-full hover:bg-gray-900 disabled:opacity-40">
               Зберегти нотатки
             </button>
-            {booking.status !== 'confirmed' && booking.status !== 'cancelled' && (
+            {(booking.status === 'new' || booking.status === 'pending') && (
               <button onClick={() => setStatus('confirmed')} disabled={pending}
                 className="text-xs bg-green-700 text-white px-3 py-1.5 rounded-full hover:bg-green-800 disabled:opacity-40">
                 Підтвердити
               </button>
             )}
-            {(booking.status === 'new' || booking.status === 'confirmed') && (
+            {(booking.status === 'new' || booking.status === 'pending') && (
+              <button onClick={() => setStatus('declined')} disabled={pending}
+                className="text-xs bg-orange-600 text-white px-3 py-1.5 rounded-full hover:bg-orange-700 disabled:opacity-40">
+                Відхилити (звільнити слот)
+              </button>
+            )}
+            {(booking.status === 'new' || booking.status === 'pending' || booking.status === 'confirmed') && (
               <button onClick={() => setStatus('cancelled')} disabled={pending}
                 className="text-xs bg-red-600 text-white px-3 py-1.5 rounded-full hover:bg-red-700 disabled:opacity-40">
                 Скасувати (звільнити слот)
               </button>
             )}
-            {booking.status === 'cancelled' && (
+            {(booking.status === 'cancelled' || booking.status === 'declined' || booking.status === 'expired') && (
               <button onClick={() => setStatus('new')} disabled={pending}
                 className="text-xs bg-yellow-600 text-white px-3 py-1.5 rounded-full hover:bg-yellow-700 disabled:opacity-40">
                 Відновити (нове)
@@ -242,8 +256,11 @@ export function AdminBookingsClient({ initialBookings }: { initialBookings: Book
           className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs">
           <option value="all">Всі статуси</option>
           <option value="new">Нові</option>
+          <option value="pending">Очікують</option>
           <option value="confirmed">Підтверджені</option>
           <option value="cancelled">Скасовані</option>
+          <option value="declined">Відхилені</option>
+          <option value="expired">Прострочені</option>
           <option value="completed">Завершені</option>
           <option value="blocked">Заблоковані</option>
         </select>

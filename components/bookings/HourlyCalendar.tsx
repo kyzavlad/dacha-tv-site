@@ -171,9 +171,9 @@ export function HourlyCalendar({
     return (
       <div className="bg-purple-50 border border-purple-200 rounded-2xl p-6 text-center">
         <div className="text-2xl mb-2">💜</div>
-        <h3 className="font-serif text-lg font-bold text-purple-900 mb-1">Бронювання прийнято!</h3>
+        <h3 className="font-serif text-lg font-bold text-purple-900 mb-1">Заявку відправлено!</h3>
         <p className="text-purple-700 text-sm">
-          Ми зв'яжемось з вами за номером <strong>{phone}</strong> для підтвердження.
+          Заявку на бронювання відправлено. Ми звʼяжемося з вами для підтвердження та реквізитів передплати.
         </p>
         <button
           onClick={() => { setSuccess(false); setSelectedDate(null); setSelectedHour(null); setDuration(1); setName(''); setPhone(''); setComment(''); setGuestCount(1); setBouquetWanted(false); setBouquetQty(1); setRulesAccepted(false) }}
