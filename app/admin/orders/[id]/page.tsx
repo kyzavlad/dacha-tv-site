@@ -5,7 +5,21 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { getAdminClient } from '@/lib/supabase/admin'
 import { OrderStatusForm } from '../OrderStatusForm'
+import { SupplierTestButton } from '../SupplierTestButton'
 import type { Order, OrderItem, OrderStatus } from '@/types'
+
+// Supplier send outcomes that count as success (green). Covers both the legacy
+// 'ok' value and the clearer test_sent/sent statuses.
+const SUPPLIER_OK_STATUSES = new Set(['ok', 'sent', 'test_sent'])
+
+const SUPPLIER_STATUS_LABELS: Record<string, string> = {
+  ok: 'Надіслано',
+  sent: 'Надіслано (live)',
+  test_sent: 'Тест надіслано',
+  failed: 'Помилка',
+  not_sent: 'Не надіслано',
+  skipped: 'Пропущено',
+}
 
 export const metadata: Metadata = { title: 'Адмін: Замовлення', robots: 'noindex, nofollow' }
 
@@ -78,6 +92,7 @@ export default async function AdminOrderDetailPage({ params }: PageProps) {
   const { id } = await params
   const order = await getOrder(id)
   const shortId = order.id.slice(0, 8).toUpperCase()
+  const hasCatalogItems = order.items.some((i) => i.product_type === 'catalog')
 
   return (
     <div className="max-w-3xl mx-auto py-6 px-4">
@@ -216,70 +231,84 @@ export default async function AdminOrderDetailPage({ params }: PageProps) {
           )}
         </section>
 
-        {/* Supplier order */}
-        {order.supplier_order_mode && order.supplier_order_mode !== 'skipped' && (
+        {/* Supplier order — shown for any order that contains catalog items or
+            already has supplier data. Pure manual orders (honey/flowers only)
+            never touch the supplier, so the section is hidden for them. */}
+        {(hasCatalogItems || (order.supplier_order_mode && order.supplier_order_mode !== 'skipped')) && (
           <section className="bg-white rounded-xl border border-gray-200 p-5">
             <h2 className="font-semibold text-gray-800 mb-3 text-sm uppercase tracking-wide">
               Постачальник
             </h2>
-            <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-              <div>
-                <dt className="text-gray-400 text-xs mb-0.5">Режим</dt>
-                <dd>
-                  {order.supplier_order_mode === 'test' ? (
-                    <span className="inline-flex items-center gap-1 text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full text-xs font-semibold">
-                      🧪 Тестовий
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1 text-green-700 bg-green-50 px-2 py-0.5 rounded-full text-xs font-semibold">
-                      ✅ Live
-                    </span>
-                  )}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-gray-400 text-xs mb-0.5">Статус</dt>
-                <dd className={`font-medium text-xs ${order.supplier_order_status === 'ok' ? 'text-green-700' : 'text-red-600'}`}>
-                  {order.supplier_order_status}
-                </dd>
-              </div>
-              {order.supplier_order_id && (
+            {order.supplier_order_mode && order.supplier_order_mode !== 'skipped' ? (
+              <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm mb-4">
                 <div>
-                  <dt className="text-gray-400 text-xs mb-0.5">ID замовлення</dt>
-                  <dd className="font-mono text-gray-900">{order.supplier_order_id}</dd>
-                </div>
-              )}
-              {order.method_payment && (
-                <div>
-                  <dt className="text-gray-400 text-xs mb-0.5">Оплата</dt>
-                  <dd className="text-gray-900">
-                    {order.method_payment === 'cashondelivery' ? 'Накладний платіж' : 'Передоплата'}
-                  </dd>
-                </div>
-              )}
-              {order.nova_poshta_warehouse_name && (
-                <div className="sm:col-span-2">
-                  <dt className="text-gray-400 text-xs mb-0.5">Нова Пошта</dt>
-                  <dd className="text-gray-900">{order.nova_poshta_warehouse_name}</dd>
-                </div>
-              )}
-              {order.nova_poshta_warehouse_id && (
-                <div>
-                  <dt className="text-gray-400 text-xs mb-0.5">ID відділення</dt>
-                  <dd className="font-mono text-xs text-gray-500">{order.nova_poshta_warehouse_id}</dd>
-                </div>
-              )}
-              {order.supplier_order_response && (
-                <div className="sm:col-span-2">
-                  <dt className="text-gray-400 text-xs mb-0.5">Відповідь API</dt>
+                  <dt className="text-gray-400 text-xs mb-0.5">Режим</dt>
                   <dd>
-                    <pre className="text-xs bg-gray-50 border border-gray-100 rounded-lg p-3 overflow-auto max-h-40 text-gray-700 font-mono">
-                      {JSON.stringify(order.supplier_order_response, null, 2)}
-                    </pre>
+                    {order.supplier_order_mode === 'test' ? (
+                      <span className="inline-flex items-center gap-1 text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full text-xs font-semibold">
+                        🧪 Тестовий
+                      </span>
+                    ) : order.supplier_order_mode === 'live' ? (
+                      <span className="inline-flex items-center gap-1 text-green-700 bg-green-50 px-2 py-0.5 rounded-full text-xs font-semibold">
+                        ✅ Live
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-gray-600 bg-gray-100 px-2 py-0.5 rounded-full text-xs font-semibold">
+                        ⛔ {order.supplier_order_mode}
+                      </span>
+                    )}
                   </dd>
                 </div>
-              )}
-            </dl>
+                <div>
+                  <dt className="text-gray-400 text-xs mb-0.5">Статус</dt>
+                  <dd className={`font-medium text-xs ${SUPPLIER_OK_STATUSES.has(order.supplier_order_status ?? '') ? 'text-green-700' : 'text-red-600'}`}>
+                    {SUPPLIER_STATUS_LABELS[order.supplier_order_status ?? ''] ?? order.supplier_order_status}
+                  </dd>
+                </div>
+                {order.supplier_order_id && (
+                  <div>
+                    <dt className="text-gray-400 text-xs mb-0.5">ID замовлення</dt>
+                    <dd className="font-mono text-gray-900">{order.supplier_order_id}</dd>
+                  </div>
+                )}
+                {order.method_payment && (
+                  <div>
+                    <dt className="text-gray-400 text-xs mb-0.5">Оплата</dt>
+                    <dd className="text-gray-900">
+                      {order.method_payment === 'cashondelivery' ? 'Накладний платіж' : 'Передоплата'}
+                    </dd>
+                  </div>
+                )}
+                {order.nova_poshta_warehouse_name && (
+                  <div className="sm:col-span-2">
+                    <dt className="text-gray-400 text-xs mb-0.5">Нова Пошта</dt>
+                    <dd className="text-gray-900">{order.nova_poshta_warehouse_name}</dd>
+                  </div>
+                )}
+                {order.nova_poshta_warehouse_id && (
+                  <div>
+                    <dt className="text-gray-400 text-xs mb-0.5">ID відділення</dt>
+                    <dd className="font-mono text-xs text-gray-500">{order.nova_poshta_warehouse_id}</dd>
+                  </div>
+                )}
+                {order.supplier_order_response && (
+                  <div className="sm:col-span-2">
+                    <dt className="text-gray-400 text-xs mb-0.5">Відповідь API</dt>
+                    <dd>
+                      <pre className="text-xs bg-gray-50 border border-gray-100 rounded-lg p-3 overflow-auto max-h-40 text-gray-700 font-mono">
+                        {JSON.stringify(order.supplier_order_response, null, 2)}
+                      </pre>
+                    </dd>
+                  </div>
+                )}
+              </dl>
+            ) : (
+              <p className="text-sm text-gray-400 mb-4">Ще не надсилалося постачальнику.</p>
+            )}
+
+            <div className="pt-3 border-t border-gray-100">
+              <SupplierTestButton orderId={order.id} />
+            </div>
           </section>
         )}
 
