@@ -1,15 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseClient } from '@/lib/supabase/client'
-import { bookingOccupiedHours, ACTIVE_BOOKING_STATUSES, LAVENDER_SLUG } from '@/lib/bookings/pricing'
-
-// Only the always-present columns are read explicitly; extras (duration_hours)
-// are optional and may be absent on un-migrated databases.
-type BookingRow = {
-  booking_hour?: number | null
-  check_in?: string | null
-  check_out?: string | null
-  duration_hours?: number | null
-}
+import { bookingOccupiedHours, ACTIVE_BOOKING_STATUSES, LAVENDER_SLUG, type BookingHourRow } from '@/lib/bookings/pricing'
 
 // Map a friendly ?type= to the actual service slug, so callers can use either
 // ?slug=orenda-lavandovoho-polia or ?type=lavender.
@@ -41,7 +32,7 @@ export async function GET(request: NextRequest) {
       client.from('booking_blocks').select('block_hour').eq('service_slug', slug).eq('block_date', date),
     ])
     const hours = new Set<number>()
-    for (const r of (bookings.data ?? []) as BookingRow[]) {
+    for (const r of (bookings.data ?? []) as BookingHourRow[]) {
       for (const h of bookingOccupiedHours(r)) hours.add(h)
     }
     for (const r of (blocks.data ?? []) as { block_hour: number | null }[]) {

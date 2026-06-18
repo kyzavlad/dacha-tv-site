@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react'
 import { adminUpdateBookingStatus, adminUpdateBookingSchedule } from '@/actions/submitBooking'
 import type { Booking } from '@/lib/bookings/queries'
+import { bookingDurationHours, stripBookingMeta } from '@/lib/bookings/pricing'
 
 // Migration-safe statuses only. Active (block the slot): new, confirmed.
 // Released (free the slot): cancelled (also used for "відхилити"), completed.
@@ -36,16 +37,9 @@ function fmtDateTime(iso: string): string {
   return new Date(iso).toLocaleDateString('uk-UA', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
 }
 
-// Duration shown in admin: prefer duration_hours, fall back to the check_in/
-// check_out range, finally 1 hour — so it is correct even without migrations.
-function durationOf(b: Booking): number {
-  if (b.duration_hours && b.duration_hours > 0) return b.duration_hours
-  if (b.check_in && b.check_out) {
-    const h = Math.round((new Date(b.check_out).getTime() - new Date(b.check_in).getTime()) / 3_600_000)
-    if (h > 0 && h <= 24) return h
-  }
-  return 1
-}
+// Duration shown in admin: duration_hours → comment meta → check_in/check_out →
+// 1 hour, so it is correct even without migrations.
+const durationOf = (b: Booking): number => bookingDurationHours(b)
 
 function BookingRow({ booking, onUpdate }: { booking: Booking; onUpdate: (id: string, patch: Partial<Booking>) => void }) {
   const [open, setOpen] = useState(false)
@@ -126,7 +120,7 @@ function BookingRow({ booking, onUpdate }: { booking: Booking; onUpdate: (id: st
             {booking.total_price_uah != null && (
               <div><span className="text-gray-400">Сума:</span> {booking.total_price_uah.toLocaleString('uk-UA')} ₴</div>
             )}
-            {booking.comment && <div className="col-span-2"><span className="text-gray-400">Коментар:</span> {booking.comment}</div>}
+            {stripBookingMeta(booking.comment) && <div className="col-span-2"><span className="text-gray-400">Коментар:</span> {stripBookingMeta(booking.comment)}</div>}
             {booking.source && <div className="col-span-2"><span className="text-gray-400">Сторінка:</span> {booking.source}</div>}
           </div>
 
