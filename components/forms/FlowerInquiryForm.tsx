@@ -80,6 +80,8 @@ export function FlowerInquiryForm({ preselectedProduct, source }: FlowerInquiryF
           type="tel"
           required
           autoComplete="tel"
+          pattern="(\+380|0)\d{9}"
+          title="Введіть номер у форматі +380XXXXXXXXX або 0XXXXXXXXX"
           className="w-full border border-gray-300 rounded-xl px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-gray-400"
           placeholder="+380 XX XXX XXXX"
         />
