@@ -6,11 +6,11 @@ import type { Booking } from '@/lib/bookings/queries'
 import { bookingDurationHours, stripBookingMeta } from '@/lib/bookings/pricing'
 
 // Migration-safe statuses only. Active (block the slot): new, confirmed.
-// Released (free the slot): cancelled (also used for "відхилити"), completed.
+// Released (free the slot): cancelled, completed.
 const STATUS_LABELS: Record<Booking['status'], string> = {
-  new: 'Нова заявка (блокує)',
-  confirmed: 'Підтверджено (блокує)',
-  cancelled: 'Скасовано / відхилено (вільно)',
+  new: 'Нова заявка / блокує час',
+  confirmed: 'Підтверджено / передплата отримана',
+  cancelled: 'Скасовано / час вільний',
   completed: 'Завершено',
   blocked: 'Заблоковано',
 }
@@ -178,14 +178,6 @@ function BookingRow({ booking, onUpdate }: { booking: Booking; onUpdate: (id: st
               <button onClick={() => setStatus('confirmed')} disabled={pending}
                 className="text-xs bg-green-700 text-white px-3 py-1.5 rounded-full hover:bg-green-800 disabled:opacity-40">
                 Підтвердити
-              </button>
-            )}
-            {/* Decline and Cancel both store the migration-safe 'cancelled' status,
-                which frees the slot. The label distinguishes intent only. */}
-            {(booking.status === 'new' || booking.status === 'confirmed') && (
-              <button onClick={() => setStatus('cancelled')} disabled={pending}
-                className="text-xs bg-orange-600 text-white px-3 py-1.5 rounded-full hover:bg-orange-700 disabled:opacity-40">
-                Відхилити
               </button>
             )}
             {(booking.status === 'new' || booking.status === 'confirmed') && (
