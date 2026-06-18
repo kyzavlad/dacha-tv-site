@@ -37,3 +37,25 @@ export function formatPhoneTel(phone: string): string {
   }
   return phone
 }
+
+// Canonical Ukrainian mobile: +380XXXXXXXXX (12 digits after +).
+// Accepts 0XXXXXXXXX, +380XXXXXXXXX, 380XXXXXXXXX, and spaced/dashed variants.
+// Returns null for anything that can't be a valid Ukrainian number.
+export function normalizeUkrainianPhone(input: string | null | undefined): string | null {
+  if (!input) return null
+  const digits = input.replace(/\D/g, '')
+  let national: string
+  if (digits.length === 12 && digits.startsWith('380')) {
+    national = digits.slice(2) // "380951..." → "0951..."
+  } else if (digits.length === 10 && digits.startsWith('0')) {
+    national = digits
+  } else {
+    return null
+  }
+  if (!/^0\d{9}$/.test(national)) return null
+  return `+38${national}`
+}
+
+export function isValidUkrainianPhone(input: string | null | undefined): boolean {
+  return normalizeUkrainianPhone(input) !== null
+}
