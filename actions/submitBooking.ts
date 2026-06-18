@@ -183,6 +183,15 @@ export async function submitHourlyBooking(formData: FormData): Promise<ActionRes
     })
     const total = price.total
 
+    // Store the time range redundantly in check_in/check_out (which exist on
+    // every schema) so availability still works even if the duration_hours
+    // column is missing in production. On timestamp columns this preserves the
+    // hours; on date columns it harmlessly truncates and we fall back to
+    // duration_hours / 1 hour.
+    const hh = (h: number) => String(h).padStart(2, '0')
+    const checkInTs = `${d.bookingDate}T${hh(d.bookingHour)}:00:00Z`
+    const checkOutTs = `${d.bookingDate}T${hh(d.bookingHour + durationHours)}:00:00Z`
+
     const bookingRow: Record<string, unknown> = {
       service_id: svc?.id ?? null,
       service_slug: d.serviceSlug,
@@ -191,6 +200,8 @@ export async function submitHourlyBooking(formData: FormData): Promise<ActionRes
       phone: d.phone,
       booking_date: d.bookingDate,
       booking_hour: d.bookingHour,
+      check_in: checkInTs,
+      check_out: checkOutTs,
       duration_hours: durationHours,
       guest_count: guestCount,
       extra_guests_count: extraGuests,
