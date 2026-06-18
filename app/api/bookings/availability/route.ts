@@ -1,6 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseClient } from '@/lib/supabase/client'
-import { occupiedHours, ACTIVE_BOOKING_STATUSES, LAVENDER_SLUG } from '@/lib/bookings/pricing'
+import { bookingOccupiedHours, ACTIVE_BOOKING_STATUSES, LAVENDER_SLUG } from '@/lib/bookings/pricing'
+
+// Only the always-present columns are read explicitly; extras (duration_hours)
+// are optional and may be absent on un-migrated databases.
+type BookingRow = {
+  booking_hour?: number | null
+  check_in?: string | null
+  check_out?: string | null
+  duration_hours?: number | null
+}
 
 // Map a friendly ?type= to the actual service slug, so callers can use either
 // ?slug=orenda-lavandovoho-polia or ?type=lavender.
@@ -21,17 +30,19 @@ export async function GET(request: NextRequest) {
   const client = getSupabaseClient()
   if (!client) return NextResponse.json({ error: 'unavailable' }, { status: 503 })
 
-  // Hourly: return booked hours for a specific date. All active (non-cancelled) bookings
-  // block the slot immediately; each occupies its full duration.
+  // Hourly: return booked hours for a specific date. All active (new/confirmed)
+  // bookings block the slot immediately; each occupies its full range. We select
+  // '*' so the query never fails when the duration_hours column is missing on an
+  // un-migrated database — occupied hours are derived from check_in/check_out or
+  // booking_hour + duration_hours, whichever is available.
   if (date) {
     const [bookings, blocks] = await Promise.all([
-      client.from('bookings').select('booking_hour, duration_hours').eq('service_slug', slug).eq('booking_date', date).in('status', [...ACTIVE_BOOKING_STATUSES]),
+      client.from('bookings').select('*').eq('service_slug', slug).eq('booking_date', date).in('status', [...ACTIVE_BOOKING_STATUSES]),
       client.from('booking_blocks').select('block_hour').eq('service_slug', slug).eq('block_date', date),
     ])
     const hours = new Set<number>()
-    for (const r of (bookings.data ?? []) as { booking_hour: number | null; duration_hours: number | null }[]) {
-      if (r.booking_hour == null) continue
-      for (const h of occupiedHours(r.booking_hour, r.duration_hours ?? 1)) hours.add(h)
+    for (const r of (bookings.data ?? []) as BookingRow[]) {
+      for (const h of bookingOccupiedHours(r)) hours.add(h)
     }
     for (const r of (blocks.data ?? []) as { block_hour: number | null }[]) {
       if (r.block_hour != null) hours.add(r.block_hour)

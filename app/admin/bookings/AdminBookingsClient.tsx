@@ -36,6 +36,17 @@ function fmtDateTime(iso: string): string {
   return new Date(iso).toLocaleDateString('uk-UA', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
 }
 
+// Duration shown in admin: prefer duration_hours, fall back to the check_in/
+// check_out range, finally 1 hour — so it is correct even without migrations.
+function durationOf(b: Booking): number {
+  if (b.duration_hours && b.duration_hours > 0) return b.duration_hours
+  if (b.check_in && b.check_out) {
+    const h = Math.round((new Date(b.check_out).getTime() - new Date(b.check_in).getTime()) / 3_600_000)
+    if (h > 0 && h <= 24) return h
+  }
+  return 1
+}
+
 function BookingRow({ booking, onUpdate }: { booking: Booking; onUpdate: (id: string, patch: Partial<Booking>) => void }) {
   const [open, setOpen] = useState(false)
   const [pending, start] = useTransition()
@@ -46,7 +57,7 @@ function BookingRow({ booking, onUpdate }: { booking: Booking; onUpdate: (id: st
   // Editable schedule (hourly only)
   const [date, setDate] = useState(booking.booking_date ?? '')
   const [hour, setHour] = useState(booking.booking_hour ?? 6)
-  const [duration, setDuration] = useState(booking.duration_hours ?? 1)
+  const [duration, setDuration] = useState(durationOf(booking))
 
   function run(fn: () => Promise<{ success: boolean; error?: string; total?: number; durationHours?: number }>, okText: string, patch?: Partial<Booking>) {
     setError(null); setOkMsg(null)
@@ -72,8 +83,9 @@ function BookingRow({ booking, onUpdate }: { booking: Booking; onUpdate: (id: st
     )
 
   const isHourly = booking.booking_type === 'hourly'
+  const dur = durationOf(booking)
   const when = isHourly
-    ? `${fmtDate(booking.booking_date)} ${booking.booking_hour != null ? `${String(booking.booking_hour).padStart(2, '0')}:00` : ''}${booking.duration_hours && booking.duration_hours > 1 ? `–${String((booking.booking_hour ?? 0) + booking.duration_hours).padStart(2, '0')}:00` : ''}`
+    ? `${fmtDate(booking.booking_date)} ${booking.booking_hour != null ? `${String(booking.booking_hour).padStart(2, '0')}:00` : ''}${dur > 1 ? `–${String((booking.booking_hour ?? 0) + dur).padStart(2, '0')}:00` : ''}`
     : `${fmtDate(booking.check_in)} → ${fmtDate(booking.check_out)}`
 
   return (
@@ -105,8 +117,8 @@ function BookingRow({ booking, onUpdate }: { booking: Booking; onUpdate: (id: st
             {booking.extra_guests_count ? (
               <div><span className="text-gray-400">Додатково людей:</span> +{booking.extra_guests_count}</div>
             ) : null}
-            {isHourly && booking.duration_hours ? (
-              <div><span className="text-gray-400">Тривалість:</span> {booking.duration_hours} год</div>
+            {isHourly ? (
+              <div><span className="text-gray-400">Тривалість:</span> {dur} год</div>
             ) : null}
             {booking.bouquet_qty ? (
               <div><span className="text-gray-400">Букети лаванди:</span> {booking.bouquet_qty} шт × 100 ₴</div>

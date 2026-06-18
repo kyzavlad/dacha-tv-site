@@ -1,6 +1,15 @@
 import { getAdminClient } from '@/lib/supabase/admin'
 import { getSupabaseClient } from '@/lib/supabase/client'
-import { occupiedHours, rangesOverlap, ACTIVE_BOOKING_STATUSES } from '@/lib/bookings/pricing'
+import { occupiedHours, bookingOccupiedHours, ACTIVE_BOOKING_STATUSES } from '@/lib/bookings/pricing'
+
+// Minimal row shape for availability/conflict math — only optional columns that
+// may be absent on un-migrated databases plus the always-present booking_hour.
+type BookingHourRow = {
+  booking_hour?: number | null
+  check_in?: string | null
+  check_out?: string | null
+  duration_hours?: number | null
+}
 
 export interface BookingService {
   id: string
@@ -71,16 +80,16 @@ export async function getBookingService(slug: string): Promise<BookingService | 
 export async function getBookedHours(serviceSlug: string, date: string): Promise<number[]> {
   const client = getSupabaseClient()
   if (!client) return []
+  // select('*') so a missing duration_hours column never errors the query.
   const { data } = await client
     .from('bookings')
-    .select('booking_hour, duration_hours')
+    .select('*')
     .eq('service_slug', serviceSlug)
     .eq('booking_date', date)
     .in('status', [...ACTIVE_BOOKING_STATUSES])
   const hours = new Set<number>()
-  for (const r of (data ?? []) as { booking_hour: number | null; duration_hours: number | null }[]) {
-    if (r.booking_hour == null) continue
-    for (const h of occupiedHours(r.booking_hour, r.duration_hours ?? 1)) hours.add(h)
+  for (const r of (data ?? []) as BookingHourRow[]) {
+    for (const h of bookingOccupiedHours(r)) hours.add(h)
   }
   return [...hours]
 }
@@ -99,16 +108,17 @@ export async function findActiveHourConflict(
   const client = getAdminClient()
   const dur = Math.max(1, Math.floor(durationHours || 1))
 
+  const targetSet = new Set(occupiedHours(startHour, dur))
   const { data: active } = await client
     .from('bookings')
-    .select('id, booking_hour, duration_hours')
+    .select('*')
     .eq('service_slug', serviceSlug)
     .eq('booking_date', date)
     .in('status', [...ACTIVE_BOOKING_STATUSES])
-  for (const b of (active ?? []) as { id: string; booking_hour: number | null; duration_hours: number | null }[]) {
+  for (const b of (active ?? []) as (BookingHourRow & { id: string })[]) {
     if (excludeId && b.id === excludeId) continue
-    if (b.booking_hour == null) continue
-    if (rangesOverlap(startHour, dur, b.booking_hour, b.duration_hours ?? 1)) {
+    // Overlap = any shared hour between the existing booking and the target range.
+    if (bookingOccupiedHours(b).some((h) => targetSet.has(h))) {
       return { conflict: true, bookingId: b.id }
     }
   }

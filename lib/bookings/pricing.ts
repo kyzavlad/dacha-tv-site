@@ -97,6 +97,41 @@ export function occupiedHours(startHour: number, durationHours: number): number[
   return out
 }
 
+// Resilient occupied-hours for a booking ROW, using only columns that always
+// exist on old schemas (booking_hour, check_in, check_out) plus duration_hours
+// when present. Order of preference:
+//   1) check_in/check_out range when they carry an hour (same-day timestamps)
+//   2) booking_hour + duration_hours
+//   3) booking_hour for a single hour
+// This means availability never depends on the duration_hours column existing.
+export function bookingOccupiedHours(row: {
+  booking_hour?: number | null
+  check_in?: string | null
+  check_out?: string | null
+  duration_hours?: number | null
+}): number[] {
+  if (row.check_in && row.check_out) {
+    const ci = new Date(row.check_in)
+    const co = new Date(row.check_out)
+    if (!Number.isNaN(ci.getTime()) && !Number.isNaN(co.getTime())) {
+      const sh = ci.getUTCHours()
+      const eh = co.getUTCHours()
+      const spanMs = co.getTime() - ci.getTime()
+      // Same calendar day and a positive hour span → trust the stored range.
+      if (spanMs > 0 && spanMs <= 24 * 3600 * 1000 && eh > sh) {
+        const out: number[] = []
+        for (let h = sh; h < eh; h++) out.push(h)
+        if (out.length > 0) return out
+      }
+    }
+  }
+  if (row.booking_hour != null) {
+    const dur = Math.max(1, Math.floor(Number(row.duration_hours) || 1))
+    return occupiedHours(row.booking_hour, dur)
+  }
+  return []
+}
+
 // True when two [start, start+duration) hour ranges overlap.
 export function rangesOverlap(aStart: number, aDur: number, bStart: number, bDur: number): boolean {
   const aEnd = aStart + Math.max(1, aDur)
