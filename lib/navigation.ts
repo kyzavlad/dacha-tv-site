@@ -19,7 +19,7 @@ export const PRIMARY_NAV: NavItem[] = [
 // Secondary links shown only in the footer (policy / info pages).
 export const FOOTER_SECONDARY_NAV: NavItem[] = [
   { href: '/delivery', label: 'Доставка' },
-  { href: '/delivery', label: 'Оплата' },
+  { href: '/delivery#payment', label: 'Оплата' },
   { href: '/faq', label: 'FAQ' },
   { href: '/privacy', label: 'Політика конфіденційності' },
 ]

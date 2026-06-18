@@ -119,14 +119,22 @@ export default async function FaqPage() {
         })}
 
         <div className="bg-honey-50 rounded-2xl p-6 border border-honey-200 text-center">
-          <h2 className="font-serif text-xl font-bold text-bark mb-3">Не знайшли відповіді?</h2>
-          <p className="text-bark/70 mb-4">Зателефонуйте або напишіть: відповімо на будь-яке питання</p>
-          <a
-            href="/contact"
-            className="inline-flex items-center gap-2 bg-honey-700 hover:bg-honey-800 text-white font-semibold px-6 py-3 rounded-lg transition-colors min-h-[48px]"
-          >
-            Зв&apos;язатись з нами
-          </a>
+          <h2 className="font-serif text-xl font-bold text-bark mb-3">Готові замовити?</h2>
+          <p className="text-bark/70 mb-4">Переходьте до магазину або напишіть нам — допоможемо обрати</p>
+          <div className="flex flex-wrap justify-center gap-3">
+            <a
+              href="/catalog"
+              className="inline-flex items-center gap-2 bg-honey-700 hover:bg-honey-800 text-white font-semibold px-6 py-3 rounded-lg transition-colors min-h-[48px]"
+            >
+              Перейти до магазину
+            </a>
+            <a
+              href="/contact"
+              className="inline-flex items-center gap-2 border border-honey-700 text-honey-800 hover:bg-honey-100 font-semibold px-6 py-3 rounded-lg transition-colors min-h-[48px]"
+            >
+              Зв&apos;язатись з нами
+            </a>
+          </div>
         </div>
       </div>
     </div>

@@ -18,7 +18,7 @@ export const metadata: Metadata = {
   },
 }
 
-const STATIC_SECTIONS = [
+const STATIC_SECTIONS: { heading: string; body: string; id?: string }[] = [
   {
     heading: 'Мед та продукти пасіки',
     body: 'Відправляємо по всій Україні: Новою Поштою або Укрпоштою. Орієнтовний термін доставки: 1–3 робочих дні залежно від регіону. Мінімальне замовлення не встановлено.',
@@ -36,6 +36,7 @@ const STATIC_SECTIONS = [
     body: 'Живі тварини та вулики відправляємо виключно самовивозом або індивідуальною домовленістю. Передача відбувається особисто в Коротичі, Харківська область, або за домовленістю.',
   },
   {
+    id: 'payment',
     heading: 'Оплата',
     body: 'Приймаємо оплату банківським переказом (Monobank) або готівкою при самовивозі. Оплата накладеним платежем також можлива при відправці Новою Поштою. Деталі уточнюйте при оформленні замовлення.',
   },
@@ -58,7 +59,7 @@ export default function DeliveryPage() {
 
       <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-12 space-y-8">
         {STATIC_SECTIONS.map((section, idx) => (
-          <article key={idx} className="bg-white rounded-2xl p-6 border border-honey-100 shadow-sm">
+          <article key={idx} id={section.id} className="bg-white rounded-2xl p-6 border border-honey-100 shadow-sm">
             <h2 className="font-serif text-2xl font-bold text-bark mb-4">
               {section.heading}
             </h2>
