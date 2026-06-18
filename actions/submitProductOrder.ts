@@ -2,7 +2,11 @@
 
 import { z } from 'zod'
 import { getAdminClient } from '@/lib/supabase/admin'
-import { submitOrder } from '@/lib/supplier/order'
+import {
+  buildPersonalCabOrderPayload,
+  sendPersonalCabOrder,
+  getSupplierOrderMode,
+} from '@/lib/supplier/order'
 
 const ukrainianPhone = /^(\+380|0)\d{9}$/
 
@@ -91,10 +95,21 @@ export async function submitProductOrder(
     }
   }
 
-  // Build supplier products list (only catalog items with a known SKU)
-  const supplierProducts = d.items
+  // Supplier line items = catalog items with a known supplier SKU. Everything
+  // else (catalog items without a SKU, honey/apiary/flower/custom) is a manual
+  // item handled locally — it is NEVER forwarded to the supplier.
+  const supplierLineItems = d.items
     .filter((i) => i.productType === 'catalog' && slugToSku.has(i.productSlug))
-    .map((i) => ({ sku: slugToSku.get(i.productSlug)!, qty: i.quantity, price: i.price }))
+    .map((i) => ({ supplier_sku: slugToSku.get(i.productSlug)!, quantity: i.quantity, price_uah: i.price }))
+
+  const hasSupplierItems = supplierLineItems.length > 0
+  const hasManualItems = d.items.length > supplierLineItems.length
+  // A "mixed" order contains both supplier and manual items: we forward ONLY the
+  // supplier items and flag the rest for manual handling.
+  const isMixedOrder = hasSupplierItems && hasManualItems
+  const mixedNote = isMixedOrder
+    ? '⚠ Змішане замовлення: до постачальника передано лише товари з SKU; ручні товари (мед/квіти/інше) потребують окремої обробки.'
+    : null
 
   try {
     const { data: order, error: orderError } = await client
@@ -115,6 +130,9 @@ export async function submitProductOrder(
         method_payment: d.methodPayment,
         nova_poshta_warehouse_id: d.warehouseId,
         nova_poshta_warehouse_name: d.warehouseName ?? null,
+        // New order: admin_notes is empty, so it's safe to seed the mixed-order
+        // flag here without clobbering anything an admin typed later.
+        admin_notes: mixedNote,
       })
       .select('id')
       .single()
@@ -143,28 +161,46 @@ export async function submitProductOrder(
       console.error('[submitProductOrder] order_items insert failed:', itemsError.message)
     }
 
-    // Forward to supplier API if we have catalog items with SKUs
+    // Forward supplier items to personal.cab. A supplier API failure must NEVER
+    // lose the customer order — it is already saved above; we only annotate the
+    // supplier_order_* columns with the outcome.
+    //   mode=disabled → not_sent (kill switch)   no supplier items → skipped
+    //   sent ok       → test_sent | sent          send failed       → failed
     let supplierOrderId: string | undefined
     let supplierMode: string = 'skipped'
     let supplierStatus: string = 'skipped'
     let supplierResponse: Record<string, unknown> | null = null
 
-    if (supplierProducts.length > 0) {
-      const result = await submitOrder({
+    if (hasSupplierItems) {
+      const configuredMode = getSupplierOrderMode()
+      const built = buildPersonalCabOrderPayload({
         receiver_first_name: d.firstName,
         receiver_last_name: d.lastName,
         receiver_patronymic: d.patronymic,
         receiver_phone: d.phone,
         method_payment: d.methodPayment,
         location: d.warehouseId,
-        products: supplierProducts,
+        items: supplierLineItems,
         comments: d.comment,
       })
 
-      supplierOrderId = result.order_id
-      supplierMode = result.mode
-      supplierStatus = result.ok ? 'ok' : 'error'
-      supplierResponse = result.raw_response ?? null
+      if (configuredMode === 'disabled') {
+        // Kill switch: do not contact the supplier at all.
+        supplierMode = 'disabled'
+        supplierStatus = 'not_sent'
+        supplierResponse = { reason: 'SUPPLIER_ORDER_MODE=disabled' }
+      } else if (!built.ok) {
+        // Required data missing — keep the local order, record why it wasn't sent.
+        supplierMode = configuredMode
+        supplierStatus = 'failed'
+        supplierResponse = { errors: built.errors }
+      } else {
+        const result = await sendPersonalCabOrder(built.payload, { mode: configuredMode })
+        supplierOrderId = result.order_id
+        supplierMode = result.mode
+        supplierStatus = result.ok ? (result.mode === 'test' ? 'test_sent' : 'sent') : 'failed'
+        supplierResponse = result.raw_response ?? null
+      }
 
       await client.from('orders').update({
         supplier_order_id: supplierOrderId ?? null,
@@ -173,7 +209,7 @@ export async function submitProductOrder(
         supplier_order_response: supplierResponse,
       }).eq('id', orderId)
     } else {
-      // No catalog items — mark as skipped
+      // No supplier items — nothing to forward.
       await client.from('orders').update({
         supplier_order_mode: 'skipped',
         supplier_order_status: 'skipped',
@@ -193,6 +229,12 @@ export async function submitProductOrder(
       prepayment: 'Передоплата',
     }
 
+    const SUPPLIER_MODE_ICON: Record<string, string> = {
+      test: '🧪 тест',
+      live: '✅ live',
+      disabled: '⛔ вимкнено',
+    }
+
     const telegramText = [
       `🛒 Нове замовлення #${shortId}`,
       '',
@@ -205,8 +247,9 @@ export async function submitProductOrder(
       '',
       `Сума: ${totalUah} ₴`,
       supplierMode !== 'skipped'
-        ? `Постачальник: ${supplierMode === 'test' ? '🧪 тест' : '✅ live'} — ${supplierStatus}${supplierOrderId ? ` #${supplierOrderId}` : ''}`
+        ? `Постачальник: ${SUPPLIER_MODE_ICON[supplierMode] ?? supplierMode} — ${supplierStatus}${supplierOrderId ? ` #${supplierOrderId}` : ''}`
         : null,
+      mixedNote,
       d.comment ? `Коментар: ${d.comment}` : null,
     ]
       .filter(Boolean)
