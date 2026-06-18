@@ -23,7 +23,11 @@ export async function GET(req: Request) {
     }
 
     const warehouses = await searchNovaPoshtaWarehouses(query, 30)
-    return Response.json({ ok: true, warehouses })
+    // Allow CDN/edge to cache per-query responses. The server already caches the
+    // full list in memory (6h), so stale responses are still served quickly.
+    return Response.json({ ok: true, warehouses }, {
+      headers: { 'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=3600' },
+    })
   } catch (e) {
     return Response.json(
       { ok: false, error: e instanceof Error ? e.message : String(e) },

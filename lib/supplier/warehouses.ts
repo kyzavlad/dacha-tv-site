@@ -58,7 +58,7 @@ export async function fetchNovaPoshtaWarehouses(city?: string): Promise<NovaPosh
 // Full list is large (~10k rows) and changes infrequently.
 // Cache per server instance; no secrets stored, only public warehouse data.
 
-const CACHE_TTL_MS = 5 * 60 * 1000
+const CACHE_TTL_MS = 6 * 60 * 60 * 1000 // 6 hours — NP warehouse list changes rarely
 let _cache: { at: number; rows: NovaPoshtaWarehouse[] } | null = null
 let _inflight: Promise<NovaPoshtaWarehouse[]> | null = null
 
