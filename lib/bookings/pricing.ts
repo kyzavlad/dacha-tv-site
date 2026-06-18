@@ -97,39 +97,86 @@ export function occupiedHours(startHour: number, durationHours: number): number[
   return out
 }
 
-// Resilient occupied-hours for a booking ROW, using only columns that always
-// exist on old schemas (booking_hour, check_in, check_out) plus duration_hours
-// when present. Order of preference:
-//   1) check_in/check_out range when they carry an hour (same-day timestamps)
-//   2) booking_hour + duration_hours
-//   3) booking_hour for a single hour
-// This means availability never depends on the duration_hours column existing.
-export function bookingOccupiedHours(row: {
+// ─── Comment-embedded booking metadata ──────────────────────────────────────
+// On old production DBs the duration_hours column may not exist and check_in/
+// check_out are date-only (hours truncated). To preserve duration/extras without
+// a migration we stash a small JSON blob inside the always-present `comment`
+// text column, wrapped in markers so it can be stripped before display.
+
+const META_RE = /\s*\*\*BOOKING_META\*\*([\s\S]*?)\*\*END_BOOKING_META\*\*\s*/
+
+export interface BookingMeta {
+  duration_hours?: number
+  guest_count?: number
+  extra_guests_count?: number
+  bouquet_qty?: number
+}
+
+// Append the meta block to the (optional) user comment, preserving the user text.
+export function buildBookingCommentWithMeta(userComment: string | null | undefined, meta: BookingMeta): string {
+  const clean = (userComment ?? '').trim()
+  const metaStr = `**BOOKING_META**${JSON.stringify(meta)}**END_BOOKING_META**`
+  return clean ? `${clean}\n${metaStr}` : metaStr
+}
+
+// Return the human comment with the meta block removed (null when nothing left).
+export function stripBookingMeta(comment: string | null | undefined): string | null {
+  if (!comment) return null
+  const cleaned = comment.replace(META_RE, ' ').trim()
+  return cleaned.length > 0 ? cleaned : null
+}
+
+// Parse the embedded meta JSON, or null when absent/invalid.
+export function readBookingMeta(comment: string | null | undefined): BookingMeta | null {
+  if (!comment) return null
+  const m = comment.match(META_RE)
+  if (!m) return null
+  try {
+    const parsed = JSON.parse(m[1].trim())
+    return parsed && typeof parsed === 'object' ? (parsed as BookingMeta) : null
+  } catch {
+    return null
+  }
+}
+
+export interface BookingHourRow {
   booking_hour?: number | null
   check_in?: string | null
   check_out?: string | null
   duration_hours?: number | null
-}): number[] {
+  comment?: string | null
+}
+
+// Resolve a booking's duration (hours) without depending on the duration_hours
+// column. Preference order:
+//   1) duration_hours column (when present)
+//   2) duration_hours parsed from the comment meta block
+//   3) check_in/check_out span (only meaningful on timestamp columns)
+//   4) 1 hour
+export function bookingDurationHours(row: BookingHourRow): number {
+  if (row.duration_hours && row.duration_hours > 0) return Math.floor(row.duration_hours)
+
+  const meta = readBookingMeta(row.comment)
+  if (meta && Number(meta.duration_hours) > 0) return Math.floor(Number(meta.duration_hours))
+
   if (row.check_in && row.check_out) {
     const ci = new Date(row.check_in)
     const co = new Date(row.check_out)
     if (!Number.isNaN(ci.getTime()) && !Number.isNaN(co.getTime())) {
-      const sh = ci.getUTCHours()
-      const eh = co.getUTCHours()
-      const spanMs = co.getTime() - ci.getTime()
-      // Same calendar day and a positive hour span → trust the stored range.
-      if (spanMs > 0 && spanMs <= 24 * 3600 * 1000 && eh > sh) {
-        const out: number[] = []
-        for (let h = sh; h < eh; h++) out.push(h)
-        if (out.length > 0) return out
-      }
+      const h = Math.round((co.getTime() - ci.getTime()) / 3_600_000)
+      if (h > 0 && h <= 24) return h
     }
   }
-  if (row.booking_hour != null) {
-    const dur = Math.max(1, Math.floor(Number(row.duration_hours) || 1))
-    return occupiedHours(row.booking_hour, dur)
-  }
-  return []
+  return 1
+}
+
+// Resilient occupied-hours for a booking ROW. The start is the always-present
+// booking_hour; the duration comes from bookingDurationHours() (column → comment
+// meta → check_in/out → 1), so multi-hour bookings block every hour even on an
+// un-migrated database. 18:00 for 3h → [18,19,20].
+export function bookingOccupiedHours(row: BookingHourRow): number[] {
+  if (row.booking_hour == null) return []
+  return occupiedHours(row.booking_hour, bookingDurationHours(row))
 }
 
 // True when two [start, start+duration) hour ranges overlap.

@@ -15,6 +15,9 @@ import {
   LAVENDER_EVENING_FROM_HOUR,
   LAVENDER_MAX_DURATION_HOURS,
   computeBookingPrice,
+  buildBookingCommentWithMeta,
+  stripBookingMeta,
+  readBookingMeta,
   type HourlyPricingConfig,
 } from '@/lib/bookings/pricing'
 
@@ -207,7 +210,14 @@ export async function submitHourlyBooking(formData: FormData): Promise<ActionRes
       extra_guests_count: extraGuests,
       bouquet_qty: bouquetQty,
       total_price_uah: total,
-      comment: d.comment ?? null,
+      // DB comment carries a hidden meta block so duration/extras survive even if
+      // those columns don't exist. The clean user comment goes to Telegram/n8n.
+      comment: buildBookingCommentWithMeta(d.comment, {
+        duration_hours: durationHours,
+        guest_count: guestCount,
+        extra_guests_count: extraGuests,
+        bouquet_qty: bouquetQty,
+      }),
       source: d.source ?? null,
       status: 'new',
     }
@@ -436,12 +446,15 @@ export async function adminUpdateBookingSchedule(
 
   try {
     const client = getAdminClient()
+    // select('*') so the query never fails when extra_guests_count / bouquet_qty
+    // columns are missing on an un-migrated DB; extras fall back to comment meta.
     const { data: b } = await client
       .from('bookings')
-      .select('service_slug, status, extra_guests_count, bouquet_qty')
+      .select('*')
       .eq('id', id)
       .single()
     if (!b) return { success: false, error: 'Бронювання не знайдено' }
+    const meta = readBookingMeta(b.comment)
 
     const willBeConfirmed = alsoConfirm || b.status === 'confirmed'
     if (willBeConfirmed) {
@@ -458,8 +471,9 @@ export async function adminUpdateBookingSchedule(
       .single()
     const slotEnd = svc?.slot_end_hour ?? 21
     durationHours = Math.min(durationHours, Math.max(1, slotEnd - bookingHour))
-    const extraGuests = Math.max(0, b.extra_guests_count ?? 0)
-    const bouquetQty = Math.max(0, b.bouquet_qty ?? 0)
+    const extraGuests = Math.max(0, Number(b.extra_guests_count ?? meta?.extra_guests_count ?? 0))
+    const bouquetQty = Math.max(0, Number(b.bouquet_qty ?? meta?.bouquet_qty ?? 0))
+    const guestCount = Number(b.guest_count ?? meta?.guest_count) || undefined
 
     const price = computeBookingPrice({
       startHour: bookingHour,
@@ -476,6 +490,14 @@ export async function adminUpdateBookingSchedule(
       booking_hour: bookingHour,
       duration_hours: durationHours,
       total_price_uah: price.total,
+      // Refresh the comment meta so the new duration survives even without the
+      // duration_hours column; keep the user's real comment intact.
+      comment: buildBookingCommentWithMeta(stripBookingMeta(b.comment), {
+        duration_hours: durationHours,
+        guest_count: guestCount,
+        extra_guests_count: extraGuests,
+        bouquet_qty: bouquetQty,
+      }),
     }
     if (alsoConfirm) payload.status = 'confirmed'
 

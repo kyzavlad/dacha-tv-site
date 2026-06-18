@@ -1,15 +1,6 @@
 import { getAdminClient } from '@/lib/supabase/admin'
 import { getSupabaseClient } from '@/lib/supabase/client'
-import { occupiedHours, bookingOccupiedHours, ACTIVE_BOOKING_STATUSES } from '@/lib/bookings/pricing'
-
-// Minimal row shape for availability/conflict math — only optional columns that
-// may be absent on un-migrated databases plus the always-present booking_hour.
-type BookingHourRow = {
-  booking_hour?: number | null
-  check_in?: string | null
-  check_out?: string | null
-  duration_hours?: number | null
-}
+import { occupiedHours, bookingOccupiedHours, ACTIVE_BOOKING_STATUSES, type BookingHourRow } from '@/lib/bookings/pricing'
 
 export interface BookingService {
   id: string
