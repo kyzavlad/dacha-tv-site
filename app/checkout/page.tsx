@@ -2,7 +2,7 @@
 
 export const dynamic = 'force-dynamic'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { useCart } from '@/lib/cart/CartContext'
 import { submitProductOrder } from '@/actions/submitProductOrder'
@@ -31,26 +31,58 @@ function WarehousePicker({
   const [warehouses, setWarehouses] = useState<Warehouse[]>([])
   const [loading, setLoading] = useState(false)
   const [fetchError, setFetchError] = useState<string | null>(null)
+  const abortRef = useRef<AbortController | null>(null)
 
-  const search = useCallback(async () => {
-    if (!city.trim()) return
+  const searchCity = useCallback(async (term: string, signal?: AbortSignal) => {
+    if (!term.trim() || term.trim().length < 2) return
     setLoading(true)
     setFetchError(null)
     try {
-      const res = await fetch(`/api/supplier/warehouses?city=${encodeURIComponent(city.trim())}`)
+      const res = await fetch(
+        `/api/supplier/warehouses?city=${encodeURIComponent(term.trim())}`,
+        { signal }
+      )
+      if (signal?.aborted) return
       const data = await res.json() as { ok: boolean; warehouses?: Warehouse[]; error?: string }
       if (!data.ok) {
         setFetchError(data.error ?? 'Помилка пошуку')
       } else {
-        setWarehouses(data.warehouses ?? [])
-        if ((data.warehouses ?? []).length === 0) setFetchError('Відділення не знайдено. Спробуйте іншу назву міста.')
+        const list = data.warehouses ?? []
+        setWarehouses(list)
+        if (list.length === 0) setFetchError('Місто не знайдено. Перевірте назву та спробуйте ще раз.')
       }
-    } catch {
+    } catch (e) {
+      if ((e as Error)?.name === 'AbortError') return
       setFetchError('Помилка з\'єднання')
     } finally {
-      setLoading(false)
+      if (!signal?.aborted) setLoading(false)
     }
-  }, [city])
+  }, [])
+
+  // Debounced auto-search: triggers 500ms after the user stops typing
+  useEffect(() => {
+    const trimmed = city.trim()
+    if (trimmed.length < 2) {
+      setWarehouses([])
+      setFetchError(null)
+      return
+    }
+    // Cancel any in-flight request from the previous keystroke
+    abortRef.current?.abort()
+    const ac = new AbortController()
+    abortRef.current = ac
+    const timer = setTimeout(() => searchCity(trimmed, ac.signal), 500)
+    return () => {
+      clearTimeout(timer)
+      ac.abort()
+    }
+  }, [city, searchCity])
+
+  function handleCityChange(val: string) {
+    setCity(val)
+    // Clear the chosen warehouse when city changes
+    if (warehouseId) onChange('', '')
+  }
 
   return (
     <div className="space-y-2">
@@ -58,20 +90,39 @@ function WarehousePicker({
         <input
           type="text"
           value={city}
-          onChange={(e) => setCity(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); search() } }}
+          onChange={(e) => handleCityChange(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              abortRef.current?.abort()
+              const ac = new AbortController()
+              abortRef.current = ac
+              searchCity(city, ac.signal)
+            }
+          }}
           placeholder="Місто (наприклад: Київ)"
           className="flex-1 border border-gray-200 rounded-xl px-4 py-3 text-bark placeholder:text-bark/40 focus:outline-none focus:ring-2 focus:ring-honey-400 focus:border-transparent"
+          aria-label="Пошук міста"
         />
         <button
           type="button"
-          onClick={search}
-          disabled={loading || !city.trim()}
+          onClick={() => {
+            abortRef.current?.abort()
+            const ac = new AbortController()
+            abortRef.current = ac
+            searchCity(city, ac.signal)
+          }}
+          disabled={loading || city.trim().length < 2}
           className="px-4 py-3 bg-gray-100 hover:bg-gray-200 disabled:opacity-50 text-bark font-medium rounded-xl transition-colors text-sm whitespace-nowrap"
+          aria-label="Знайти відділення"
         >
           {loading ? '…' : 'Знайти'}
         </button>
       </div>
+
+      {city.trim().length > 0 && city.trim().length < 2 && (
+        <p className="text-bark/40 text-xs">Введіть щонайменше 2 символи для пошуку</p>
+      )}
 
       {fetchError && <p className="text-red-500 text-xs">{fetchError}</p>}
 
@@ -83,6 +134,7 @@ function WarehousePicker({
             onChange(e.target.value, w ? `${w.city_name}, ${w.name}` : e.target.value)
           }}
           className="w-full border border-gray-200 rounded-xl px-4 py-3 text-bark focus:outline-none focus:ring-2 focus:ring-honey-400 focus:border-transparent bg-white"
+          aria-label="Оберіть відділення"
         >
           <option value="">— Оберіть відділення —</option>
           {warehouses.map((w) => (
@@ -118,6 +170,16 @@ export default function CheckoutPage() {
   const [error, setError] = useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({})
   const [successOrderId, setSuccessOrderId] = useState<string | null>(null)
+
+  // Supplier (catalog) items can only be paid on delivery until live prepayment is enabled.
+  const hasSupplierItems = items.some((item) => item.productType === 'catalog')
+
+  // If the cart gains a supplier item while prepayment is selected, reset to COD.
+  useEffect(() => {
+    if (hasSupplierItems && methodPayment === 'prepayment') {
+      setMethodPayment('cashondelivery')
+    }
+  }, [hasSupplierItems, methodPayment])
 
   if (successOrderId) {
     return (
@@ -283,27 +345,38 @@ export default function CheckoutPage() {
                     {([
                       { value: 'cashondelivery', label: 'Накладний платіж', desc: 'Оплата при отриманні' },
                       { value: 'prepayment', label: 'Передоплата', desc: 'Оплата до відправки' },
-                    ] as const).map((opt) => (
-                      <label
-                        key={opt.value}
-                        className={`flex flex-col gap-0.5 p-3 border-2 rounded-xl cursor-pointer transition-colors ${
-                          methodPayment === opt.value
-                            ? 'border-honey-500 bg-honey-50'
-                            : 'border-gray-200 hover:border-gray-300'
-                        }`}
-                      >
-                        <input
-                          type="radio"
-                          name="methodPayment"
-                          value={opt.value}
-                          checked={methodPayment === opt.value}
-                          onChange={() => setMethodPayment(opt.value)}
-                          className="sr-only"
-                        />
-                        <span className="text-sm font-semibold text-bark">{opt.label}</span>
-                        <span className="text-xs text-bark/50">{opt.desc}</span>
-                      </label>
-                    ))}
+                    ] as const).map((opt) => {
+                      const lockedOut = opt.value === 'prepayment' && hasSupplierItems
+                      return (
+                        <label
+                          key={opt.value}
+                          className={`flex flex-col gap-0.5 p-3 border-2 rounded-xl transition-colors ${
+                            lockedOut
+                              ? 'border-gray-200 opacity-60 cursor-not-allowed'
+                              : methodPayment === opt.value
+                              ? 'border-honey-500 bg-honey-50 cursor-pointer'
+                              : 'border-gray-200 hover:border-gray-300 cursor-pointer'
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name="methodPayment"
+                            value={opt.value}
+                            checked={methodPayment === opt.value}
+                            disabled={lockedOut}
+                            onChange={() => !lockedOut && setMethodPayment(opt.value)}
+                            className="sr-only"
+                          />
+                          <span className="text-sm font-semibold text-bark">{opt.label}</span>
+                          <span className="text-xs text-bark/50">{opt.desc}</span>
+                          {lockedOut && (
+                            <span className="text-xs text-amber-700 mt-0.5 leading-snug">
+                              Буде доступна після підтвердження менеджером
+                            </span>
+                          )}
+                        </label>
+                      )
+                    })}
                   </div>
                 </div>
 
