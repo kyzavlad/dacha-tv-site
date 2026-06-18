@@ -2,152 +2,159 @@
 
 export const dynamic = 'force-dynamic'
 
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { useCart } from '@/lib/cart/CartContext'
 import { submitProductOrder } from '@/actions/submitProductOrder'
+import { isValidUkrainianPhone } from '@/lib/utils'
 
-const ukrainianPhone = /^(\+380|0)\d{9}$/
-
-interface Warehouse {
+// Shape returned by /api/supplier/warehouses (server-filtered, ≤30 rows)
+interface WarehouseResult {
   internal_id: string
+  city: string
   name: string
-  city_name: string
   address: string
+  label: string
 }
 
+// Lightweight combobox for Nova Poshta settlement/warehouse selection.
+// Searches are server-side filtered (≤30 results), so we never render
+// thousands of options. Debounced 450ms + AbortController for stale requests.
 function WarehousePicker({
   warehouseId,
-  warehouseName,
   onChange,
   error,
 }: {
   warehouseId: string
-  warehouseName: string
-  onChange: (id: string, name: string) => void
+  onChange: (id: string, label: string) => void
   error?: string
 }) {
-  const [city, setCity] = useState('')
-  const [warehouses, setWarehouses] = useState<Warehouse[]>([])
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState<WarehouseResult[]>([])
   const [loading, setLoading] = useState(false)
   const [fetchError, setFetchError] = useState<string | null>(null)
+  const [open, setOpen] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
+  const boxRef = useRef<HTMLDivElement | null>(null)
 
-  const searchCity = useCallback(async (term: string, signal?: AbortSignal) => {
-    if (!term.trim() || term.trim().length < 2) return
-    setLoading(true)
-    setFetchError(null)
-    try {
-      const res = await fetch(
-        `/api/supplier/warehouses?city=${encodeURIComponent(term.trim())}`,
-        { signal }
-      )
-      if (signal?.aborted) return
-      const data = await res.json() as { ok: boolean; warehouses?: Warehouse[]; error?: string }
-      if (!data.ok) {
-        setFetchError(data.error ?? 'Помилка пошуку')
-      } else {
-        const list = data.warehouses ?? []
-        setWarehouses(list)
-        if (list.length === 0) setFetchError('Місто не знайдено. Перевірте назву та спробуйте ще раз.')
-      }
-    } catch (e) {
-      if ((e as Error)?.name === 'AbortError') return
-      setFetchError('Помилка з\'єднання')
-    } finally {
-      if (!signal?.aborted) setLoading(false)
-    }
-  }, [])
-
-  // Debounced auto-search: triggers 500ms after the user stops typing
+  // Debounced search — fires 450ms after typing stops, cancels stale requests.
   useEffect(() => {
-    const trimmed = city.trim()
+    const trimmed = query.trim()
     if (trimmed.length < 2) {
-      setWarehouses([])
+      abortRef.current?.abort()
+      setResults([])
       setFetchError(null)
+      setLoading(false)
+      setOpen(false)
       return
     }
-    // Cancel any in-flight request from the previous keystroke
+
     abortRef.current?.abort()
     const ac = new AbortController()
     abortRef.current = ac
-    const timer = setTimeout(() => searchCity(trimmed, ac.signal), 500)
-    return () => {
-      clearTimeout(timer)
-      ac.abort()
-    }
-  }, [city, searchCity])
+    setLoading(true)
 
-  function handleCityChange(val: string) {
-    setCity(val)
-    // Clear the chosen warehouse when city changes
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(
+          `/api/supplier/warehouses?q=${encodeURIComponent(trimmed)}`,
+          { signal: ac.signal }
+        )
+        if (ac.signal.aborted) return
+        const data = (await res.json()) as { ok: boolean; warehouses?: WarehouseResult[]; error?: string }
+        if (!data.ok) {
+          setFetchError(data.error ?? 'Помилка пошуку')
+          setResults([])
+        } else {
+          const list = data.warehouses ?? []
+          setResults(list)
+          setOpen(list.length > 0)
+          setFetchError(list.length === 0 ? 'Населений пункт або відділення не знайдено' : null)
+        }
+      } catch (e) {
+        if ((e as Error)?.name === 'AbortError') return
+        setFetchError('Помилка з\'єднання')
+        setResults([])
+      } finally {
+        if (!ac.signal.aborted) setLoading(false)
+      }
+    }, 450)
+
+    return () => clearTimeout(timer)
+  }, [query])
+
+  // Close dropdown on outside click.
+  useEffect(() => {
+    function onDocClick(e: MouseEvent) {
+      if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onDocClick)
+    return () => document.removeEventListener('mousedown', onDocClick)
+  }, [])
+
+  function handleInput(val: string) {
+    setQuery(val)
+    // Editing after a selection invalidates the chosen warehouse.
     if (warehouseId) onChange('', '')
   }
 
+  function select(w: WarehouseResult) {
+    onChange(w.internal_id, w.label)
+    setQuery(w.label)
+    setResults([])
+    setOpen(false)
+    setFetchError(null)
+  }
+
+  const trimLen = query.trim().length
+
   return (
-    <div className="space-y-2">
-      <div className="flex gap-2">
+    <div className="space-y-2" ref={boxRef}>
+      <div className="relative">
         <input
           type="text"
-          value={city}
-          onChange={(e) => handleCityChange(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault()
-              abortRef.current?.abort()
-              const ac = new AbortController()
-              abortRef.current = ac
-              searchCity(city, ac.signal)
-            }
-          }}
-          placeholder="Місто (наприклад: Київ)"
-          className="flex-1 border border-gray-200 rounded-xl px-4 py-3 text-bark placeholder:text-bark/40 focus:outline-none focus:ring-2 focus:ring-honey-400 focus:border-transparent"
-          aria-label="Пошук міста"
+          value={query}
+          onChange={(e) => handleInput(e.target.value)}
+          onFocus={() => { if (results.length > 0) setOpen(true) }}
+          placeholder="Населений пункт або відділення (наприклад: Пісочин)"
+          autoComplete="off"
+          aria-label="Населений пункт або відділення Нової Пошти"
+          className="w-full border border-gray-200 rounded-xl px-4 py-3 text-bark placeholder:text-bark/40 focus:outline-none focus:ring-2 focus:ring-honey-400 focus:border-transparent"
         />
-        <button
-          type="button"
-          onClick={() => {
-            abortRef.current?.abort()
-            const ac = new AbortController()
-            abortRef.current = ac
-            searchCity(city, ac.signal)
-          }}
-          disabled={loading || city.trim().length < 2}
-          className="px-4 py-3 bg-gray-100 hover:bg-gray-200 disabled:opacity-50 text-bark font-medium rounded-xl transition-colors text-sm whitespace-nowrap"
-          aria-label="Знайти відділення"
-        >
-          {loading ? '…' : 'Знайти'}
-        </button>
+        {loading && (
+          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-bark/40 text-sm pointer-events-none" aria-hidden="true">…</span>
+        )}
+
+        {open && results.length > 0 && (
+          <ul
+            role="listbox"
+            aria-label="Результати пошуку відділень"
+            className="absolute z-10 mt-1 w-full max-h-72 overflow-auto bg-white border border-gray-200 rounded-xl shadow-lg"
+          >
+            {results.map((w) => (
+              <li key={w.internal_id} role="option" aria-selected={warehouseId === w.internal_id}>
+                <button
+                  type="button"
+                  onClick={() => select(w)}
+                  className="w-full text-left px-4 py-2.5 text-sm text-bark hover:bg-honey-50 transition-colors border-b border-gray-50 last:border-b-0"
+                >
+                  {w.label}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
 
-      {city.trim().length > 0 && city.trim().length < 2 && (
-        <p className="text-bark/40 text-xs">Введіть щонайменше 2 символи для пошуку</p>
+      {trimLen > 0 && trimLen < 2 && (
+        <p className="text-bark/40 text-xs">Введіть населений пункт</p>
       )}
 
       {fetchError && <p className="text-red-500 text-xs">{fetchError}</p>}
 
-      {warehouses.length > 0 && (
-        <select
-          value={warehouseId}
-          onChange={(e) => {
-            const w = warehouses.find((w) => w.internal_id === e.target.value)
-            onChange(e.target.value, w ? `${w.city_name}, ${w.name}` : e.target.value)
-          }}
-          className="w-full border border-gray-200 rounded-xl px-4 py-3 text-bark focus:outline-none focus:ring-2 focus:ring-honey-400 focus:border-transparent bg-white"
-          aria-label="Оберіть відділення"
-        >
-          <option value="">— Оберіть відділення —</option>
-          {warehouses.map((w) => (
-            <option key={w.internal_id} value={w.internal_id}>
-              {w.name}{w.address ? `: ${w.address}` : ''}
-            </option>
-          ))}
-        </select>
-      )}
-
-      {warehouseId && warehouseName && (
+      {warehouseId && (
         <p className="text-xs text-green-700 bg-green-50 rounded-lg px-3 py-2">
-          ✓ {warehouseName}
+          ✓ {query}
         </p>
       )}
 
@@ -171,10 +178,10 @@ export default function CheckoutPage() {
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({})
   const [successOrderId, setSuccessOrderId] = useState<string | null>(null)
 
-  // Supplier (catalog) items can only be paid on delivery until live prepayment is enabled.
+  // Supplier (catalog) items stay locked to cashondelivery until live prepayment
+  // is enabled — preserving PR #16 payment lock.
   const hasSupplierItems = items.some((item) => item.productType === 'catalog')
 
-  // If the cart gains a supplier item while prepayment is selected, reset to COD.
   useEffect(() => {
     if (hasSupplierItems && methodPayment === 'prepayment') {
       setMethodPayment('cashondelivery')
@@ -230,7 +237,7 @@ export default function CheckoutPage() {
     setError(null)
     setFieldErrors({})
 
-    if (!ukrainianPhone.test(phone)) {
+    if (!isValidUkrainianPhone(phone)) {
       setFieldErrors({ phone: ['Введіть коректний номер телефону (+380XXXXXXXXX або 0XXXXXXXXX)'] })
       return
     }
@@ -282,8 +289,9 @@ export default function CheckoutPage() {
           <div className="lg:col-span-3">
             <div className="bg-white rounded-2xl p-6 border border-honey-100 shadow-sm">
               <form onSubmit={handleSubmit} className="space-y-5">
-                {/* Name: split */}
                 <h2 className="font-serif text-xl font-bold text-bark">Отримувач</h2>
+
+                {/* Last + first name */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label htmlFor="lastName" className="block text-sm font-medium text-bark/70 mb-1.5">
@@ -330,6 +338,8 @@ export default function CheckoutPage() {
                     required
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
+                    pattern="(\+?38)?0\d{9}"
+                    title="Введіть номер у форматі +380XXXXXXXXX або 0XXXXXXXXX"
                     placeholder="+380XXXXXXXXX або 0XXXXXXXXX"
                     className="w-full border border-gray-200 rounded-xl px-4 py-3 text-bark placeholder:text-bark/40 focus:outline-none focus:ring-2 focus:ring-honey-400 focus:border-transparent"
                   />
@@ -344,7 +354,7 @@ export default function CheckoutPage() {
                   <div className="grid grid-cols-2 gap-3">
                     {([
                       { value: 'cashondelivery', label: 'Накладний платіж', desc: 'Оплата при отриманні' },
-                      { value: 'prepayment', label: 'Передоплата', desc: 'Оплата до відправки' },
+                      { value: 'prepayment',     label: 'Передоплата',      desc: 'Оплата до відправки' },
                     ] as const).map((opt) => {
                       const lockedOut = opt.value === 'prepayment' && hasSupplierItems
                       return (
@@ -371,7 +381,7 @@ export default function CheckoutPage() {
                           <span className="text-xs text-bark/50">{opt.desc}</span>
                           {lockedOut && (
                             <span className="text-xs text-amber-700 mt-0.5 leading-snug">
-                              Буде доступна після підтвердження менеджером
+                              Передплата буде доступна після підтвердження менеджером
                             </span>
                           )}
                         </label>
@@ -387,8 +397,7 @@ export default function CheckoutPage() {
                   </label>
                   <WarehousePicker
                     warehouseId={warehouseId}
-                    warehouseName={warehouseName}
-                    onChange={(id, name) => { setWarehouseId(id); setWarehouseName(name) }}
+                    onChange={(id, label) => { setWarehouseId(id); setWarehouseName(label) }}
                     error={fieldErrors.warehouseId?.[0]}
                   />
                 </div>

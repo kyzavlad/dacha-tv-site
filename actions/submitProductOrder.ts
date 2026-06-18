@@ -7,8 +7,7 @@ import {
   sendPersonalCabOrder,
   getSupplierOrderMode,
 } from '@/lib/supplier/order'
-
-const ukrainianPhone = /^(\+380|0)\d{9}$/
+import { normalizeUkrainianPhone, isValidUkrainianPhone } from '@/lib/utils'
 
 const orderItemSchema = z.object({
   id: z.string(),
@@ -25,7 +24,12 @@ const submitOrderSchema = z.object({
   firstName: z.string().min(2, "Ім'я має містити щонайменше 2 символи"),
   lastName: z.string().min(2, 'Прізвище має містити щонайменше 2 символи'),
   patronymic: z.string().optional(),
-  phone: z.string().regex(ukrainianPhone, 'Введіть коректний номер телефону'),
+  // Validate then normalise to canonical +380XXXXXXXXX so both the saved order
+  // and the supplier payload always receive a clean phone number.
+  phone: z
+    .string()
+    .refine(isValidUkrainianPhone, 'Введіть коректний номер телефону (+380XXXXXXXXX або 0XXXXXXXXX)')
+    .transform((v) => normalizeUkrainianPhone(v)!),
   methodPayment: z.enum(['cashondelivery', 'prepayment']),
   warehouseId: z.string().min(1, 'Оберіть відділення Нової Пошти'),
   warehouseName: z.string().optional(),
