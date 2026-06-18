@@ -193,14 +193,14 @@ export default async function ProductPage({ params }: Props) {
                   />
                 </>
               ) : product.status === 'published' ? (
-                // Inquiry / no-price product. Manual products with a lead_type get
-                // an inline lead form routed to the right Telegram thread; others
+                // Inquiry / no-price product. Show inline lead form when we have
+                // a lead_type or the product is explicitly inquiry_only; otherwise
                 // fall back to the contact page.
-                product.lead_type ? (
+                (product.lead_type || product.inquiry_only) ? (
                   <ManualLeadForm
                     productName={product.name_ua}
                     productSlug={product.slug}
-                    leadType={product.lead_type as ManualLeadType}
+                    leadType={(product.lead_type as ManualLeadType) ?? 'natural_products'}
                     category={categorySlug}
                     options={product.options}
                     source={`/catalog/${categorySlug}/${productSlug}`}
