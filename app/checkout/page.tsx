@@ -19,7 +19,7 @@ interface WarehouseResult {
 
 // Lightweight combobox for Nova Poshta settlement/warehouse selection.
 // Searches are server-side filtered (≤30 results), so we never render
-// thousands of options. Debounced 450ms + AbortController for stale requests.
+// thousands of options. Debounced 300ms + AbortController for stale requests.
 function WarehousePicker({
   warehouseId,
   onChange,
@@ -32,19 +32,28 @@ function WarehousePicker({
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<WarehouseResult[]>([])
   const [loading, setLoading] = useState(false)
+  const [slowLoad, setSlowLoad] = useState(false)
   const [fetchError, setFetchError] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
   const boxRef = useRef<HTMLDivElement | null>(null)
+  // Prevents a re-search when query changes because the user just selected a warehouse.
+  const justSelectedRef = useRef(false)
 
-  // Debounced search — fires 450ms after typing stops, cancels stale requests.
   useEffect(() => {
+    // Skip the search triggered by select() setting the query to the warehouse label.
+    if (justSelectedRef.current) {
+      justSelectedRef.current = false
+      return
+    }
+
     const trimmed = query.trim()
     if (trimmed.length < 2) {
       abortRef.current?.abort()
       setResults([])
       setFetchError(null)
       setLoading(false)
+      setSlowLoad(false)
       setOpen(false)
       return
     }
@@ -53,6 +62,10 @@ function WarehousePicker({
     const ac = new AbortController()
     abortRef.current = ac
     setLoading(true)
+    setSlowLoad(false)
+
+    // Slow-load hint: if the first fetch takes over 1.2s (cold cache), tell the user.
+    const slowTimer = setTimeout(() => setSlowLoad(true), 1200)
 
     const timer = setTimeout(async () => {
       try {
@@ -76,14 +89,19 @@ function WarehousePicker({
         setFetchError('Помилка з\'єднання')
         setResults([])
       } finally {
+        clearTimeout(slowTimer)
+        setSlowLoad(false)
         if (!ac.signal.aborted) setLoading(false)
       }
-    }, 450)
+    }, 300)
 
-    return () => clearTimeout(timer)
+    return () => {
+      clearTimeout(timer)
+      clearTimeout(slowTimer)
+    }
   }, [query])
 
-  // Close dropdown on outside click.
+  // Close the dropdown on outside click.
   useEffect(() => {
     function onDocClick(e: MouseEvent) {
       if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpen(false)
@@ -94,16 +112,20 @@ function WarehousePicker({
 
   function handleInput(val: string) {
     setQuery(val)
-    // Editing after a selection invalidates the chosen warehouse.
+    // Any manual edit invalidates the previously selected warehouse.
     if (warehouseId) onChange('', '')
   }
 
   function select(w: WarehouseResult) {
+    // Mark so the useEffect triggered by setQuery(w.label) below does NOT fire a search.
+    justSelectedRef.current = true
     onChange(w.internal_id, w.label)
     setQuery(w.label)
     setResults([])
     setOpen(false)
     setFetchError(null)
+    setLoading(false)
+    setSlowLoad(false)
   }
 
   const trimLen = query.trim().length
@@ -121,9 +143,6 @@ function WarehousePicker({
           aria-label="Населений пункт або відділення Нової Пошти"
           className="w-full border border-gray-200 rounded-xl px-4 py-3 text-bark placeholder:text-bark/40 focus:outline-none focus:ring-2 focus:ring-honey-400 focus:border-transparent"
         />
-        {loading && (
-          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-bark/40 text-sm pointer-events-none" aria-hidden="true">…</span>
-        )}
 
         {open && results.length > 0 && (
           <ul
@@ -146,18 +165,45 @@ function WarehousePicker({
         )}
       </div>
 
-      {trimLen > 0 && trimLen < 2 && (
+      {/* Short-query hint */}
+      {trimLen > 0 && trimLen < 2 && !warehouseId && (
         <p className="text-bark/40 text-xs">Введіть населений пункт</p>
       )}
 
-      {fetchError && <p className="text-red-500 text-xs">{fetchError}</p>}
+      {/* Loading state — visible text + spinner */}
+      {loading && !warehouseId && (
+        <div className="space-y-0.5">
+          <p className="text-bark/60 text-xs flex items-center gap-1.5">
+            <svg
+              className="animate-spin w-3 h-3 text-honey-500 flex-shrink-0"
+              viewBox="0 0 24 24"
+              fill="none"
+              aria-hidden="true"
+            >
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+            Шукаємо відділення Нової Пошти…
+          </p>
+          {slowLoad && (
+            <p className="text-bark/40 text-xs pl-[18px]">Перший пошук може тривати кілька секунд.</p>
+          )}
+        </div>
+      )}
 
+      {/* Error — hidden once a warehouse is selected to avoid visual noise */}
+      {fetchError && !warehouseId && (
+        <p className="text-red-500 text-xs">{fetchError}</p>
+      )}
+
+      {/* Green selected state */}
       {warehouseId && (
         <p className="text-xs text-green-700 bg-green-50 rounded-lg px-3 py-2">
-          ✓ {query}
+          ✓ Обрано: {query}
         </p>
       )}
 
+      {/* Form-level validation error (e.g. "submit without selecting") */}
       {error && <p className="text-red-500 text-xs">{error}</p>}
     </div>
   )
@@ -271,6 +317,10 @@ export default function CheckoutPage() {
     setSuccessOrderId(result.orderId)
   }
 
+  // Live phone validation: show inline hint as the user types (before submit),
+  // without relying on the browser's native tooltip (which may be in Russian).
+  const phoneDirtyInvalid = phone.length > 0 && !isValidUkrainianPhone(phone)
+
   return (
     <div className="bg-cream min-h-screen">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
@@ -327,7 +377,7 @@ export default function CheckoutPage() {
                   </div>
                 </div>
 
-                {/* Phone */}
+                {/* Phone — live inline validation, no reliance on browser tooltip */}
                 <div>
                   <label htmlFor="phone" className="block text-sm font-medium text-bark/70 mb-1.5">
                     Номер телефону <span className="text-red-500">*</span>
@@ -338,11 +388,15 @@ export default function CheckoutPage() {
                     required
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
-                    pattern="(\+?38)?0\d{9}"
-                    title="Введіть номер у форматі +380XXXXXXXXX або 0XXXXXXXXX"
                     placeholder="+380XXXXXXXXX або 0XXXXXXXXX"
                     className="w-full border border-gray-200 rounded-xl px-4 py-3 text-bark placeholder:text-bark/40 focus:outline-none focus:ring-2 focus:ring-honey-400 focus:border-transparent"
                   />
+                  {/* Live hint while typing — hidden once corrected or after server error */}
+                  {phoneDirtyInvalid && !fieldErrors.phone?.length && (
+                    <p className="text-red-500 text-xs mt-1">
+                      Введіть номер у форматі +380XXXXXXXXX або 0XXXXXXXXX
+                    </p>
+                  )}
                   {fieldErrors.phone?.map((e) => <p key={e} className="text-red-500 text-xs mt-1">{e}</p>)}
                 </div>
 
