@@ -9,7 +9,6 @@ import { BeekeeperTeaser } from '@/components/home/BeekeeperTeaser'
 import { DeliveryTeaser } from '@/components/home/DeliveryTeaser'
 import { StructuredData } from '@/components/shared/StructuredData'
 import { ApiaryTrustStrip } from '@/components/home/ApiaryTrustStrip'
-import { ApiaryTrust } from '@/components/shared/ApiaryTrust'
 import {
   getVisibleReviews,
   getSiteSettings,
@@ -17,7 +16,7 @@ import {
 export const metadata: Metadata = {
   title: { absolute: 'Дача TV: товари, продукти й послуги' },
   description:
-    'Мед, продукти пасіки, натуральні продукти, квіти, лаванда, металопрофіль і товари для господарства. сімейне господарство на Харківщині із зручним замовленням онлайн.',
+    'Мед, продукти пасіки, натуральні продукти, квіти, лаванда, металопрофіль і товари для господарства. Сімейне господарство на Харківщині із зручним замовленням онлайн.',
   alternates: { canonical: '/' },
   openGraph: {
     title: 'Дача TV: товари, продукти й послуги',
@@ -39,7 +38,7 @@ export default async function HomePage() {
     '@id': `${process.env.NEXT_PUBLIC_SITE_URL || 'https://www.dachatv.com'}/#business`,
     name: 'Дача TV',
     description:
-      'Сімейна пасіка на Харківщині. Натуральний мед, пилок, прополіс та бджолині пакети напряму від виробника.',
+      'Сімейне господарство на Харківщині: мед і продукти пасіки, натуральні продукти, квіти, лаванда, послуги та магазин товарів для дому й господарства.',
     url: process.env.NEXT_PUBLIC_SITE_URL || 'https://www.dachatv.com',
     telephone: siteSettings?.phone || '',
     address: {
@@ -78,13 +77,6 @@ export default async function HomePage() {
       <Reviews reviews={reviews} />
 
       <ApiaryTrustStrip />
-
-      {/* Apiary registration trust block */}
-      <section className="py-16 bg-white">
-        <div className="max-w-3xl mx-auto px-4 sm:px-6">
-          <ApiaryTrust />
-        </div>
-      </section>
 
       <BeekeeperTeaser />
 

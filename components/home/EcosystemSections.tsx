@@ -4,6 +4,13 @@ import Link from 'next/link'
 // Each card links into one pillar of the site.
 const SECTIONS = [
   {
+    href: '/catalog',
+    emoji: '🛒',
+    title: 'Магазин товарів',
+    text: 'Товари для дому, саду та господарства з доставкою по Україні.',
+    accent: 'from-amber-50 to-amber-100 border-amber-200',
+  },
+  {
     href: '/honey',
     emoji: '🍯',
     title: 'Мед і продукти пасіки',
@@ -28,8 +35,15 @@ const SECTIONS = [
     href: '/lavender',
     emoji: '💜',
     title: 'Лаванда',
-    text: 'Лавандове поле, фотозйомка та лавандові продукти.',
+    text: 'Оренда лавандового поля для фотосесій, фотозйомка та лавандові продукти.',
     accent: 'from-violet-50 to-violet-100 border-violet-200',
+  },
+  {
+    href: '/services',
+    emoji: '🛠️',
+    title: 'Послуги',
+    text: 'Послуги нашого господарства — перегляньте напрями та залиште заявку.',
+    accent: 'from-sky-50 to-sky-100 border-sky-200',
   },
   {
     href: '/catalog/metaloprofil-pokrivlia-komplektuiuchi',
@@ -37,13 +51,6 @@ const SECTIONS = [
     title: 'Металопрофіль і покрівля',
     text: 'Профнастил, металочерепиця, штахетник, комплектуючі та саморізи під розмір.',
     accent: 'from-slate-50 to-slate-100 border-slate-200',
-  },
-  {
-    href: '/catalog',
-    emoji: '🛒',
-    title: 'Магазин товарів',
-    text: 'Товари для дому, саду та господарства з доставкою по Україні.',
-    accent: 'from-amber-50 to-amber-100 border-amber-200',
   },
 ]
 
@@ -59,8 +66,8 @@ export function EcosystemSections() {
             Що ми пропонуємо
           </h2>
           <p className="text-gray-500 text-base leading-relaxed">
-            Дача TV — це більше, ніж мед. Натуральні продукти, квіти й лаванда, будівельні матеріали
-            та магазин товарів для господарства.
+            Дача TV — це більше, ніж мед. Натуральні продукти, квіти, лаванда, послуги, будівельні
+            матеріали та магазин товарів для господарства.
           </p>
         </div>
 

@@ -20,16 +20,16 @@ export function YouTubeSection({ siteSettings, videoId }: YouTubeSectionProps) {
             YouTube
           </span>
           <h2 id="youtube-heading" className="font-serif text-3xl md:text-4xl font-bold text-cream mb-4">
-            Ми показуємо пасіку зсередини
+            Дача TV зсередини
           </h2>
           <p className="text-cream/65 text-lg max-w-xl mx-auto">
-            Реальна робота пасічника: підготовка вуликів, збір меду, робота з роями. Нічого не приховуємо.
+            Реальна робота нашого господарства: пасіка, поле, продукти й щоденні турботи. Нічого не приховуємо.
           </p>
         </div>
 
         <YouTubeFacade
           videoId={resolvedVideoId}
-          title="Дача TV — Пасіка на Харківщині"
+          title="Дача TV — сімейне господарство на Харківщині"
           className="shadow-2xl mb-8"
         />
 
