@@ -178,7 +178,190 @@ export async function submitProductOrder(
       console.error(
         `[checkout-submit ${trace}] orders insert FAILED — ${orderError ? `${orderError.code ?? ''} ${orderError.message} ${orderError.details ?? ''} ${orderError.hint ?? ''}`.trim() : 'no row returned'}`,
       )
-      return { success: false, error: FRIENDLY_ERROR }
+
+      // ── Inquiries fallback — triggered only when `orders` table is missing ──
+      // PGRST205 = "Could not find the table in the schema cache."
+      // Do NOT fall back for other errors (RLS, constraint, bad value) — those
+      // need to be fixed in the DB, not silently bypassed.
+      const isMissingTable =
+        !!orderError &&
+        (orderError.code === 'PGRST205' ||
+          (orderError.message ?? '').includes("Could not find the table 'public.orders'"))
+
+      if (!isMissingTable) {
+        return { success: false, error: FRIENDLY_ERROR }
+      }
+
+      console.info(`[checkout-submit ${trace}] orders table missing — saving checkout order to inquiries`)
+      const fallbackId = `FALLBACK-${Date.now().toString(36).toUpperCase()}`
+
+      // ── Fallback A: send supplier order ──────────────────────────────────
+      let fbSupplierOrderId: string | undefined
+      let fbSupplierMode: string = 'skipped'
+      let fbSupplierStatus: string = 'skipped'
+      let fbSupplierResponse: Record<string, unknown> | null = null
+
+      if (hasSupplierItems) {
+        const configuredMode = getSupplierOrderMode()
+        const built = buildPersonalCabOrderPayload({
+          receiver_first_name: d.firstName,
+          receiver_last_name: d.lastName,
+          receiver_patronymic: d.patronymic,
+          receiver_phone: d.phone,
+          method_payment: d.methodPayment,
+          location: d.warehouseId,
+          items: supplierLineItems,
+          comments: d.comment,
+        })
+
+        if (configuredMode === 'disabled') {
+          fbSupplierMode = 'disabled'
+          fbSupplierStatus = 'not_sent'
+          fbSupplierResponse = { reason: 'SUPPLIER_ORDER_MODE=disabled' }
+        } else if (!built.ok) {
+          fbSupplierMode = configuredMode
+          fbSupplierStatus = 'failed'
+          fbSupplierResponse = { errors: built.errors }
+        } else {
+          const result = await sendPersonalCabOrder(built.payload, { mode: configuredMode })
+          fbSupplierOrderId = result.order_id
+          fbSupplierMode = result.mode
+          fbSupplierStatus = result.ok ? (result.mode === 'test' ? 'test_sent' : 'sent') : 'failed'
+          fbSupplierResponse = result.raw_response ?? null
+          if (!result.ok) {
+            console.error(`[checkout-submit ${trace}] supplier fallback result — failed: ${result.message}`)
+          }
+        }
+        console.info(
+          `[checkout-submit ${trace}] supplier fallback result — mode=${fbSupplierMode} status=${fbSupplierStatus}${fbSupplierOrderId ? ` id=${fbSupplierOrderId}` : ''}`,
+        )
+      }
+
+      // ── Fallback B: save to `inquiries` ──────────────────────────────────
+      // `type` must satisfy the existing CHECK constraint — use 'general'.
+      // Full order details go into `message` (human-readable) and `notes` (JSON).
+      const fbPaymentLabel = d.methodPayment === 'prepayment' ? 'Передоплата' : 'Накладний платіж'
+      const fbItemLines = d.items
+        .map((i) => `• ${i.name}${i.variant ? ` (${i.variant})` : ''} × ${i.quantity} — ${i.price * i.quantity} ₴`)
+        .join('\n')
+
+      const fbMessage = [
+        `🛒 Замовлення з кошика (${fallbackId})`,
+        `Оплата: ${fbPaymentLabel}`,
+        `Нова Пошта: ${d.warehouseName ?? d.warehouseId}`,
+        '',
+        fbItemLines,
+        '',
+        `Сума: ${totalUah} ₴`,
+        mixedNote,
+        d.comment ? `Коментар: ${d.comment}` : null,
+        '',
+        '⚠ Збережено як заявку, бо таблиця orders відсутня.',
+      ].filter(Boolean).join('\n')
+
+      const fbNotes = JSON.stringify({
+        _type: 'checkout_order_fallback',
+        fallback_id: fallbackId,
+        payment: d.methodPayment,
+        warehouse_id: d.warehouseId,
+        warehouse_name: d.warehouseName ?? null,
+        items: d.items.map((i) => ({
+          name: i.name,
+          slug: i.productSlug,
+          type: i.productType,
+          qty: i.quantity,
+          price: i.price,
+          variant: i.variant ?? null,
+          supplier_sku: slugToSku.get(i.productSlug) ?? null,
+        })),
+        total_uah: totalUah,
+        supplier_mode: fbSupplierMode,
+        supplier_status: fbSupplierStatus,
+        supplier_order_id: fbSupplierOrderId ?? null,
+        supplier_response: fbSupplierResponse,
+      })
+
+      const { error: inquiryError } = await client.from('inquiries').insert({
+        name: customerName,
+        phone: d.phone,
+        type: 'general',
+        product: 'Замовлення з кошика',
+        message: fbMessage,
+        notes: fbNotes,
+        source: d.source ?? null,
+        status: 'new',
+      })
+
+      if (inquiryError) {
+        console.error(`[checkout-submit ${trace}] inquiry fallback insert failed — ${inquiryError.code ?? ''} ${inquiryError.message}`.trim())
+        // Still try to notify via Telegram even if the DB save failed.
+      } else {
+        console.info(`[checkout-submit ${trace}] inquiry fallback saved`)
+      }
+
+      // ── Fallback C: Telegram + webhook notification ───────────────────────
+      const fbSupplierIcons: Record<string, string> = { test: '🧪 тест', live: '✅ live', disabled: '⛔ вимкнено' }
+      const fbShortId = fallbackId.slice(-8)
+
+      const fbTelegramText = [
+        `🛒 Нове замовлення з сайту #${fbShortId}`,
+        `⚠ Збережено як заявку, бо таблиця orders відсутня`,
+        '',
+        `Ім'я: ${customerName}`,
+        `Телефон: <a href="tel:${d.phone}">${d.phone}</a>`,
+        `Оплата: ${fbPaymentLabel}`,
+        d.warehouseName ? `Нова Пошта: ${d.warehouseName}` : `Відділення ID: ${d.warehouseId}`,
+        '',
+        fbItemLines,
+        '',
+        `Сума: ${totalUah} ₴`,
+        fbSupplierMode !== 'skipped'
+          ? `Постачальник: ${fbSupplierIcons[fbSupplierMode] ?? fbSupplierMode} — ${fbSupplierStatus}${fbSupplierOrderId ? ` #${fbSupplierOrderId}` : ''}`
+          : null,
+        mixedNote,
+        d.comment ? `Коментар: ${d.comment}` : null,
+      ].filter(Boolean).join('\n')
+
+      const fbToken = process.env.TELEGRAM_BOT_TOKEN
+      const fbChatId = process.env.TELEGRAM_CHAT_ID
+      if (fbToken && fbChatId) {
+        fetch(`https://api.telegram.org/bot${fbToken}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ chat_id: fbChatId, text: fbTelegramText, parse_mode: 'HTML' }),
+        }).catch((e: unknown) => {
+          console.error(`[checkout-submit ${trace}] notification fallback result — telegram failed: ${e instanceof Error ? e.message : String(e)}`)
+        })
+        console.info(`[checkout-submit ${trace}] notification fallback result — telegram queued`)
+      }
+
+      sendOrderWebhook({
+        type: 'product_order_fallback',
+        fallback_id: fallbackId,
+        customer_name: customerName,
+        phone: d.phone,
+        method_payment: d.methodPayment,
+        warehouse_id: d.warehouseId,
+        warehouse_name: d.warehouseName ?? null,
+        items: d.items.map((i) => ({
+          product_slug: i.productSlug,
+          product_name: i.name,
+          quantity: i.quantity,
+          unit_price_uah: i.price,
+          subtotal_uah: i.price * i.quantity,
+          variant: i.variant ?? null,
+          supplier_sku: slugToSku.get(i.productSlug) ?? null,
+        })),
+        total_uah: totalUah,
+        supplier_mode: fbSupplierMode,
+        supplier_status: fbSupplierStatus,
+        supplier_order_id: fbSupplierOrderId ?? null,
+        comment: d.comment ?? null,
+        source_page: d.source ?? null,
+        _warning: 'orders table missing; saved as checkout inquiry',
+      })
+
+      return { success: true, orderId: fallbackId }
     }
 
     const orderId = order.id as string
