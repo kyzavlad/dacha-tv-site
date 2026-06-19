@@ -244,19 +244,8 @@ export default function CheckoutPage() {
             </svg>
           </div>
           <h1 className="font-serif text-2xl font-bold text-bark mb-3">Дякуємо за замовлення!</h1>
-          <p className="text-bark/70 mb-2">
-            {successOrderId.startsWith('FALLBACK-') ? (
-              'Ваше замовлення прийнято.'
-            ) : (
-              <>
-                Ваше замовлення{' '}
-                <span className="font-semibold text-bark">#{successOrderId.slice(0, 8).toUpperCase()}</span>{' '}
-                прийнято.
-              </>
-            )}
-          </p>
-          <p className="text-bark/60 text-sm mb-8">
-            Ми зателефонуємо вам найближчим часом для підтвердження.
+          <p className="text-bark/70 mb-8">
+            Ваше замовлення прийнято та передано на комплектацію.
           </p>
           <Link
             href="/"
@@ -326,6 +315,9 @@ export default function CheckoutPage() {
   // Live phone validation: show inline hint as the user types (before submit),
   // without relying on the browser's native tooltip (which may be in Russian).
   const phoneDirtyInvalid = phone.length > 0 && !isValidUkrainianPhone(phone)
+  const cyrillicNameRe = /^[Ѐ-ӿ\s\-'ʼ]+$/
+  const firstNameCyrillicInvalid = firstName.trim().length > 0 && !cyrillicNameRe.test(firstName.trim())
+  const lastNameCyrillicInvalid = lastName.trim().length > 0 && !cyrillicNameRe.test(lastName.trim())
 
   return (
     <div className="bg-cream min-h-screen">
@@ -364,6 +356,9 @@ export default function CheckoutPage() {
                       className="w-full border border-gray-200 rounded-xl px-4 py-3 text-bark placeholder:text-bark/40 focus:outline-none focus:ring-2 focus:ring-honey-400 focus:border-transparent"
                     />
                     {fieldErrors.lastName?.map((e) => <p key={e} className="text-red-500 text-xs mt-1">{e}</p>)}
+                    {lastNameCyrillicInvalid && !fieldErrors.lastName?.length && (
+                      <p className="text-amber-600 text-xs mt-1">Введіть кирилицею, наприклад: Іван / Кузьменко</p>
+                    )}
                   </div>
                   <div>
                     <label htmlFor="firstName" className="block text-sm font-medium text-bark/70 mb-1.5">
@@ -380,6 +375,9 @@ export default function CheckoutPage() {
                       className="w-full border border-gray-200 rounded-xl px-4 py-3 text-bark placeholder:text-bark/40 focus:outline-none focus:ring-2 focus:ring-honey-400 focus:border-transparent"
                     />
                     {fieldErrors.firstName?.map((e) => <p key={e} className="text-red-500 text-xs mt-1">{e}</p>)}
+                    {firstNameCyrillicInvalid && !fieldErrors.firstName?.length && (
+                      <p className="text-amber-600 text-xs mt-1">Введіть кирилицею, наприклад: Іван / Кузьменко</p>
+                    )}
                   </div>
                 </div>
 

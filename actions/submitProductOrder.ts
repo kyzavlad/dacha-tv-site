@@ -71,13 +71,16 @@ function sendOrderWebhook(payload: Record<string, unknown>): void {
 function supplierNotifyLine(mode: string, status: string, orderId?: string | null): string | null {
   if (mode === 'skipped' || status === 'skipped') return null
   const idPart = orderId ? ` #${orderId}` : ''
-  if (status === 'sent' || status === 'test_sent') {
-    return `✅ Постачальнику відправлено (${mode})${idPart}`
+  if (status === 'sent') {
+    return `✅ Постачальнику відправлено${idPart}`
+  }
+  if (status === 'test_sent') {
+    return `🧪 Тест-відправлення постачальнику прийнято${idPart}`
   }
   if (status === 'sent_unconfirmed') {
-    return `⚠️ Відправлення постачальнику НЕ підтверджено (${mode}) — перевірте журнал Personal.cab`
+    return `⚠️ Постачальник прийняв без номера — перевірити вручну`
   }
-  return `❌ НЕ відправлено постачальнику (статус: ${status}). Потребує ручної обробки.`
+  return `❌ Не відправлено постачальнику (статус: ${status}). Потребує ручної обробки.`
 }
 
 // True for statuses whose raw API response/error is worth attaching to the
