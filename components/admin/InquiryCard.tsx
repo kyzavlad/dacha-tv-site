@@ -70,6 +70,7 @@ const PAYMENT_LABELS: Record<string, string> = {
 const SUPPLIER_BADGES: Record<string, { label: string; className: string }> = {
   test_sent: { label: 'Тестово відправлено постачальнику', className: 'bg-blue-50 text-blue-700 border-blue-200' },
   sent: { label: 'Відправлено постачальнику', className: 'bg-green-50 text-green-700 border-green-200' },
+  sent_unconfirmed: { label: 'Відправлено без підтвердження', className: 'bg-yellow-50 text-yellow-700 border-yellow-200' },
   failed: { label: 'Помилка постачальника', className: 'bg-red-50 text-red-700 border-red-200' },
   disabled: { label: 'Не відправлено', className: 'bg-gray-100 text-gray-600 border-gray-200' },
   not_sent: { label: 'Не відправлено', className: 'bg-gray-100 text-gray-600 border-gray-200' },
@@ -108,8 +109,12 @@ export function InquiryCard({ inquiry }: InquiryCardProps) {
     }
   }
 
+  // Show the raw supplier response for hard failures AND for unconfirmed sends
+  // (HTTP 200 with no order_id) so the admin can verify in Personal.cab.
   const supplierError =
-    order && order.supplier_status === 'failed' && order.supplier_response
+    order &&
+    (order.supplier_status === 'failed' || order.supplier_status === 'sent_unconfirmed') &&
+    order.supplier_response
       ? (typeof order.supplier_response === 'string'
           ? order.supplier_response
           : JSON.stringify(order.supplier_response))

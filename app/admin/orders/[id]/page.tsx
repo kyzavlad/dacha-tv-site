@@ -9,13 +9,18 @@ import { SupplierTestButton } from '../SupplierTestButton'
 import type { Order, OrderItem, OrderStatus } from '@/types'
 
 // Supplier send outcomes that count as success (green). Covers both the legacy
-// 'ok' value and the clearer test_sent/sent statuses.
+// 'ok' value and the clearer test_sent/sent statuses. 'sent_unconfirmed' is
+// deliberately NOT here — it is a warning, not a confirmed success.
 const SUPPLIER_OK_STATUSES = new Set(['ok', 'sent', 'test_sent'])
+
+// Statuses shown as a warning (yellow): sent but not confirmed by the supplier.
+const SUPPLIER_WARN_STATUSES = new Set(['sent_unconfirmed'])
 
 const SUPPLIER_STATUS_LABELS: Record<string, string> = {
   ok: 'Надіслано',
   sent: 'Надіслано (live)',
   test_sent: 'Тест надіслано',
+  sent_unconfirmed: 'Надіслано (без підтвердження)',
   failed: 'Помилка',
   not_sent: 'Не надіслано',
   skipped: 'Пропущено',
@@ -261,7 +266,13 @@ export default async function AdminOrderDetailPage({ params }: PageProps) {
                 </div>
                 <div>
                   <dt className="text-gray-400 text-xs mb-0.5">Статус</dt>
-                  <dd className={`font-medium text-xs ${SUPPLIER_OK_STATUSES.has(order.supplier_order_status ?? '') ? 'text-green-700' : 'text-red-600'}`}>
+                  <dd className={`font-medium text-xs ${
+                    SUPPLIER_OK_STATUSES.has(order.supplier_order_status ?? '')
+                      ? 'text-green-700'
+                      : SUPPLIER_WARN_STATUSES.has(order.supplier_order_status ?? '')
+                        ? 'text-yellow-700'
+                        : 'text-red-600'
+                  }`}>
                     {SUPPLIER_STATUS_LABELS[order.supplier_order_status ?? ''] ?? order.supplier_order_status}
                   </dd>
                 </div>

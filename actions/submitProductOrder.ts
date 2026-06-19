@@ -62,6 +62,30 @@ function sendOrderWebhook(payload: Record<string, unknown>): void {
   }).catch(() => {})
 }
 
+// Map a supplier mode+status to the customer-service notification line. The icon
+// reflects the REAL outcome:
+//   ✅ sent / test_sent       → forwarded (confirmed or test)
+//   ⚠️ sent_unconfirmed       → HTTP 200 but no order_id; needs manual check
+//   ❌ failed/not_sent/etc.   → not forwarded at all
+// Returns null when there is nothing to forward (skipped).
+function supplierNotifyLine(mode: string, status: string, orderId?: string | null): string | null {
+  if (mode === 'skipped' || status === 'skipped') return null
+  const idPart = orderId ? ` #${orderId}` : ''
+  if (status === 'sent' || status === 'test_sent') {
+    return `✅ Постачальнику відправлено (${mode})${idPart}`
+  }
+  if (status === 'sent_unconfirmed') {
+    return `⚠️ Відправлення постачальнику НЕ підтверджено (${mode}) — перевірте журнал Personal.cab`
+  }
+  return `❌ НЕ відправлено постачальнику (статус: ${status}). Потребує ручної обробки.`
+}
+
+// True for statuses whose raw API response/error is worth attaching to the
+// webhook payload for diagnosis (failed = hard error, sent_unconfirmed = no id).
+function supplierNeedsDiagnostics(status: string): boolean {
+  return status === 'failed' || status === 'sent_unconfirmed'
+}
+
 export async function submitProductOrder(
   rawItems: unknown[],
   formData: FormData
@@ -226,10 +250,18 @@ export async function submitProductOrder(
           const result = await sendPersonalCabOrder(built.payload, { mode: configuredMode })
           fbSupplierOrderId = result.order_id
           fbSupplierMode = result.mode
-          fbSupplierStatus = result.ok ? (result.mode === 'test' ? 'test_sent' : 'sent') : 'failed'
+          // sent only when live AND a real order_id came back. Live HTTP 200 with
+          // no id is 'sent_unconfirmed' — never silently reported as success.
+          fbSupplierStatus = !result.ok
+            ? 'failed'
+            : result.mode === 'test'
+              ? 'test_sent'
+              : result.confirmed
+                ? 'sent'
+                : 'sent_unconfirmed'
           fbSupplierResponse = result.raw_response ?? null
-          if (!result.ok) {
-            console.error(`[checkout-submit ${trace}] supplier fallback result — failed: ${result.message}`)
+          if (fbSupplierStatus !== 'sent' && fbSupplierStatus !== 'test_sent') {
+            console.error(`[checkout-submit ${trace}] supplier fallback result — ${fbSupplierStatus}: ${result.message}`)
           }
         }
         console.info(
@@ -300,61 +332,44 @@ export async function submitProductOrder(
       }
 
       // ── Fallback C: Telegram + webhook notification ───────────────────────
-      const fbSupplierIcons: Record<string, string> = { test: '🧪 тест', live: '✅ live', disabled: '⛔ вимкнено' }
       const fbShortId = fallbackId.slice(-8)
+      const fbSupplierLine = supplierNotifyLine(fbSupplierMode, fbSupplierStatus, fbSupplierOrderId)
 
-      const fbTelegramText = [
+      // Single plain-text message for BOTH n8n and direct Telegram. No parse_mode
+      // anywhere: product names contain brackets/underscores that break HTML/MD.
+      const fbNotifyText = [
         `🛒 Нове замовлення з сайту #${fbShortId}`,
-        `⚠ Збережено як заявку, бо таблиця orders відсутня`,
+        '⚠ Збережено як заявку (таблиця orders відсутня)',
         '',
         `Ім'я: ${customerName}`,
-        `Телефон: <a href="tel:${d.phone}">${d.phone}</a>`,
+        `Телефон: ${d.phone}`,
         `Оплата: ${fbPaymentLabel}`,
         d.warehouseName ? `Нова Пошта: ${d.warehouseName}` : `Відділення ID: ${d.warehouseId}`,
         '',
         fbItemLines,
         '',
         `Сума: ${totalUah} ₴`,
-        fbSupplierMode !== 'skipped'
-          ? `Постачальник: ${fbSupplierIcons[fbSupplierMode] ?? fbSupplierMode} — ${fbSupplierStatus}${fbSupplierOrderId ? ` #${fbSupplierOrderId}` : ''}`
-          : null,
+        fbSupplierLine,
         mixedNote,
         d.comment ? `Коментар: ${d.comment}` : null,
+        d.source ? `Сторінка: ${d.source}` : null,
       ].filter(Boolean).join('\n')
 
+      // Prefer n8n (WEBHOOK_URL). Only fall back to direct Telegram when n8n is
+      // NOT configured — avoids duplicate notifications.
+      const fbWebhookUrl = process.env.WEBHOOK_URL
       const fbToken = process.env.TELEGRAM_BOT_TOKEN
       const fbChatId = process.env.TELEGRAM_CHAT_ID
-      if (fbToken && fbChatId) {
+      if (!fbWebhookUrl && fbToken && fbChatId) {
         fetch(`https://api.telegram.org/bot${fbToken}/sendMessage`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ chat_id: fbChatId, text: fbTelegramText, parse_mode: 'HTML' }),
+          body: JSON.stringify({ chat_id: fbChatId, text: fbNotifyText }),
         }).catch((e: unknown) => {
           console.error(`[checkout-submit ${trace}] notification fallback result — telegram failed: ${e instanceof Error ? e.message : String(e)}`)
         })
         console.info(`[checkout-submit ${trace}] notification fallback result — telegram queued`)
       }
-
-      // Complete human-readable message for n8n generic Telegram route — all
-      // fields n8n needs to display the order without custom parsing logic.
-      const fbWebhookMessage = [
-        '🛒 Нове замовлення з сайту',
-        '⚠ Збережено як заявку (таблиця orders відсутня)',
-        '',
-        `Ім'я: ${customerName}`,
-        `Телефон: ${d.phone}`,
-        `Оплата: ${fbPaymentLabel}`,
-        `Нова Пошта: ${d.warehouseName ?? d.warehouseId}`,
-        '',
-        fbItemLines,
-        '',
-        `Сума: ${totalUah} ₴`,
-        fbSupplierMode !== 'skipped'
-          ? `Постачальник: ${fbSupplierMode} — ${fbSupplierStatus}${fbSupplierOrderId ? ` #${fbSupplierOrderId}` : ''}`
-          : null,
-        mixedNote,
-        d.comment ? `Коментар: ${d.comment}` : null,
-      ].filter(Boolean).join('\n')
 
       sendOrderWebhook({
         source: 'website',
@@ -363,7 +378,7 @@ export async function submitProductOrder(
         name: customerName,
         phone: d.phone,
         product: d.items.map((i) => `${i.name}${i.variant ? ` (${i.variant})` : ''} × ${i.quantity}`).join(', '),
-        message: fbWebhookMessage,
+        message: fbNotifyText,
         page_url: d.source ?? null,
         total: totalUah,
         payment_method: d.methodPayment,
@@ -372,10 +387,12 @@ export async function submitProductOrder(
         supplier_status: fbSupplierStatus,
         supplier_mode: fbSupplierMode,
         supplier_order_id: fbSupplierOrderId ?? null,
+        supplier_confirmed: fbSupplierStatus === 'sent' || fbSupplierStatus === 'test_sent',
         supplier_error:
-          fbSupplierStatus === 'failed' && fbSupplierResponse
+          supplierNeedsDiagnostics(fbSupplierStatus) && fbSupplierResponse
             ? JSON.stringify(fbSupplierResponse)
             : null,
+        supplier_response: supplierNeedsDiagnostics(fbSupplierStatus) ? fbSupplierResponse : null,
         _warning: 'orders table missing; saved as checkout inquiry',
       })
 
@@ -444,10 +461,18 @@ export async function submitProductOrder(
         const result = await sendPersonalCabOrder(built.payload, { mode: configuredMode })
         supplierOrderId = result.order_id
         supplierMode = result.mode
-        supplierStatus = result.ok ? (result.mode === 'test' ? 'test_sent' : 'sent') : 'failed'
+        // sent only when live AND a real order_id came back. Live HTTP 200 with
+        // no id is 'sent_unconfirmed' — never silently reported as success.
+        supplierStatus = !result.ok
+          ? 'failed'
+          : result.mode === 'test'
+            ? 'test_sent'
+            : result.confirmed
+              ? 'sent'
+              : 'sent_unconfirmed'
         supplierResponse = result.raw_response ?? null
-        if (!result.ok) {
-          console.error(`[checkout-submit ${trace}] supplier send failed (order ${orderId} kept) — ${result.message}`)
+        if (supplierStatus !== 'sent' && supplierStatus !== 'test_sent') {
+          console.error(`[checkout-submit ${trace}] supplier send ${supplierStatus} (order ${orderId} kept) — ${result.message}`)
         }
       }
 
@@ -486,50 +511,53 @@ export async function submitProductOrder(
       prepayment: 'Передоплата',
     }
 
-    const SUPPLIER_MODE_ICON: Record<string, string> = {
-      test: '🧪 тест',
-      live: '✅ live',
-      disabled: '⛔ вимкнено',
-    }
+    const supplierLine = supplierNotifyLine(supplierMode, supplierStatus, supplierOrderId)
 
-    const telegramText = [
+    // Single plain-text message for BOTH n8n and direct Telegram. No parse_mode
+    // anywhere: product names contain brackets/underscores that break HTML/MD.
+    const notifyText = [
       `🛒 Нове замовлення #${shortId}`,
       '',
       `Ім'я: ${customerName}`,
-      `Телефон: <a href="tel:${d.phone}">${d.phone}</a>`,
+      `Телефон: ${d.phone}`,
       `Оплата: ${PAYMENT_LABELS[d.methodPayment] ?? d.methodPayment}`,
       d.warehouseName ? `Нова Пошта: ${d.warehouseName}` : `Відділення ID: ${d.warehouseId}`,
       '',
       itemLines,
       '',
       `Сума: ${totalUah} ₴`,
-      supplierMode !== 'skipped'
-        ? `Постачальник: ${SUPPLIER_MODE_ICON[supplierMode] ?? supplierMode} — ${supplierStatus}${supplierOrderId ? ` #${supplierOrderId}` : ''}`
-        : null,
+      supplierLine,
       mixedNote,
       d.comment ? `Коментар: ${d.comment}` : null,
+      d.source ? `Сторінка: ${d.source}` : null,
     ]
       .filter(Boolean)
       .join('\n')
 
+    // Prefer n8n (WEBHOOK_URL). Only fall back to direct Telegram when n8n is
+    // NOT configured — avoids duplicate notifications.
+    const webhookUrl = process.env.WEBHOOK_URL
     const token = process.env.TELEGRAM_BOT_TOKEN
     const chatId = process.env.TELEGRAM_CHAT_ID
-    if (token && chatId) {
+    if (!webhookUrl && token && chatId) {
       fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chat_id: chatId, text: telegramText, parse_mode: 'HTML' }),
+        body: JSON.stringify({ chat_id: chatId, text: notifyText }),
       }).catch(() => {})
     }
 
     sendOrderWebhook({
       type: 'product_order',
       order_id: orderId,
+      name: customerName,
       customer_name: customerName,
       phone: d.phone,
+      message: notifyText,
       method_payment: d.methodPayment,
       warehouse_id: d.warehouseId,
       warehouse_name: d.warehouseName ?? null,
+      items_text: itemLines,
       items: d.items.map((i) => ({
         product_slug: i.productSlug,
         product_name: i.name,
@@ -542,6 +570,12 @@ export async function submitProductOrder(
       supplier_mode: supplierMode,
       supplier_status: supplierStatus,
       supplier_order_id: supplierOrderId ?? null,
+      supplier_confirmed: supplierStatus === 'sent' || supplierStatus === 'test_sent',
+      supplier_error:
+        supplierNeedsDiagnostics(supplierStatus) && supplierResponse
+          ? JSON.stringify(supplierResponse)
+          : null,
+      supplier_response: supplierNeedsDiagnostics(supplierStatus) ? supplierResponse : null,
       comment: d.comment ?? null,
       source_page: d.source ?? null,
     })
