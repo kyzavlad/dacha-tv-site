@@ -89,8 +89,18 @@ export function buildPersonalCabOrderPayload(input: BuildPayloadInput): BuildPay
   const comments = (input.comments ?? '').trim()
   const payment = (input.method_payment ?? '').trim()
 
-  if (firstName.length < 1) errors.push("Відсутнє ім'я отримувача (receiver_first_name)")
-  if (lastName.length < 1) errors.push('Відсутнє прізвище отримувача (receiver_last_name)')
+  // Personal.cab requires Cyrillic names — Latin letters cause a hard API rejection.
+  const cyrillicOnly = /^[Ѐ-ӿ\s\-'ʼ]+$/
+  if (firstName.length < 1) {
+    errors.push("Відсутнє ім'я отримувача (receiver_first_name)")
+  } else if (!cyrillicOnly.test(firstName)) {
+    errors.push("Для відправки Новою Поштою введіть імʼя та прізвище кирилицею.")
+  }
+  if (lastName.length < 1) {
+    errors.push('Відсутнє прізвище отримувача (receiver_last_name)')
+  } else if (!cyrillicOnly.test(lastName)) {
+    errors.push("Для відправки Новою Поштою введіть імʼя та прізвище кирилицею.")
+  }
   if (!ukrainianPhone.test(phone)) errors.push('Некоректний або відсутній телефон отримувача (receiver_phone)')
   if (location.length < 1) errors.push('Відсутнє відділення Нової Пошти (location / nova_poshta_warehouse_id)')
 
@@ -177,11 +187,20 @@ export async function sendPersonalCabOrder(
     `[supplier] add_order — mode=${mode} phone=${supplierPhone} products=${body.products.length} location=${body.location}`,
   )
 
+  // Serialize once so we can compute Content-Length. Without an explicit
+  // Content-Length some servers (including Personal.cab) do not parse the JSON
+  // body, returning "Variable X is required" for every field.
+  const bodyStr = JSON.stringify(body)
+
   try {
     const res = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify(body),
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        'Content-Length': String(Buffer.byteLength(bodyStr)),
+      },
+      body: bodyStr,
       cache: 'no-store',
     })
 
@@ -217,10 +236,14 @@ export async function sendPersonalCabOrder(
     // `raw.error == null` as positive proof — undefined == null is true, so an
     // empty response would look like success. We invert: error only if a non-empty
     // error string (or truthy error/success===false) is present.
+    // Personal.cab returns success:0 (integer) for application-level errors, not
+    // success:false. Treat 0 and '0' explicitly — do NOT rely on truthiness.
     const hasExplicitError =
       (typeof raw.error === 'string' && raw.error.length > 0) ||
       (raw.error != null && raw.error !== false && typeof raw.error !== 'string') ||
       raw.success === false ||
+      raw.success === 0 ||
+      raw.success === '0' ||
       raw.status === 'error'
     const ok = !hasExplicitError
 

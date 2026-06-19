@@ -71,10 +71,15 @@ async function apiGet(params) {
 }
 
 async function apiPost(params, body) {
+  const bodyStr = JSON.stringify(body)
   const res = await fetch(buildUrl(params), {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify(body),
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      'Content-Length': String(Buffer.byteLength(bodyStr)),
+    },
+    body: bodyStr,
     cache: 'no-store',
   })
   const text = await res.text()
@@ -166,7 +171,10 @@ async function sendOrder({ live, location }) {
   const orderId = String(json?.order_id ?? json?.id ?? json?.number ?? '').trim()
   const hasError =
     (typeof json?.error === 'string' && json.error.length > 0) ||
-    json?.success === false || json?.status === 'error'
+    json?.success === false ||
+    json?.success === 0 ||
+    json?.success === '0' ||
+    json?.status === 'error'
 
   if (!ok) {
     console.error(`✖ HTTP ${httpStatus} — request failed`)
