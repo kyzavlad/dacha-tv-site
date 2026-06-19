@@ -335,29 +335,47 @@ export async function submitProductOrder(
         console.info(`[checkout-submit ${trace}] notification fallback result — telegram queued`)
       }
 
+      // Complete human-readable message for n8n generic Telegram route — all
+      // fields n8n needs to display the order without custom parsing logic.
+      const fbWebhookMessage = [
+        '🛒 Нове замовлення з сайту',
+        '⚠ Збережено як заявку (таблиця orders відсутня)',
+        '',
+        `Ім'я: ${customerName}`,
+        `Телефон: ${d.phone}`,
+        `Оплата: ${fbPaymentLabel}`,
+        `Нова Пошта: ${d.warehouseName ?? d.warehouseId}`,
+        '',
+        fbItemLines,
+        '',
+        `Сума: ${totalUah} ₴`,
+        fbSupplierMode !== 'skipped'
+          ? `Постачальник: ${fbSupplierMode} — ${fbSupplierStatus}${fbSupplierOrderId ? ` #${fbSupplierOrderId}` : ''}`
+          : null,
+        mixedNote,
+        d.comment ? `Коментар: ${d.comment}` : null,
+      ].filter(Boolean).join('\n')
+
       sendOrderWebhook({
+        source: 'website',
         type: 'product_order_fallback',
-        fallback_id: fallbackId,
-        customer_name: customerName,
+        order_id: fallbackId,
+        name: customerName,
         phone: d.phone,
-        method_payment: d.methodPayment,
-        warehouse_id: d.warehouseId,
-        warehouse_name: d.warehouseName ?? null,
-        items: d.items.map((i) => ({
-          product_slug: i.productSlug,
-          product_name: i.name,
-          quantity: i.quantity,
-          unit_price_uah: i.price,
-          subtotal_uah: i.price * i.quantity,
-          variant: i.variant ?? null,
-          supplier_sku: slugToSku.get(i.productSlug) ?? null,
-        })),
-        total_uah: totalUah,
-        supplier_mode: fbSupplierMode,
+        product: d.items.map((i) => `${i.name}${i.variant ? ` (${i.variant})` : ''} × ${i.quantity}`).join(', '),
+        message: fbWebhookMessage,
+        page_url: d.source ?? null,
+        total: totalUah,
+        payment_method: d.methodPayment,
+        warehouse: d.warehouseName ?? d.warehouseId,
+        items_text: fbItemLines,
         supplier_status: fbSupplierStatus,
+        supplier_mode: fbSupplierMode,
         supplier_order_id: fbSupplierOrderId ?? null,
-        comment: d.comment ?? null,
-        source_page: d.source ?? null,
+        supplier_error:
+          fbSupplierStatus === 'failed' && fbSupplierResponse
+            ? JSON.stringify(fbSupplierResponse)
+            : null,
         _warning: 'orders table missing; saved as checkout inquiry',
       })
 
