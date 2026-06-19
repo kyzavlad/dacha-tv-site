@@ -245,9 +245,15 @@ export default function CheckoutPage() {
           </div>
           <h1 className="font-serif text-2xl font-bold text-bark mb-3">Дякуємо за замовлення!</h1>
           <p className="text-bark/70 mb-2">
-            Ваше замовлення{' '}
-            <span className="font-semibold text-bark">#{successOrderId.slice(0, 8).toUpperCase()}</span>{' '}
-            прийнято.
+            {successOrderId.startsWith('FALLBACK-') ? (
+              'Ваше замовлення прийнято.'
+            ) : (
+              <>
+                Ваше замовлення{' '}
+                <span className="font-semibold text-bark">#{successOrderId.slice(0, 8).toUpperCase()}</span>{' '}
+                прийнято.
+              </>
+            )}
           </p>
           <p className="text-bark/60 text-sm mb-8">
             Ми зателефонуємо вам найближчим часом для підтвердження.
