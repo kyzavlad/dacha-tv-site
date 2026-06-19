@@ -52,14 +52,82 @@ function newTraceId(): string {
 // server-side under the [checkout-submit] prefix, never leaked to the customer.
 const FRIENDLY_ERROR = 'Не вдалося оформити замовлення. Спробуйте ще раз.'
 
-function sendOrderWebhook(payload: Record<string, unknown>): void {
+// Fail-safe product-order notification. Sends BOTH channels independently:
+//   • direct Telegram — whenever TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID are set
+//   • webhook / n8n   — whenever WEBHOOK_URL is set
+// There is deliberately NO "webhook OR Telegram" gating — that gating was the
+// cause of silently-lost order notifications. Each channel is awaited (so the
+// request actually completes in a serverless environment instead of being killed
+// when the action returns) but a failure in either channel can NEVER throw or
+// block checkout: every error is caught and logged loudly, never rethrown.
+async function notifyProductOrder(opts: {
+  trace: string
+  message: string
+  payload: Record<string, unknown>
+}): Promise<void> {
+  const { trace, message, payload } = opts
+  const tasks: Promise<void>[] = []
+
+  // ── Channel 1: direct Telegram (plain text, no parse_mode) ──────────────────
+  const token = process.env.TELEGRAM_BOT_TOKEN
+  const chatId = process.env.TELEGRAM_CHAT_ID
+  if (token && chatId) {
+    console.info(`[checkout-submit ${trace}] direct telegram queued`)
+    tasks.push(
+      (async () => {
+        try {
+          const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ chat_id: chatId, text: message }),
+          })
+          if (res.ok) {
+            console.info(`[checkout-submit ${trace}] direct telegram sent`)
+          } else {
+            const body = await res.text().catch(() => '')
+            console.error(`[checkout-submit ${trace}] direct telegram failed — HTTP ${res.status} ${body.slice(0, 300)}`)
+          }
+        } catch (e: unknown) {
+          console.error(`[checkout-submit ${trace}] direct telegram failed — ${e instanceof Error ? e.message : String(e)}`)
+        }
+      })(),
+    )
+  } else {
+    console.info(`[checkout-submit ${trace}] direct telegram skipped — TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID not set`)
+  }
+
+  // ── Channel 2: webhook / n8n ────────────────────────────────────────────────
   const webhookUrl = process.env.WEBHOOK_URL
-  if (!webhookUrl) return
-  fetch(webhookUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ source: 'website', ...payload, created_at: new Date().toISOString() }),
-  }).catch(() => {})
+  if (webhookUrl) {
+    console.info(`[checkout-submit ${trace}] webhook queued`)
+    tasks.push(
+      (async () => {
+        try {
+          const res = await fetch(webhookUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              source: 'website',
+              ...payload,
+              message,
+              created_at: new Date().toISOString(),
+            }),
+          })
+          if (!res.ok) {
+            console.error(`[checkout-submit ${trace}] webhook failed — HTTP ${res.status}`)
+          }
+        } catch (e: unknown) {
+          console.error(`[checkout-submit ${trace}] webhook failed — ${e instanceof Error ? e.message : String(e)}`)
+        }
+      })(),
+    )
+  } else {
+    console.info(`[checkout-submit ${trace}] webhook skipped — WEBHOOK_URL not set`)
+  }
+
+  // Promise.allSettled never rejects — checkout success is fully decoupled from
+  // notification delivery, but we still wait so the requests are not abandoned.
+  await Promise.allSettled(tasks)
 }
 
 // Map a supplier mode+status to the customer-service notification line. The icon
@@ -338,10 +406,16 @@ export async function submitProductOrder(
       const fbShortId = fallbackId.slice(-8)
       const fbSupplierLine = supplierNotifyLine(fbSupplierMode, fbSupplierStatus, fbSupplierOrderId)
 
+      const fbSupplierError =
+        supplierNeedsDiagnostics(fbSupplierStatus) && fbSupplierResponse
+          ? JSON.stringify(fbSupplierResponse)
+          : null
+
       // Single plain-text message for BOTH n8n and direct Telegram. No parse_mode
       // anywhere: product names contain brackets/underscores that break HTML/MD.
       const fbNotifyText = [
-        `🛒 Нове замовлення з сайту #${fbShortId}`,
+        '🛒 НОВЕ ЗАМОВЛЕННЯ З САЙТУ',
+        `Замовлення #${fbShortId}`,
         '⚠ Збережено як заявку (таблиця orders відсутня)',
         '',
         `Ім'я: ${customerName}`,
@@ -353,50 +427,35 @@ export async function submitProductOrder(
         '',
         `Сума: ${totalUah} ₴`,
         fbSupplierLine,
+        fbSupplierError ? `Відповідь постачальника: ${fbSupplierError}` : null,
         mixedNote,
         d.comment ? `Коментар: ${d.comment}` : null,
         d.source ? `Сторінка: ${d.source}` : null,
       ].filter(Boolean).join('\n')
 
-      // Prefer n8n (WEBHOOK_URL). Only fall back to direct Telegram when n8n is
-      // NOT configured — avoids duplicate notifications.
-      const fbWebhookUrl = process.env.WEBHOOK_URL
-      const fbToken = process.env.TELEGRAM_BOT_TOKEN
-      const fbChatId = process.env.TELEGRAM_CHAT_ID
-      if (!fbWebhookUrl && fbToken && fbChatId) {
-        fetch(`https://api.telegram.org/bot${fbToken}/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ chat_id: fbChatId, text: fbNotifyText }),
-        }).catch((e: unknown) => {
-          console.error(`[checkout-submit ${trace}] notification fallback result — telegram failed: ${e instanceof Error ? e.message : String(e)}`)
-        })
-        console.info(`[checkout-submit ${trace}] notification fallback result — telegram queued`)
-      }
-
-      sendOrderWebhook({
-        source: 'website',
-        type: 'product_order_fallback',
-        order_id: fallbackId,
-        name: customerName,
-        phone: d.phone,
-        product: d.items.map((i) => `${i.name}${i.variant ? ` (${i.variant})` : ''} × ${i.quantity}`).join(', '),
+      // Always send BOTH Telegram and webhook — never one-or-the-other.
+      await notifyProductOrder({
+        trace,
         message: fbNotifyText,
-        page_url: d.source ?? null,
-        total: totalUah,
-        payment_method: d.methodPayment,
-        warehouse: d.warehouseName ?? d.warehouseId,
-        items_text: fbItemLines,
-        supplier_status: fbSupplierStatus,
-        supplier_mode: fbSupplierMode,
-        supplier_order_id: fbSupplierOrderId ?? null,
-        supplier_confirmed: fbSupplierStatus === 'sent' || fbSupplierStatus === 'test_sent',
-        supplier_error:
-          supplierNeedsDiagnostics(fbSupplierStatus) && fbSupplierResponse
-            ? JSON.stringify(fbSupplierResponse)
-            : null,
-        supplier_response: supplierNeedsDiagnostics(fbSupplierStatus) ? fbSupplierResponse : null,
-        _warning: 'orders table missing; saved as checkout inquiry',
+        payload: {
+          type: 'product_order_fallback',
+          order_id: fallbackId,
+          name: customerName,
+          phone: d.phone,
+          product: d.items.map((i) => `${i.name}${i.variant ? ` (${i.variant})` : ''} × ${i.quantity}`).join(', '),
+          page_url: d.source ?? null,
+          total: totalUah,
+          payment_method: d.methodPayment,
+          warehouse: d.warehouseName ?? d.warehouseId,
+          items_text: fbItemLines,
+          supplier_status: fbSupplierStatus,
+          supplier_mode: fbSupplierMode,
+          supplier_order_id: fbSupplierOrderId ?? null,
+          supplier_error: fbSupplierError,
+          supplier_confirmed: fbSupplierStatus === 'sent' || fbSupplierStatus === 'test_sent',
+          comment: d.comment ?? null,
+          _warning: 'orders table missing; saved as checkout inquiry',
+        },
       })
 
       return { success: true, orderId: fallbackId }
@@ -515,11 +574,16 @@ export async function submitProductOrder(
     }
 
     const supplierLine = supplierNotifyLine(supplierMode, supplierStatus, supplierOrderId)
+    const supplierError =
+      supplierNeedsDiagnostics(supplierStatus) && supplierResponse
+        ? JSON.stringify(supplierResponse)
+        : null
 
     // Single plain-text message for BOTH n8n and direct Telegram. No parse_mode
     // anywhere: product names contain brackets/underscores that break HTML/MD.
     const notifyText = [
-      `🛒 Нове замовлення #${shortId}`,
+      '🛒 НОВЕ ЗАМОВЛЕННЯ З САЙТУ',
+      `Замовлення #${shortId}`,
       '',
       `Ім'я: ${customerName}`,
       `Телефон: ${d.phone}`,
@@ -530,6 +594,7 @@ export async function submitProductOrder(
       '',
       `Сума: ${totalUah} ₴`,
       supplierLine,
+      supplierError ? `Відповідь постачальника: ${supplierError}` : null,
       mixedNote,
       d.comment ? `Коментар: ${d.comment}` : null,
       d.source ? `Сторінка: ${d.source}` : null,
@@ -537,50 +602,28 @@ export async function submitProductOrder(
       .filter(Boolean)
       .join('\n')
 
-    // Prefer n8n (WEBHOOK_URL). Only fall back to direct Telegram when n8n is
-    // NOT configured — avoids duplicate notifications.
-    const webhookUrl = process.env.WEBHOOK_URL
-    const token = process.env.TELEGRAM_BOT_TOKEN
-    const chatId = process.env.TELEGRAM_CHAT_ID
-    if (!webhookUrl && token && chatId) {
-      fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chat_id: chatId, text: notifyText }),
-      }).catch(() => {})
-    }
-
-    sendOrderWebhook({
-      type: 'product_order',
-      order_id: orderId,
-      name: customerName,
-      customer_name: customerName,
-      phone: d.phone,
+    // Always send BOTH Telegram and webhook — never one-or-the-other.
+    await notifyProductOrder({
+      trace,
       message: notifyText,
-      method_payment: d.methodPayment,
-      warehouse_id: d.warehouseId,
-      warehouse_name: d.warehouseName ?? null,
-      items_text: itemLines,
-      items: d.items.map((i) => ({
-        product_slug: i.productSlug,
-        product_name: i.name,
-        quantity: i.quantity,
-        unit_price_uah: i.price,
-        subtotal_uah: i.price * i.quantity,
-        variant: i.variant ?? null,
-      })),
-      total_uah: totalUah,
-      supplier_mode: supplierMode,
-      supplier_status: supplierStatus,
-      supplier_order_id: supplierOrderId ?? null,
-      supplier_confirmed: supplierStatus === 'sent' || supplierStatus === 'test_sent',
-      supplier_error:
-        supplierNeedsDiagnostics(supplierStatus) && supplierResponse
-          ? JSON.stringify(supplierResponse)
-          : null,
-      supplier_response: supplierNeedsDiagnostics(supplierStatus) ? supplierResponse : null,
-      comment: d.comment ?? null,
-      source_page: d.source ?? null,
+      payload: {
+        type: 'product_order',
+        order_id: orderId,
+        name: customerName,
+        phone: d.phone,
+        product: d.items.map((i) => `${i.name}${i.variant ? ` (${i.variant})` : ''} × ${i.quantity}`).join(', '),
+        page_url: d.source ?? null,
+        total: totalUah,
+        payment_method: d.methodPayment,
+        warehouse: d.warehouseName ?? d.warehouseId,
+        items_text: itemLines,
+        supplier_status: supplierStatus,
+        supplier_mode: supplierMode,
+        supplier_order_id: supplierOrderId ?? null,
+        supplier_error: supplierError,
+        supplier_confirmed: supplierStatus === 'sent' || supplierStatus === 'test_sent',
+        comment: d.comment ?? null,
+      },
     })
 
     console.info(`[checkout-submit ${trace}] success — order ${orderId}`)
