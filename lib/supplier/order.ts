@@ -59,6 +59,12 @@ export type BuildPayloadResult =
 
 export interface OrderResult {
   ok: boolean
+  // confirmed = the API returned a real order id/number → the order is actually
+  // registered in Personal.cab. ok=true + confirmed=false means HTTP 200 with no
+  // explicit error but also no order id: we MUST NOT report this as a successful
+  // live send (it is the exact case where orders silently never appear in the
+  // supplier journal). Checkout maps this to the 'sent_unconfirmed' status.
+  confirmed: boolean
   order_id?: string
   test_mode: boolean
   mode: 'test' | 'live'
@@ -135,6 +141,7 @@ export async function sendPersonalCabOrder(
   if (!apiUrl || !apiKey) {
     return {
       ok: false,
+      confirmed: false,
       test_mode: mode === 'test',
       mode,
       message: 'SUPPLIER_API_URL та SUPPLIER_API_KEY не налаштовані',
@@ -142,20 +149,33 @@ export async function sendPersonalCabOrder(
   }
 
   const base = apiUrl.replace(/\/$/, '')
-  const params = new URLSearchParams({ key: apiKey, method: 'add_order', mode, type: 'json' })
+  // Query-param routing. Test mode passes &mode=test so the supplier validates
+  // and logs without shipping; live mode omits it for a REAL order.
+  const qp: Record<string, string> = { key: apiKey, method: 'add_order', type: 'json' }
+  if (mode === 'test') qp.mode = 'test'
+  const params = new URLSearchParams(qp)
   const url = `${base}?${params}`
+
+  // Personal.cab expects the phone WITHOUT a leading '+': 380XXXXXXXXX, not
+  // +380XXXXXXXXX. Sending the '+' is a prime suspect for orders silently never
+  // landing in the supplier journal, so strip it here at the boundary.
+  const supplierPhone = payload.receiver_phone.replace(/^\+/, '')
 
   // Build the exact field shape the supplier expects.
   const body = {
     receiver_first_name: payload.receiver_first_name,
     receiver_last_name: payload.receiver_last_name,
     ...(payload.receiver_patronymic ? { receiver_patronymic: payload.receiver_patronymic } : {}),
-    receiver_phone: payload.receiver_phone,
+    receiver_phone: supplierPhone,
     method_payment: payload.method_payment,
     location: payload.location,
     products: payload.products,
     ...(payload.comments ? { comments: payload.comments } : {}),
   }
+
+  console.info(
+    `[supplier] add_order — mode=${mode} phone=${supplierPhone} products=${body.products.length} location=${body.location}`,
+  )
 
   try {
     const res = await fetch(url, {
@@ -165,27 +185,72 @@ export async function sendPersonalCabOrder(
       cache: 'no-store',
     })
 
-    const raw = await res.json().catch(() => ({ error: `HTTP ${res.status}` })) as Record<string, unknown>
+    // Read the body as text first so we can diagnose empty/non-JSON responses —
+    // the exact situations where we were wrongly reporting success.
+    const text = await res.text()
+    let raw: Record<string, unknown>
+    try {
+      raw = text ? (JSON.parse(text) as Record<string, unknown>) : {}
+    } catch {
+      raw = { _raw_text: text }
+    }
+    console.info(`[supplier] response — http=${res.status} body=${(text || '(empty)').slice(0, 500)}`)
 
     if (!res.ok) {
-      return { ok: false, test_mode: mode === 'test', mode, message: `API помилка: ${res.status}`, raw_response: raw }
+      return {
+        ok: false,
+        confirmed: false,
+        test_mode: mode === 'test',
+        mode,
+        message: `API помилка HTTP ${res.status}: ${JSON.stringify(raw)}`,
+        raw_response: raw,
+      }
     }
 
-    const orderId = String(raw.order_id ?? raw.id ?? raw.number ?? '')
-    const ok = !!orderId || raw.status === 'ok' || raw.success === true || raw.error == null
+    // confirmed = a real order id/number is present. This is the ONLY positive
+    // proof the order was registered. Empty JSON, empty text, or HTTP 200 with no
+    // id do NOT count as confirmed.
+    const orderId = String(raw.order_id ?? raw.id ?? raw.number ?? '').trim()
+    const confirmed = orderId.length > 0
+
+    // ok=true only when the API did not return an explicit error. Do NOT use
+    // `raw.error == null` as positive proof — undefined == null is true, so an
+    // empty response would look like success. We invert: error only if a non-empty
+    // error string (or truthy error/success===false) is present.
+    const hasExplicitError =
+      (typeof raw.error === 'string' && raw.error.length > 0) ||
+      (raw.error != null && raw.error !== false && typeof raw.error !== 'string') ||
+      raw.success === false ||
+      raw.status === 'error'
+    const ok = !hasExplicitError
+
+    let message: string
+    if (!ok) {
+      message = `Помилка від постачальника: ${JSON.stringify(raw)}`
+    } else if (confirmed) {
+      message = mode === 'test'
+        ? `Тестове замовлення прийнято (mode=test, id=${orderId})`
+        : `Замовлення передано постачальнику (id=${orderId})`
+    } else {
+      // HTTP 200, no explicit error, but no order id either.
+      message = mode === 'test'
+        ? 'Тест: HTTP 200, order_id відсутній (очікувано для test-mode)'
+        : `HTTP 200 без order_id — НЕ підтверджено. Перевірте журнал Personal.cab. Відповідь: ${JSON.stringify(raw)}`
+    }
 
     return {
       ok,
+      confirmed,
       test_mode: mode === 'test',
       mode,
       order_id: orderId || undefined,
-      message: ok
-        ? (mode === 'test' ? 'Тестове замовлення прийнято постачальником (mode=test)' : 'Замовлення передано постачальнику')
-        : `Невідома відповідь: ${JSON.stringify(raw)}`,
+      message,
       raw_response: raw,
     }
   } catch (e) {
-    return { ok: false, test_mode: mode === 'test', mode, message: e instanceof Error ? e.message : String(e) }
+    const msg = e instanceof Error ? e.message : String(e)
+    console.error(`[supplier] add_order exception — ${msg}`)
+    return { ok: false, confirmed: false, test_mode: mode === 'test', mode, message: msg }
   }
 }
 
@@ -197,6 +262,7 @@ export async function submitOrder(payload: SupplierOrderPayload): Promise<OrderR
   if (mode === 'disabled') {
     return {
       ok: false,
+      confirmed: false,
       test_mode: false,
       mode: 'test',
       message: 'Авто-відправлення постачальнику вимкнено (SUPPLIER_ORDER_MODE=disabled)',
