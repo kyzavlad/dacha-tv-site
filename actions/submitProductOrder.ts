@@ -150,11 +150,17 @@ function supplierNotifyLine(mode: string, status: string, orderId?: string | nul
   return `❌ Не відправлено постачальнику (статус: ${status}). Потребує ручної обробки.`
 }
 
-// True for statuses whose raw API response/error is worth attaching to the
-// webhook payload for diagnosis (failed = hard error, sent_unconfirmed = no id).
-function supplierNeedsDiagnostics(status: string): boolean {
-  return status === 'failed' || status === 'sent_unconfirmed'
-}
+// Supplier statuses that require a human to look at the order. A second
+// `product_order_supplier_status` warning notification is sent ONLY for these —
+// successful sends (sent, test_sent) produce just the primary notification so a
+// normal order never generates two Telegram/n8n messages.
+const SUPPLIER_ATTENTION_STATUSES = new Set([
+  'failed',
+  'sent_unconfirmed',
+  'not_sent',
+  'disabled',
+  'skipped',
+])
 
 export async function submitProductOrder(
   rawItems: unknown[],
@@ -391,34 +397,59 @@ export async function submitProductOrder(
         )
       }
 
-      // ── Fallback B: second notification — supplier status update ─────────
-      const fbSupplierLine = supplierNotifyLine(fbSupplierMode, fbSupplierStatus, fbSupplierOrderId)
-      const fbSupplierError =
-        supplierNeedsDiagnostics(fbSupplierStatus) && fbSupplierResponse
-          ? JSON.stringify(fbSupplierResponse)
-          : null
+      // ── Fallback B: second notification — supplier status WARNING only ───
+      // Sent ONLY when the supplier outcome needs attention. Successful sends
+      // (sent/test_sent) produce just the primary product_order_received above.
+      if (SUPPLIER_ATTENTION_STATUSES.has(fbSupplierStatus)) {
+        const fbSupplierLine = supplierNotifyLine(fbSupplierMode, fbSupplierStatus, fbSupplierOrderId)
+        const fbSupplierError = fbSupplierResponse ? JSON.stringify(fbSupplierResponse) : null
 
-      const fbSupplierStatusText = [
-        `🔄 Статус постачальника — замовлення ${fallbackId}`,
-        fbSupplierLine,
-        fbSupplierError ? `Відповідь постачальника: ${fbSupplierError}` : null,
-        mixedNote,
-        '⚠ Збережено як заявку (таблиця orders відсутня)',
-      ].filter(Boolean).join('\n')
+        const fbSupplierStatusText = [
+          '⚠️ Замовлення потребує уваги',
+          `Замовлення ${fallbackId}`,
+          fbSupplierLine ?? `Статус постачальника: ${fbSupplierStatus}`,
+          fbSupplierError ? `Відповідь постачальника: ${fbSupplierError}` : null,
+          mixedNote,
+          '⚠ Збережено як заявку (таблиця orders відсутня)',
+          '',
+          `Ім'я: ${customerName}`,
+          `Телефон: ${d.phone}`,
+          `Оплата: ${paymentLabel}`,
+          warehouseLabel,
+          '',
+          itemLines,
+          '',
+          `Сума: ${totalUah} ₴`,
+          d.comment ? `Коментар: ${d.comment}` : null,
+          d.source ? `Сторінка: ${d.source}` : null,
+        ].filter(Boolean).join('\n')
 
-      await notifyProductOrder({
-        trace,
-        message: fbSupplierStatusText,
-        payload: {
-          type: 'product_order_supplier_status',
-          order_id: fallbackId,
-          supplier_mode: fbSupplierMode,
-          supplier_status: fbSupplierStatus,
-          supplier_order_id: fbSupplierOrderId ?? null,
-          supplier_confirmed: fbSupplierStatus === 'sent' || fbSupplierStatus === 'test_sent',
-          supplier_error: fbSupplierError,
-        },
-      })
+        await notifyProductOrder({
+          trace,
+          message: fbSupplierStatusText,
+          payload: {
+            type: 'product_order_supplier_status',
+            order_id: fallbackId,
+            name: customerName,
+            phone: d.phone,
+            product: productSummary,
+            items_text: itemLines,
+            total: totalUah,
+            payment_method: d.methodPayment,
+            warehouse: d.warehouseName ?? d.warehouseId,
+            warehouse_id: d.warehouseId,
+            page_url: d.source ?? null,
+            comment: d.comment ?? null,
+            supplier_mode: fbSupplierMode,
+            supplier_status: fbSupplierStatus,
+            supplier_order_id: fbSupplierOrderId ?? null,
+            supplier_confirmed: fbSupplierStatus === 'sent' || fbSupplierStatus === 'test_sent',
+            supplier_error: fbSupplierError,
+          },
+        })
+      } else {
+        console.info(`[checkout-submit ${trace}] supplier status ok (${fbSupplierStatus}) — no warning notification`)
+      }
 
       // ── Fallback C: save to `inquiries` ──────────────────────────────────
       // `type` must satisfy the existing CHECK constraint — use 'general'.
@@ -578,33 +609,59 @@ export async function submitProductOrder(
       }
     }
 
-    // ── Step 7: second notification — supplier status update ──────────────────
-    const supplierLine = supplierNotifyLine(supplierMode, supplierStatus, supplierOrderId)
-    const supplierError =
-      supplierNeedsDiagnostics(supplierStatus) && supplierResponse
-        ? JSON.stringify(supplierResponse)
-        : null
+    // ── Step 7: second notification — supplier status WARNING only ────────────
+    // Sent ONLY when the supplier outcome needs attention. A normal successful
+    // (sent) or test (test_sent) send produces just the primary notification, so
+    // a healthy order never generates two Telegram/n8n messages.
+    if (SUPPLIER_ATTENTION_STATUSES.has(supplierStatus)) {
+      const supplierLine = supplierNotifyLine(supplierMode, supplierStatus, supplierOrderId)
+      const supplierError = supplierResponse ? JSON.stringify(supplierResponse) : null
 
-    const supplierStatusText = [
-      `🔄 Статус постачальника — замовлення #${orderId.slice(0, 8).toUpperCase()}`,
-      supplierLine,
-      supplierError ? `Відповідь постачальника: ${supplierError}` : null,
-      mixedNote,
-    ].filter(Boolean).join('\n')
+      const supplierStatusText = [
+        '⚠️ Замовлення потребує уваги',
+        `Замовлення #${orderId.slice(0, 8).toUpperCase()}`,
+        supplierLine ?? `Статус постачальника: ${supplierStatus}`,
+        supplierError ? `Відповідь постачальника: ${supplierError}` : null,
+        mixedNote,
+        '',
+        `Ім'я: ${customerName}`,
+        `Телефон: ${d.phone}`,
+        `Оплата: ${paymentLabel}`,
+        warehouseLabel,
+        '',
+        itemLines,
+        '',
+        `Сума: ${totalUah} ₴`,
+        d.comment ? `Коментар: ${d.comment}` : null,
+        d.source ? `Сторінка: ${d.source}` : null,
+      ].filter(Boolean).join('\n')
 
-    await notifyProductOrder({
-      trace,
-      message: supplierStatusText,
-      payload: {
-        type: 'product_order_supplier_status',
-        order_id: orderId,
-        supplier_mode: supplierMode,
-        supplier_status: supplierStatus,
-        supplier_order_id: supplierOrderId ?? null,
-        supplier_confirmed: supplierStatus === 'sent' || supplierStatus === 'test_sent',
-        supplier_error: supplierError,
-      },
-    })
+      await notifyProductOrder({
+        trace,
+        message: supplierStatusText,
+        payload: {
+          type: 'product_order_supplier_status',
+          order_id: orderId,
+          name: customerName,
+          phone: d.phone,
+          product: productSummary,
+          items_text: itemLines,
+          total: totalUah,
+          payment_method: d.methodPayment,
+          warehouse: d.warehouseName ?? d.warehouseId,
+          warehouse_id: d.warehouseId,
+          page_url: d.source ?? null,
+          comment: d.comment ?? null,
+          supplier_mode: supplierMode,
+          supplier_status: supplierStatus,
+          supplier_order_id: supplierOrderId ?? null,
+          supplier_confirmed: supplierStatus === 'sent' || supplierStatus === 'test_sent',
+          supplier_error: supplierError,
+        },
+      })
+    } else {
+      console.info(`[checkout-submit ${trace}] supplier status ok (${supplierStatus}) — no warning notification`)
+    }
 
     console.info(`[checkout-submit ${trace}] success — order ${orderId}`)
     return { success: true, orderId }
