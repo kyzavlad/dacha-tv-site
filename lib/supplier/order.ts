@@ -161,7 +161,7 @@ export async function sendPersonalCabOrder(
   const base = apiUrl.replace(/\/$/, '')
   // Query-param routing. Test mode passes &mode=test so the supplier validates
   // and logs without shipping; live mode omits it for a REAL order.
-  const qp: Record<string, string> = { key: apiKey, method: 'add_order', type: 'json' }
+  const qp: Record<string, string> = { key: apiKey, method: 'add_order' }
   if (mode === 'test') qp.mode = 'test'
   const params = new URLSearchParams(qp)
   const url = `${base}?${params}`
