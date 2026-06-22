@@ -159,12 +159,13 @@ export async function sendPersonalCabOrder(
   }
 
   const base = apiUrl.replace(/\/$/, '')
+  const endpoint = `${base}/`
   // Query-param routing. Test mode passes &mode=test so the supplier validates
   // and logs without shipping; live mode omits it for a REAL order.
   const qp: Record<string, string> = { key: apiKey, method: 'add_order' }
   if (mode === 'test') qp.mode = 'test'
   const params = new URLSearchParams(qp)
-  const url = `${base}?${params}`
+  const url = `${endpoint}?${params}`
 
   // Personal.cab expects the phone WITHOUT a leading '+': 380XXXXXXXXX, not
   // +380XXXXXXXXX. Sending the '+' is a prime suspect for orders silently never
