@@ -10,6 +10,7 @@ export const PRIMARY_NAV: NavItem[] = [
   { href: '/catalog', label: 'Магазин' },
   { href: '/products', label: 'Продукти' },
   { href: '/flowers', label: 'Квіти' },
+  { href: '/lavender', label: 'Лаванда' },
   { href: '/services', label: 'Послуги' },
   { href: '/beekeeper', label: 'Пасічникам' },
   { href: '/about', label: 'Про нас' },

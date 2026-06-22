@@ -108,7 +108,16 @@ export default async function AdminOrdersPage({ searchParams }: PageProps) {
       </div>
 
       {orders.length === 0 ? (
-        <p className="text-sm text-gray-400 py-6">Замовлень не знайдено.</p>
+        <div className="py-6 space-y-2">
+          <p className="text-sm text-gray-400">Замовлень не знайдено.</p>
+          <p className="text-xs text-gray-400">
+            Якщо таблиця orders недоступна в Supabase, замовлення з магазину зберігаються у{' '}
+            <Link href="/admin" className="text-blue-600 hover:text-blue-800 underline">
+              Вхідних заявках
+            </Link>
+            {' '}(тип{' '}<code className="text-xs bg-gray-100 px-1 rounded">checkout_order_fallback</code>).
+          </p>
+        </div>
       ) : (
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
           <table className="w-full text-sm">

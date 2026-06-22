@@ -52,8 +52,8 @@ export function BrandStory() {
                   </svg>
                 </div>
                 <div>
-                  <p className="font-serif font-bold text-bark text-sm">6 сортів меду</p>
-                  <p className="text-gray-400 text-xs">Акація, Липа, Сонях і ще 3</p>
+                  <p className="font-serif font-bold text-bark text-sm">Власне господарство</p>
+                  <p className="text-gray-400 text-xs">Харківщина, с. Коротич</p>
                 </div>
               </div>
             </div>
