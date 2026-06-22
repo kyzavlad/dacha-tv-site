@@ -151,15 +151,19 @@ function supplierNotifyLine(mode: string, status: string, orderId?: string | nul
 }
 
 // Supplier statuses that require a human to look at the order. A second
-// `product_order_supplier_status` warning notification is sent ONLY for these —
-// successful sends (sent, test_sent) produce just the primary notification so a
-// normal order never generates two Telegram/n8n messages.
+// `product_order_supplier_status` warning notification is sent ONLY for these.
+//   • failed / sent_unconfirmed → supplier API explicitly failed or did not
+//     confirm — the order may never appear in the supplier journal.
+//   • not_sent / disabled       → supplier items exist but were NOT forwarded
+//     (kill switch on) — the admin must place the order manually.
+// Successful sends (sent, test_sent) and `skipped` (no supplier items at all —
+// a normal honey/flower/manual order) produce ONLY the primary notification, so
+// a healthy order never generates two Telegram/n8n messages.
 const SUPPLIER_ATTENTION_STATUSES = new Set([
   'failed',
   'sent_unconfirmed',
   'not_sent',
   'disabled',
-  'skipped',
 ])
 
 export async function submitProductOrder(

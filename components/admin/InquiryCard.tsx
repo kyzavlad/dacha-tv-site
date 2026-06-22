@@ -120,6 +120,18 @@ export function InquiryCard({ inquiry }: InquiryCardProps) {
           : JSON.stringify(order.supplier_response))
       : null
 
+  // An order that was accepted by the supplier API can still later become
+  // "Не выполнен" / cancelled in Personal.cab. The admin must verify the final
+  // state in the supplier journal — acceptance at submit time is NOT fulfilment.
+  const supplierAccepted =
+    order && (order.supplier_status === 'sent' || order.supplier_status === 'test_sent')
+  const supplierNeedsCheck =
+    order &&
+    (order.supplier_status === 'sent_unconfirmed' ||
+      order.supplier_status === 'failed' ||
+      order.supplier_status === 'sent' ||
+      order.supplier_status === 'test_sent')
+
   return (
     <article className="bg-white rounded-2xl border border-honey-100 shadow-sm p-5 space-y-4">
       {/* Header row */}
@@ -169,8 +181,23 @@ export function InquiryCard({ inquiry }: InquiryCardProps) {
               <span className="text-xs text-bark/50">#{order.supplier_order_id}</span>
             )}
           </div>
+          {supplierAccepted && (
+            <p className="text-xs text-green-700 bg-green-50 rounded-lg px-3 py-2">
+              {order.supplier_status === 'test_sent'
+                ? 'Тестове замовлення прийнято постачальником.'
+                : 'Замовлення прийнято постачальником.'}
+              {order.supplier_order_id ? ` № ${order.supplier_order_id}.` : ''}
+            </p>
+          )}
           {supplierError && (
             <p className="text-xs text-red-600 font-mono break-all bg-red-50 rounded-lg px-3 py-2">{supplierError}</p>
+          )}
+          {supplierNeedsCheck && (
+            <p className="text-xs text-bark/60 bg-honey-50 rounded-lg px-3 py-2">
+              ⚠ Прийняте замовлення ще не означає виконане. Перевірте статус у Personal.cab
+              {order.supplier_order_id ? ` за номером № ${order.supplier_order_id}` : ''} — якщо статус
+              «Не виконано»/«Скасовано», зв&apos;яжіться з постачальником і клієнтом.
+            </p>
           )}
 
           {/* Items */}
