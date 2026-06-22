@@ -60,16 +60,17 @@ export async function POST(req: Request) {
   }
 
   const base = apiUrl.replace(/\/$/, '')
+  const endpoint = `${base}/`
 
   // ── Build add_order URL — no type=json (breaks Personal.cab body parsing) ──
   const qp = new URLSearchParams({ key: apiKey, method: 'add_order' })
   if (testMode) qp.set('mode', 'test')
-  const url = `${base}?${qp}`
+  const url = `${endpoint}?${qp}`
 
   // Redacted URL for logging (key replaced with ***)
   const qpSafe = new URLSearchParams({ key: '***', method: 'add_order' })
   if (testMode) qpSafe.set('mode', 'test')
-  const urlSafe = `${base}?${qpSafe}`
+  const urlSafe = `${endpoint}?${qpSafe}`
 
   // ── Hardcoded diagnostic order payload ────────────────────────────────────
   const timestamp = new Date().toISOString()
