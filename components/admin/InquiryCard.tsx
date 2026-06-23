@@ -24,6 +24,15 @@ interface FallbackOrderItem {
   variant?: string | null
   supplier_sku?: string | null
 }
+interface SupplierProblemLine {
+  sku?: string
+  name?: string
+  name_ua?: string
+  qty?: string
+  price?: string
+  sum?: string
+  reason?: string
+}
 interface FallbackOrder {
   fallback_id?: string
   payment?: string
@@ -35,6 +44,10 @@ interface FallbackOrder {
   supplier_status?: string
   supplier_order_id?: string | null
   supplier_response?: unknown
+  // Optional supplier lifecycle data (set when an admin/cron has reconciled the
+  // order against get_order_details). Not written by checkout itself.
+  supplier_latest_status?: string | null
+  supplier_problem_lines?: SupplierProblemLine[] | null
 }
 
 function parseFallbackOrder(notes: string | null): FallbackOrder | null {
@@ -55,6 +68,10 @@ function parseFallbackOrder(notes: string | null): FallbackOrder | null {
       supplier_status: parsed.supplier_status as string | undefined,
       supplier_order_id: (parsed.supplier_order_id as string | null) ?? null,
       supplier_response: parsed.supplier_response,
+      supplier_latest_status: (parsed.supplier_latest_status as string | null) ?? null,
+      supplier_problem_lines: Array.isArray(parsed.supplier_problem_lines)
+        ? (parsed.supplier_problem_lines as SupplierProblemLine[])
+        : null,
     }
   } catch {
     return null
@@ -198,6 +215,29 @@ export function InquiryCard({ inquiry }: InquiryCardProps) {
               {order.supplier_order_id ? ` за номером № ${order.supplier_order_id}` : ''} — якщо статус
               «Не виконано»/«Скасовано», зв&apos;яжіться з постачальником і клієнтом.
             </p>
+          )}
+          {order.supplier_latest_status && (
+            <p className="text-xs text-bark/70 bg-gray-50 rounded-lg px-3 py-2">
+              Останній статус Personal.cab:{' '}
+              <span className="font-semibold text-bark">{order.supplier_latest_status}</span>
+            </p>
+          )}
+          {order.supplier_problem_lines && order.supplier_problem_lines.length > 0 && (
+            <div className="text-xs bg-red-50 border border-red-200 rounded-lg px-3 py-2 space-y-1">
+              <p className="font-semibold text-red-700">
+                Постачальник видалив позиції — потрібна ручна обробка:
+              </p>
+              {order.supplier_problem_lines.map((line, idx) => (
+                <p key={idx} className="text-red-700">
+                  • {line.sku ? `${line.sku} — ` : ''}{line.name_ua || line.name || 'товар'}
+                  {line.qty ? ` × ${line.qty}` : ''}
+                </p>
+              ))}
+              <p className="text-red-600/80">
+                Перевірте замовлення у Personal.cab
+                {order.supplier_order_id ? ` (№ ${order.supplier_order_id})` : ''} та зв&apos;яжіться з клієнтом.
+              </p>
+            </div>
           )}
 
           {/* Items */}

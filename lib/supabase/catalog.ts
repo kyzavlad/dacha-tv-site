@@ -187,8 +187,10 @@ export async function getPublishedCatalogProducts(
   return { products: (data ?? []) as CatalogProduct[], total: count ?? 0 }
 }
 
-// Public catalog search (?q=) — matches published shop products by name. Natural
-// food products are excluded (they live under /products), metal stays included.
+// Public catalog search (?q=) — matches published shop products by Ukrainian or
+// Russian name. Searching the `name` (Russian supplier feed) column as well lets
+// customers find items before a Ukrainian translation is written. Natural food
+// products are excluded (they live under /products), metal stays included.
 export async function searchPublishedCatalogProducts(
   q: string,
   page = 1,
@@ -199,13 +201,17 @@ export async function searchPublishedCatalogProducts(
   const from = (page - 1) * CATALOG_PAGE_SIZE
   const to = from + CATALOG_PAGE_SIZE - 1
   // Escape PostgREST ilike wildcards so user input can't broaden the match.
-  const pattern = `%${term.replace(/[%_,()]/g, ' ').trim()}%`
+  const escaped = term.replace(/[%_,()]/g, ' ').trim()
+  const pattern = `%${escaped}%`
+  // Match on either the Ukrainian name_ua or the raw supplier name (Russian).
+  // This avoids making the public UI bilingual while still letting Ukrainian
+  // customers search using the Russian product names from the supplier feed.
   const { data, count } = await client
     .from('catalog_products')
     .select('*', { count: 'exact' })
     .eq('status', 'published')
     .or(EXCLUDE_NATURAL_OR)
-    .ilike('name_ua', pattern)
+    .or(`name_ua.ilike.${pattern},name.ilike.${pattern}`)
     .order('is_featured', { ascending: false })
     .order('name_ua', { ascending: true })
     .range(from, to)

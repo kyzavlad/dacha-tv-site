@@ -42,12 +42,17 @@ function summarize(result: SupplierStatusResult) {
     count: result.orders.length,
     orders: result.orders.map((o) => ({
       order_id: o.order_id ?? null,
+      internal_id: o.internal_id ?? null,
       interpreted_status: o.status,
       raw_status: o.raw_status ?? null,
+      tracker_status: o.tracker_status ?? null,
       ttn: o.ttn ?? null,
       payment: o.payment ?? null,
       delivery: o.delivery ?? null,
+      recipient: o.recipient ?? null,
+      phone: o.phone ?? null,
       total: o.total ?? null,
+      problem_lines: o.problem_lines ?? null,
     })),
     // The untouched supplier payload, for manual inspection.
     raw_response: result.raw_response ?? null,

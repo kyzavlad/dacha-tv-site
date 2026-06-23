@@ -303,16 +303,33 @@ export type NormalizedSupplierStatus =
   | 'not_fulfilled'  // Не выполнен — the exact problem state we are chasing
   | 'unknown'        // anything we cannot confidently classify
 
+// A supplier line that the supplier removed from the order (the real cause of
+// "Не выполнен"): the order is accepted but one or more products are dropped.
+export interface SupplierProblemLine {
+  sku?: string
+  name?: string
+  name_ua?: string
+  qty?: string
+  price?: string
+  sum?: string
+  reason: string   // 'deleted_by_supplier'
+}
+
 // Normalized view of a single supplier order, plus the raw supplier object so
 // the admin/diag can always inspect the untouched response.
 export interface SupplierOrderInfo {
-  order_id?: string
-  raw_status?: string
+  order_id?: string        // Номер / order_id  e.g. "MC-26-036210"
+  internal_id?: string     // Ссылка (list) / Start_Order.id  e.g. "771234"
+  raw_status?: string      // Статус
+  tracker_status?: string  // СтатусТреккера
   status: NormalizedSupplierStatus
   ttn?: string
   payment?: string
   delivery?: string
+  recipient?: string
+  phone?: string
   total?: string
+  problem_lines?: SupplierProblemLine[]
   raw: Record<string, unknown>
 }
 
@@ -337,12 +354,29 @@ export function normalizeSupplierStatus(raw: string | null | undefined): Normali
   if (/отмен|скасов|cancel|відмін/.test(s)) return 'cancelled'
   if (/выполнен|викона|complete|done|fulfil|готов/.test(s)) return 'fulfilled'
   if (/отправл|відправл|ship|відвантаж/.test(s)) return 'shipped'
-  if (/нов|обработ|оброб|pending|process|очік|prinят|прийн/.test(s)) return 'processing'
+  if (/нов|обработ|оброб|комплект|pending|process|очік|prinят|прийн/.test(s)) return 'processing'
   return 'unknown'
 }
 
+// Combine the supplier status, tracker status and deleted lines into one
+// normalized lifecycle status. Priority: an explicit cancellation wins; then a
+// deleted product line means the order cannot be fulfilled as placed; then the
+// main status; finally the tracker status as a last resort.
+function interpretLifecycle(
+  rawStatus: string | undefined,
+  trackerStatus: string | undefined,
+  problemLines: SupplierProblemLine[] | undefined,
+): NormalizedSupplierStatus {
+  const base = normalizeSupplierStatus(rawStatus)
+  if (base === 'cancelled') return 'cancelled'
+  if (problemLines && problemLines.length > 0) return 'not_fulfilled'
+  if (base !== 'unknown') return base
+  return normalizeSupplierStatus(trackerStatus)
+}
+
 // Pull the first present, non-empty value across a list of candidate keys
-// (case-insensitive). Supplier responses are inconsistent about field names.
+// (case-insensitive — works for Cyrillic too). Supplier responses mix Russian,
+// Latin and English field names depending on the method.
 function pickField(obj: Record<string, unknown>, keys: string[]): string | undefined {
   const lowerMap = new Map<string, unknown>()
   for (const k of Object.keys(obj)) lowerMap.set(k.toLowerCase(), obj[k])
@@ -353,24 +387,71 @@ function pickField(obj: Record<string, unknown>, keys: string[]): string | undef
   return undefined
 }
 
-// Normalize one raw supplier order object into SupplierOrderInfo.
-function toSupplierOrderInfo(raw: Record<string, unknown>): SupplierOrderInfo {
-  const order_id = pickField(raw, ['order_id', 'id', 'number', 'order_number', 'orderid'])
-  const raw_status = pickField(raw, ['status', 'state', 'order_status', 'status_name', 'statusname'])
-  const ttn = pickField(raw, ['ttn', 'np_ttn', 'declaration', 'tracking', 'tracking_number', 'ttn_number'])
-  const payment = pickField(raw, ['method_payment', 'payment', 'payment_method', 'pay'])
-  const delivery = pickField(raw, ['delivery', 'location', 'warehouse', 'np_warehouse', 'address'])
-  const total = pickField(raw, ['total', 'sum', 'amount', 'total_price', 'price'])
+// Case-insensitive single-key lookup that returns the raw value (objects too).
+function getKeyCI(obj: Record<string, unknown>, name: string): unknown {
+  for (const k of Object.keys(obj)) {
+    if (k.toLowerCase() === name.toLowerCase()) return obj[k]
+  }
+  return undefined
+}
+
+// Normalize one raw supplier order object (list item OR Start_Order) into
+// SupplierOrderInfo. Candidate keys cover both the Russian get_orders list
+// shape and the Latin get_order_details Start_Order shape.
+function toSupplierOrderInfo(
+  raw: Record<string, unknown>,
+  opts?: { problemLines?: SupplierProblemLine[] },
+): SupplierOrderInfo {
+  const order_id = pickField(raw, ['order_id', 'Номер', 'number', 'order_number', 'orderid'])
+  const internal_id = pickField(raw, ['Ссылка', 'id', 'order_ref', 'ref'])
+  const raw_status = pickField(raw, ['Статус', 'status', 'state', 'order_status', 'status_name'])
+  const tracker_status = pickField(raw, ['СтатусТреккера', 'tracker_status', 'tracking_status'])
+  const ttn = pickField(raw, ['ТТН', 'ttn', 'np_ttn', 'declaration', 'tracking', 'tracking_number'])
+  const payment = pickField(raw, ['МетодОплаты', 'method_payment', 'payment', 'payment_method', 'pay'])
+  const delivery = pickField(raw, ['delivery', 'location', 'Доставка', 'warehouse', 'np_warehouse', 'address'])
+  const recipient = pickField(raw, ['Получатель', 'receiver', 'recipient', 'customer', 'receiver_name'])
+  const phone = pickField(raw, ['ТелефонПолучателя', 'phone', 'receiver_phone', 'Телефон'])
+  const total = pickField(raw, ['СуммаЗаказа', 'total', 'sum', 'amount', 'total_price', 'price'])
+  const problem_lines = opts?.problemLines && opts.problemLines.length > 0 ? opts.problemLines : undefined
   return {
     order_id,
+    internal_id,
     raw_status,
-    status: normalizeSupplierStatus(raw_status),
+    tracker_status,
+    status: interpretLifecycle(raw_status, tracker_status, problem_lines),
     ttn,
     payment,
     delivery,
+    recipient,
+    phone,
     total,
+    problem_lines,
     raw,
   }
+}
+
+// Extract deleted product lines from a Transcript_Order block. These are the
+// lines the supplier removed (article "B-391" in the MC-26-036210 example).
+function extractProblemLines(transcript: Record<string, unknown>): SupplierProblemLine[] {
+  const del = getKeyCI(transcript, 'delete')
+  if (!del || typeof del !== 'object') return []
+  const lines = getKeyCI(del as Record<string, unknown>, 'line_delete')
+  const arr = Array.isArray(lines)
+    ? lines
+    : lines && typeof lines === 'object'
+      ? [lines]
+      : []
+  return arr
+    .filter((l): l is Record<string, unknown> => !!l && typeof l === 'object')
+    .map((l) => ({
+      sku: pickField(l, ['article', 'sku', 'vendor_code', 'code']),
+      name: pickField(l, ['product_name', 'name', 'title']),
+      name_ua: pickField(l, ['product_name_ua', 'name_ua']),
+      qty: pickField(l, ['qty', 'quantity', 'count']),
+      price: pickField(l, ['price']),
+      sum: pickField(l, ['sum', 'total']),
+      reason: 'deleted_by_supplier',
+    }))
 }
 
 // Shared GET helper for read methods. Includes type=json (correct for reads).
@@ -402,23 +483,27 @@ async function supplierApiGet(
   }
 }
 
-// Extract an array of order-like objects from an arbitrary supplier response.
+// Extract an array of order-like objects from an arbitrary supplier LIST
+// response (get_orders). Handles arrays, nested arrays, and a single object.
 function extractOrderList(parsed: unknown): Record<string, unknown>[] {
   if (Array.isArray(parsed)) return parsed.filter((x) => x && typeof x === 'object') as Record<string, unknown>[]
   if (parsed && typeof parsed === 'object') {
     const obj = parsed as Record<string, unknown>
-    for (const key of ['orders', 'data', 'result', 'items', 'order']) {
-      const v = obj[key]
+    for (const key of ['orders', 'data', 'result', 'items', 'order', 'Заказы']) {
+      const v = getKeyCI(obj, key)
       if (Array.isArray(v)) return v.filter((x) => x && typeof x === 'object') as Record<string, unknown>[]
       if (v && typeof v === 'object') return [v as Record<string, unknown>]
     }
     // A single order object returned at the top level (has an id-ish field).
-    if (pickField(obj, ['order_id', 'id', 'number', 'status'])) return [obj]
+    if (pickField(obj, ['order_id', 'Номер', 'id', 'Ссылка', 'number', 'status', 'Статус'])) return [obj]
   }
   return []
 }
 
 // Look up ONE order by its Personal.cab id. Read-only. Never throws.
+// get_order_details returns a { Start_Order, Transcript_Order } envelope — the
+// presence of Start_Order means the order EXISTS. Deleted lines inside
+// Transcript_Order.delete.line_delete are surfaced as problem_lines.
 export async function getPersonalCabOrderDetails(id: string): Promise<SupplierStatusResult> {
   const orderId = (id ?? '').toString().trim()
   if (!orderId) {
@@ -435,12 +520,53 @@ export async function getPersonalCabOrderDetails(id: string): Promise<SupplierSt
       raw_response: parsed,
     }
   }
-  const list = extractOrderList(parsed).map(toSupplierOrderInfo)
+
+  const obj =
+    parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null
+
+  // ── Start_Order / Transcript_Order envelope ───────────────────────────────
+  const startOrder = obj ? getKeyCI(obj, 'Start_Order') : undefined
+  if (startOrder && typeof startOrder === 'object') {
+    const transcript = obj ? getKeyCI(obj, 'Transcript_Order') : undefined
+    const problemLines =
+      transcript && typeof transcript === 'object'
+        ? extractProblemLines(transcript as Record<string, unknown>)
+        : []
+    // Merge in Transcript_Order.order_info (if an object) so a status carried
+    // there is picked up; Start_Order fields still take precedence.
+    const orderInfo =
+      transcript && typeof transcript === 'object'
+        ? getKeyCI(transcript as Record<string, unknown>, 'order_info')
+        : undefined
+    const mergedRaw: Record<string, unknown> = {
+      ...(orderInfo && typeof orderInfo === 'object' && !Array.isArray(orderInfo)
+        ? (orderInfo as Record<string, unknown>)
+        : {}),
+      ...(startOrder as Record<string, unknown>),
+    }
+    const info = toSupplierOrderInfo(mergedRaw, { problemLines })
+    const problemNote = problemLines.length > 0
+      ? ` — видалено рядків: ${problemLines.length} (${problemLines.map((l) => l.sku ?? '?').join(', ')})`
+      : ''
+    return {
+      ok: true,
+      found: true,
+      message: `Знайдено замовлення ${info.order_id ?? orderId}: ${info.raw_status ?? info.status}${problemNote}`,
+      orders: [info],
+      http_status: httpStatus,
+      raw_response: parsed,
+    }
+  }
+
+  // ── Fallback: flat / list-shaped detail responses ─────────────────────────
+  const list = extractOrderList(parsed).map((o) => toSupplierOrderInfo(o))
   return {
     ok: true,
     found: list.length > 0,
     message: list.length > 0
-      ? `Знайдено замовлення ${orderId}: ${list[0].raw_status ?? '(статус відсутній)'}`
+      ? `Знайдено замовлення ${orderId}: ${list[0].raw_status ?? list[0].status}`
       : `Замовлення ${orderId} не знайдено у відповіді постачальника`,
     orders: list,
     http_status: httpStatus,
@@ -448,7 +574,8 @@ export async function getPersonalCabOrderDetails(id: string): Promise<SupplierSt
   }
 }
 
-// List orders in a date range (YYYYMMDD). Read-only. Never throws.
+// List orders in a date range (YYYYMMDD). Read-only. Never throws. Normalizes
+// the Russian-keyed get_orders list items (Номер, Статус, ТТН, …).
 export async function getPersonalCabOrders(from: string, to: string): Promise<SupplierStatusResult> {
   const f = (from ?? '').toString().trim()
   const t = (to ?? '').toString().trim()
@@ -467,7 +594,7 @@ export async function getPersonalCabOrders(from: string, to: string): Promise<Su
       raw_response: parsed,
     }
   }
-  const list = extractOrderList(parsed).map(toSupplierOrderInfo)
+  const list = extractOrderList(parsed).map((o) => toSupplierOrderInfo(o))
   return {
     ok: true,
     found: list.length > 0,

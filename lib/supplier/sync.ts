@@ -721,10 +721,24 @@ export async function syncSupplierProducts(options?: {
         images = (p.images as unknown[]).map(String).filter(Boolean)
       } else if (typeof p.images === 'string' && p.images) {
         images = p.images.split(',').map((s) => s.trim()).filter(Boolean)
+      } else if (Array.isArray(p.pictures)) {
+        images = (p.pictures as unknown[]).map(String).filter(Boolean)
+      } else if (typeof p.pictures === 'string' && p.pictures) {
+        images = p.pictures.split(',').map((s) => s.trim()).filter(Boolean)
+      } else if (Array.isArray(p.photos)) {
+        images = (p.photos as unknown[]).map(String).filter(Boolean)
+      } else if (typeof p.photos === 'string' && p.photos) {
+        images = p.photos.split(',').map((s) => s.trim()).filter(Boolean)
       } else if (p.image) {
         images = [String(p.image)]
       } else if (p.photo) {
         images = [String(p.photo)]
+      } else if (p.picture) {
+        images = [String(p.picture)]
+      } else if (p.thumbnail) {
+        images = [String(p.thumbnail)]
+      } else if (p.img) {
+        images = [String(p.img)]
       }
 
       // ── Price resolution (shared helper — never store raw USD without conversion) ──
