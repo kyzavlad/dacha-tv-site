@@ -38,6 +38,16 @@ export async function GET(request: NextRequest) {
     for (const r of (blocks.data ?? []) as { block_hour: number | null }[]) {
       if (r.block_hour != null) hours.add(r.block_hour)
     }
+
+    // Block all elapsed hours when querying today (Kyiv time = UTC+3).
+    // Ukraine uses UTC+3 year-round so a fixed offset is safe.
+    const kievNow = new Date(Date.now() + 3 * 60 * 60 * 1000)
+    const todayKyiv = `${kievNow.getUTCFullYear()}-${String(kievNow.getUTCMonth() + 1).padStart(2, '0')}-${String(kievNow.getUTCDate()).padStart(2, '0')}`
+    if (date === todayKyiv) {
+      const nowHour = kievNow.getUTCHours()
+      for (let h = 0; h <= nowHour; h++) hours.add(h)
+    }
+
     return NextResponse.json({ bookedHours: [...hours] })
   }
 

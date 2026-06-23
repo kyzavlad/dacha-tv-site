@@ -50,6 +50,13 @@ export function HourlyCalendar({
   const today = new Date()
   today.setHours(0, 0, 0, 0)
 
+  // Current Kyiv time (UTC+3, Ukraine is on this offset year-round since 2022).
+  // Used to grey-out elapsed time slots on today's date before the API responds,
+  // and to block a past-slot submit on the client before it reaches the server.
+  const kyivNow = new Date(Date.now() + 3 * 60 * 60 * 1000)
+  const todayKyivStr = `${kyivNow.getUTCFullYear()}-${String(kyivNow.getUTCMonth() + 1).padStart(2, '0')}-${String(kyivNow.getUTCDate()).padStart(2, '0')}`
+  const nowKyivHour = kyivNow.getUTCHours()
+
   const maxDate = maxDateISO ? new Date(`${maxDateISO}T23:59:59`) : null
 
   const [viewMonth, setViewMonth] = useState(new Date(today.getFullYear(), today.getMonth(), 1))
@@ -138,6 +145,15 @@ export function HourlyCalendar({
 
     if (requireRules && !rulesAccepted) {
       setFieldErrors({ rulesAccepted: ['Підтвердіть, що ознайомлені з правилами'] })
+      return
+    }
+
+    // Client-side past-time guard (server mirrors this check).
+    const kyivNowMs = Date.now() + 3 * 60 * 60 * 1000
+    const kyivNowDate = new Date(kyivNowMs)
+    const nowDateStr = `${kyivNowDate.getUTCFullYear()}-${String(kyivNowDate.getUTCMonth() + 1).padStart(2, '0')}-${String(kyivNowDate.getUTCDate()).padStart(2, '0')}`
+    if (toISODate(selectedDate) === nowDateStr && selectedHour <= kyivNowDate.getUTCHours()) {
+      setServerError('Обраний час вже минув. Будь ласка, оберіть пізніший час на сьогодні.')
       return
     }
 
@@ -241,17 +257,20 @@ export function HourlyCalendar({
             <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
               {slots.map(h => {
                 const booked = bookedHours.includes(h)
+                const isSelectedDate = selectedDate ? toISODate(selectedDate) === todayKyivStr : false
+                const isPast = isSelectedDate && h <= nowKyivHour
+                const unavailable = booked || isPast
                 const isSelected = selectedHour === h
                 return (
                   <button
                     key={h}
-                    disabled={booked}
+                    disabled={unavailable}
                     onClick={() => setSelectedHour(h)}
                     className={[
                       'py-2 rounded-xl text-xs font-semibold border transition-colors',
-                      booked ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed line-through' : '',
-                      !booked && isSelected ? 'bg-purple-700 text-white border-purple-700' : '',
-                      !booked && !isSelected ? 'bg-white text-gray-700 border-gray-200 hover:border-purple-400 hover:text-purple-700' : '',
+                      unavailable ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed line-through' : '',
+                      !unavailable && isSelected ? 'bg-purple-700 text-white border-purple-700' : '',
+                      !unavailable && !isSelected ? 'bg-white text-gray-700 border-gray-200 hover:border-purple-400 hover:text-purple-700' : '',
                     ].join(' ')}
                   >
                     {String(h).padStart(2, '0')}:00

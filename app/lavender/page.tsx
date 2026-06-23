@@ -4,6 +4,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { getSupabaseClient } from '@/lib/supabase/client'
 import { HourlyCalendar } from '@/components/bookings/HourlyCalendar'
+import { LAUNCH_INSTAGRAM_URL } from '@/lib/launch-defaults'
 
 export const metadata: Metadata = {
   title: 'Лавандове поле',
@@ -17,6 +18,18 @@ export const metadata: Metadata = {
     images: [{ url: '/images/dacha-tv/logo-square.png', width: 1200, height: 1200, alt: 'Дача TV: лавандове поле' }],
   },
 }
+
+// Static Instagram gallery cards — shown when no Instagram API token is
+// configured. Each card uses a CSS gradient + emoji so the section always
+// renders gracefully without any third-party embed.
+const INSTAGRAM_CARDS = [
+  { gradient: 'from-purple-400 via-violet-500 to-purple-600', emoji: '🌿', caption: 'Цвітіння лаванди', tag: '#лавандовеполе' },
+  { gradient: 'from-violet-400 via-purple-500 to-fuchsia-500', emoji: '💜', caption: 'Фотосесія в полі', tag: '#dachatv' },
+  { gradient: 'from-purple-300 via-violet-400 to-purple-500', emoji: '📸', caption: 'Магічне світанок', tag: '#коротич' },
+  { gradient: 'from-violet-500 via-purple-600 to-indigo-600', emoji: '🌾', caption: 'Свіжі букети лаванди', tag: '#букетлаванди' },
+  { gradient: 'from-fuchsia-400 via-purple-500 to-violet-600', emoji: '🎀', caption: 'Підготовка до сезону', tag: '#харківщина' },
+  { gradient: 'from-purple-200 via-violet-300 to-purple-400', emoji: '🌅', caption: 'Захід над полем', tag: '#дачаtv' },
+]
 
 async function getLavenderService() {
   const client = getSupabaseClient()
@@ -35,9 +48,9 @@ export default async function LavenderPage() {
 
   return (
     <div className="bg-white min-h-screen">
-      {/* Hero */}
+      {/* ── Hero ─────────────────────────────────────────────────────────── */}
       <div style={{ backgroundColor: '#4a2d7a' }} className="text-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-14 md:py-20">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-10 pb-14 md:pt-14 md:pb-20">
           <nav aria-label="Навігація" className="text-sm text-white/40 mb-8">
             <Link href="/" className="hover:text-white/70 transition-colors">Головна</Link>
             <span className="mx-2">›</span>
@@ -48,104 +61,101 @@ export default async function LavenderPage() {
               Садиба Дача TV · Харківщина
             </p>
             <h1 className="font-serif text-4xl md:text-5xl font-bold mb-5 leading-tight">
-              Лаванда
+              Лавандове поле
             </h1>
-            <p className="text-white/60 text-lg leading-relaxed mb-6">
-              Цвітіння у червні–липні. Орендуйте поле для фотосесії, освітніх, культурних і оздоровчих заходів.
-              За бажанням: букети лаванди під замовлення.
+            <p className="text-white/65 text-lg leading-relaxed mb-8">
+              Сезон цвітіння: червень–липень. Оренда поля для фотосесій і відпочинку.
+              Букети лаванди під замовлення.
             </p>
-            <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3">
               <a
                 href="#orenda"
-                className="group inline-flex items-center justify-center gap-2.5 px-9 py-5 bg-white text-purple-900 font-extrabold uppercase tracking-wide text-lg md:text-xl rounded-2xl shadow-2xl shadow-black/30 ring-2 ring-white/70 hover:bg-purple-50 hover:ring-white hover:scale-[1.03] active:scale-100 transition-all duration-200"
+                className="group inline-flex items-center justify-center gap-2.5 px-8 py-4 bg-white text-purple-900 font-bold text-base md:text-lg rounded-2xl shadow-xl shadow-black/25 ring-2 ring-white/60 hover:bg-purple-50 hover:ring-white hover:scale-[1.02] active:scale-100 transition-all duration-200 w-full sm:w-auto"
               >
                 Забронювати поле
-                <span aria-hidden="true" className="text-2xl group-hover:translate-x-1 transition-transform">→</span>
+                <span aria-hidden="true" className="text-xl group-hover:translate-x-1 transition-transform">→</span>
+              </a>
+              <a
+                href="#instagram"
+                className="inline-flex items-center justify-center gap-2 px-6 py-4 border border-white/25 text-white/80 font-medium text-sm rounded-2xl hover:bg-white/10 transition-colors w-full sm:w-auto"
+              >
+                Фото в Instagram
               </a>
             </div>
           </div>
         </div>
       </div>
 
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12 space-y-16">
+      {/* ── Main content ─────────────────────────────────────────────────── */}
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12 md:py-16 space-y-16 md:space-y-20">
 
         {/* Lavender field rental */}
         {service && (
-          <section id="orenda" className="scroll-mt-24">
-            <div className="flex items-center gap-3 mb-6">
-              <span className="w-6 h-px bg-purple-300" />
-              <h2 className="font-serif text-2xl font-bold text-gray-900">Оренда лавандового поля</h2>
+          <section id="orenda" className="scroll-mt-20">
+            <div className="mb-8">
+              <span className="text-xs font-semibold text-purple-500 uppercase tracking-widest mb-2 block">Оренда локації</span>
+              <h2 className="font-serif text-2xl md:text-3xl font-bold text-gray-900">Лавандове поле</h2>
             </div>
 
-            <div className="grid md:grid-cols-2 gap-8 mb-8">
-              <div>
-                <p className="text-gray-600 leading-relaxed mb-4">
+            <div className="grid lg:grid-cols-2 gap-8 lg:gap-12 items-start">
+              {/* Left: info */}
+              <div className="space-y-6">
+                <p className="text-gray-600 leading-relaxed">
                   Орендуйте лавандове поле на нашій садибі для фотосесій, освітніх, культурних і
                   оздоровчих заходів. Вартість включає 5 осіб, кожна додаткова — 200 ₴.
-                  Сезон цвітіння: червень–липень.
                 </p>
-                <div className="space-y-2 text-sm">
-                  <div className="flex gap-2">
-                    <span className="text-purple-600 font-semibold w-28">Ціна:</span>
-                    <span>06:00–15:00: 1000 ₴/год · 15:00–21:00: 1200 ₴/год</span>
+
+                <div className="rounded-2xl border border-purple-100 bg-purple-50/60 p-5 space-y-2.5 text-sm">
+                  <div className="flex gap-3">
+                    <span className="text-purple-600 font-semibold w-28 flex-shrink-0">Ціна:</span>
+                    <span className="text-gray-700">06:00–15:00: 1000 ₴/год · 15:00–21:00: 1200 ₴/год</span>
                   </div>
-                  <div className="flex gap-2">
-                    <span className="text-purple-600 font-semibold w-28">Включено:</span>
-                    <span>{service.capacity ?? 5} осіб</span>
+                  <div className="flex gap-3">
+                    <span className="text-purple-600 font-semibold w-28 flex-shrink-0">Включено:</span>
+                    <span className="text-gray-700">{service.capacity ?? 5} осіб</span>
                   </div>
-                  <div className="flex gap-2">
-                    <span className="text-purple-600 font-semibold w-28">Додатково:</span>
-                    <span>+{service.extra_guest_price_uah ?? 200} ₴/особа</span>
+                  <div className="flex gap-3">
+                    <span className="text-purple-600 font-semibold w-28 flex-shrink-0">Додатково:</span>
+                    <span className="text-gray-700">+{service.extra_guest_price_uah ?? 200} ₴/особа</span>
                   </div>
-                  <div className="flex gap-2">
-                    <span className="text-purple-600 font-semibold w-28">Час роботи:</span>
-                    <span>{String(service.slot_start_hour ?? 6).padStart(2, '0')}:00 – {String(service.slot_end_hour ?? 21).padStart(2, '0')}:00</span>
+                  <div className="flex gap-3">
+                    <span className="text-purple-600 font-semibold w-28 flex-shrink-0">Час роботи:</span>
+                    <span className="text-gray-700">{String(service.slot_start_hour ?? 6).padStart(2, '0')}:00–{String(service.slot_end_hour ?? 21).padStart(2, '0')}:00</span>
                   </div>
-                  <div className="flex gap-2">
-                    <span className="text-purple-600 font-semibold w-28">Сезон:</span>
-                    <span>Червень – Липень</span>
+                  <div className="flex gap-3">
+                    <span className="text-purple-600 font-semibold w-28 flex-shrink-0">Сезон:</span>
+                    <span className="text-gray-700">Червень – Липень</span>
                   </div>
                 </div>
-              </div>
 
-              <div>
-                <h3 className="font-semibold text-gray-800 mb-1">Забронювати час</h3>
-                <p className="text-xs text-gray-500 mb-4">Оберіть дату та годину: підтвердимо дзвінком.</p>
-                
-              <div className="mt-8 rounded-2xl border border-purple-100 bg-purple-50/70 p-5 text-sm text-gray-700 space-y-3">
-                <p className="font-semibold text-purple-800">
-                  Бронювання локації здійснюється за 100% передплатою, реквізити надійдуть вам у повідомленні.
-                </p>
-                <div>
-                  <p className="font-semibold text-bark mb-1">Адреса локації:</p>
-                  <p>Харківська область, смт Коротич, вул. Дачна, 27</p>
-                  <p className="mt-2 font-semibold text-bark">Графік роботи:</p>
-                  <p>Щодня 06:00–21:00</p>
+                <div className="rounded-2xl border border-amber-100 bg-amber-50/60 p-4 text-sm text-gray-700">
+                  <p className="font-semibold text-amber-800 mb-1">💳 Передплата 100%</p>
+                  <p>Реквізити для оплати надійдуть у повідомленні після підтвердження.</p>
+                </div>
+
+                <div className="rounded-2xl border border-gray-100 overflow-hidden">
+                  <div className="px-4 py-3 bg-gray-50 border-b border-gray-100">
+                    <p className="font-semibold text-gray-800 text-sm">📍 Адреса</p>
+                    <p className="text-gray-600 text-sm mt-0.5">Харківська обл., смт Коротич, вул. Дачна, 27</p>
+                    <p className="text-gray-500 text-xs mt-0.5">Щодня 06:00–21:00</p>
+                  </div>
                   <a
                     href="https://www.google.com/maps/dir/?api=1&destination=49.9420503,36.0561702"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="mt-3 inline-flex items-center gap-1.5 rounded-xl bg-purple-700 px-4 py-2 text-white font-semibold hover:bg-purple-800 transition-colors"
+                    className="flex items-center justify-center gap-2 py-3 bg-white text-purple-700 font-semibold text-sm hover:bg-purple-50 transition-colors"
                   >
-                    📍 Прокласти маршрут
+                    Прокласти маршрут →
                   </a>
                 </div>
-                <a
-                  href="https://www.google.com/maps/dir/?api=1&destination=49.9420503,36.0561702"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="block overflow-hidden rounded-xl border border-purple-100 bg-white"
-                >
-                  <div className="aspect-[16/9] bg-gradient-to-br from-purple-100 via-purple-50 to-green-50 flex items-center justify-center text-center px-6">
-                    <div>
-                      <div className="text-4xl mb-3">📍</div>
-                      <p className="font-serif text-xl font-bold text-bark">Коротич, вул. Дачна, 27</p>
-                      <p className="text-gray-500 mt-1">Натисніть, щоб відкрити карту</p>
-                    </div>
-                  </div>
-                </a>
               </div>
 
+              {/* Right: booking calendar */}
+              <div>
+                <div className="mb-4">
+                  <h3 className="font-semibold text-gray-900 text-base">Забронювати час</h3>
+                  <p className="text-xs text-gray-500 mt-0.5">Оберіть дату та годину — підтвердимо дзвінком.</p>
+                </div>
                 <HourlyCalendar
                   serviceSlug={service.slug}
                   serviceName={service.name}
@@ -171,12 +181,65 @@ export default async function LavenderPage() {
           </section>
         )}
 
-        {/* When no data loaded */}
+        {/* No-service fallback */}
         {!service && (
-          <div className="text-center py-12 text-gray-400">
+          <div className="text-center py-16 text-gray-400">
             <p>Інформацію оновлюємо. Зв&apos;яжіться з нами для деталей.</p>
           </div>
         )}
+
+        {/* ── Instagram block ──────────────────────────────────────────── */}
+        <section id="instagram" className="scroll-mt-20">
+          <div className="text-center mb-8">
+            <span className="text-xs font-semibold text-purple-500 uppercase tracking-widest mb-2 block">@dachatv.store</span>
+            <h2 className="font-serif text-2xl md:text-3xl font-bold text-gray-900 mb-3">
+              Лаванда в Instagram
+            </h2>
+            <p className="text-gray-500 max-w-sm mx-auto text-sm leading-relaxed">
+              Дивіться актуальні фото, цвітіння та живі сторіс з поля.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+            {INSTAGRAM_CARDS.map((card, i) => (
+              <a
+                key={i}
+                href={LAUNCH_INSTAGRAM_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="group relative overflow-hidden rounded-2xl aspect-square focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-500"
+                aria-label={`${card.caption} — Instagram`}
+              >
+                {/* Gradient background */}
+                <div className={`absolute inset-0 bg-gradient-to-br ${card.gradient} transition-transform duration-300 group-hover:scale-105`} />
+                {/* Center emoji */}
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <span className="text-4xl md:text-5xl drop-shadow-sm select-none">{card.emoji}</span>
+                </div>
+                {/* Caption overlay */}
+                <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/55 to-transparent px-3 py-3 translate-y-1 group-hover:translate-y-0 transition-transform duration-200">
+                  <p className="text-white text-xs font-semibold leading-snug">{card.caption}</p>
+                  <p className="text-white/65 text-xs mt-0.5">{card.tag}</p>
+                </div>
+              </a>
+            ))}
+          </div>
+
+          <div className="text-center mt-8">
+            <a
+              href={LAUNCH_INSTAGRAM_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2.5 px-8 py-4 bg-gradient-to-r from-purple-600 to-violet-600 text-white font-semibold rounded-2xl hover:from-purple-700 hover:to-violet-700 active:scale-[0.98] transition-all shadow-lg shadow-purple-200 w-full sm:w-auto justify-center"
+            >
+              <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 flex-shrink-0" aria-hidden="true">
+                <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 1 0 0 12.324 6.162 6.162 0 0 0 0-12.324zM12 16a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm6.406-11.845a1.44 1.44 0 1 0 0 2.881 1.44 1.44 0 0 0 0-2.881z" />
+              </svg>
+              Підписатися в Instagram
+            </a>
+          </div>
+        </section>
+
       </div>
     </div>
   )
