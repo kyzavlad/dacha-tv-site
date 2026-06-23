@@ -919,3 +919,115 @@ export async function normalizeAndFinalizeCategories(): Promise<NormalizeFinaliz
     message: `Перейменовано ${renamed}, обʼєднано дублікатів ${merged} (переміщено ${productsMoved} товарів), нормалізовано числових ${numericNeutralized}, перепривʼязано ${productsRelinked}. Залишилось числових: ${numericRemaining}, опубл. товарів у числових: ${publishedInNumeric}`,
   }
 }
+
+// ─── Catalog image backfill ──────────────────────────────────────────────────
+// Copies main_image_url + images from supplier_products → catalog_products for
+// rows that are missing an image but whose matching supplier row has one.
+//
+// Why this is needed (independent of syncProductsToCatalog):
+//   • Products imported BEFORE the mainimage extraction (PR #34) landed in
+//     catalog_products with main_image_url = null.
+//   • syncProductsToCatalog only re-touches supplier rows with is_approved=false,
+//     so already-imported catalog rows are not guaranteed to get refreshed.
+// This backfill closes that gap directly, matching on supplier_sku.
+//
+// SAFETY: touches ONLY main_image_url + images (+ updated_at). Never price,
+// status, category, stock, or anything order/checkout related. Read-only unless
+// `apply` is true — defaults to a dry run that reports exact affected counts.
+export interface BackfillImagesResult {
+  ok: boolean
+  applied: boolean
+  catalogTotal: number
+  catalogMissingImage: number
+  eligible: number              // missing-image catalog rows whose supplier has an image
+  updated: number               // rows actually written (0 on dry run)
+  errors: number
+  samples: { sku: string; supplier_image: string }[]
+  message: string
+}
+
+export async function backfillCatalogImages(
+  opts: { apply?: boolean; limit?: number } = {},
+): Promise<BackfillImagesResult> {
+  const apply = opts.apply === true
+  const limit = opts.limit && opts.limit > 0 ? opts.limit : 100000
+  const client = getAdminClient()
+
+  const { count: catalogTotal } = await client
+    .from('catalog_products')
+    .select('id', { count: 'exact', head: true })
+
+  // Catalog rows missing a primary image — candidates for backfill.
+  const missing = await selectAllRows<{ id: string; supplier_sku: string }>(
+    (from, to) =>
+      client
+        .from('catalog_products')
+        .select('id, supplier_sku')
+        .is('main_image_url', null)
+        .not('supplier_sku', 'is', null)
+        .order('supplier_sku', { ascending: true })
+        .range(from, to),
+  )
+  const candidates = missing.slice(0, limit)
+
+  if (candidates.length === 0) {
+    return {
+      ok: true, applied: apply, catalogTotal: catalogTotal ?? 0,
+      catalogMissingImage: 0, eligible: 0, updated: 0, errors: 0, samples: [],
+      message: 'Усі товари каталогу вже мають зображення (або немає кандидатів).',
+    }
+  }
+
+  // Resolve supplier images for those SKUs, in chunks, keeping only rows where
+  // the supplier actually has a main_image_url.
+  const supplierImg = new Map<string, { main: string; images: unknown }>()
+  const skus = candidates.map((c) => c.supplier_sku)
+  for (let i = 0; i < skus.length; i += 300) {
+    const { data } = await client
+      .from('supplier_products')
+      .select('supplier_sku, main_image_url, images')
+      .in('supplier_sku', skus.slice(i, i + 300))
+      .not('main_image_url', 'is', null)
+    for (const r of data ?? []) {
+      const sku = r.supplier_sku as string
+      const main = r.main_image_url as string | null
+      if (sku && main) supplierImg.set(sku, { main, images: r.images })
+    }
+  }
+
+  const eligible = candidates.filter((c) => supplierImg.has(c.supplier_sku))
+  const samples = eligible.slice(0, 10).map((c) => ({
+    sku: c.supplier_sku,
+    supplier_image: supplierImg.get(c.supplier_sku)!.main,
+  }))
+
+  if (!apply) {
+    return {
+      ok: true, applied: false, catalogTotal: catalogTotal ?? 0,
+      catalogMissingImage: missing.length, eligible: eligible.length,
+      updated: 0, errors: 0, samples,
+      message: `DRY RUN — ${eligible.length} з ${missing.length} товарів без зображення можна заповнити з supplier_products. Запустіть з apply=true, щоб застосувати.`,
+    }
+  }
+
+  // APPLY — write image columns only, one SKU at a time so a single bad row
+  // never aborts the whole backfill.
+  let updated = 0, errors = 0
+  for (const c of eligible) {
+    const img = supplierImg.get(c.supplier_sku)!
+    const { error } = await client
+      .from('catalog_products')
+      .update({ main_image_url: img.main, images: img.images, updated_at: new Date().toISOString() })
+      .eq('id', c.id)
+      .is('main_image_url', null) // never overwrite an image already set
+    if (error) errors++
+    else updated++
+  }
+
+  return {
+    ok: errors === 0, applied: true, catalogTotal: catalogTotal ?? 0,
+    catalogMissingImage: missing.length, eligible: eligible.length,
+    updated, errors, samples,
+    message: `Заповнено зображення для ${updated} товарів${errors > 0 ? `, помилок: ${errors}` : ''}.`,
+  }
+}
