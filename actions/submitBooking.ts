@@ -196,6 +196,22 @@ export async function submitHourlyBooking(formData: FormData): Promise<ActionRes
     }
   }
 
+  // Past-time guard: reject bookings for time slots that are already elapsed.
+  // Ukraine uses UTC+3 year-round (since the 2022 timezone law amendment).
+  // Checked here — before DB work and before the notification helper — so
+  // expired slots never trigger an admin alert.
+  {
+    const kievNow = new Date(Date.now() + 3 * 60 * 60 * 1000)
+    const todayKyiv = `${kievNow.getUTCFullYear()}-${String(kievNow.getUTCMonth() + 1).padStart(2, '0')}-${String(kievNow.getUTCDate()).padStart(2, '0')}`
+    if (d.bookingDate === todayKyiv && d.bookingHour <= kievNow.getUTCHours()) {
+      return {
+        success: false,
+        error: 'Обраний час вже минув. Будь ласка, оберіть пізніший час на сьогодні.',
+        fieldErrors: { bookingHour: ['Цей час вже минув'] },
+      }
+    }
+  }
+
   try {
     const client = getAdminClient()
     const { data: svc } = await client
