@@ -729,6 +729,9 @@ export async function syncSupplierProducts(options?: {
         images = (p.photos as unknown[]).map(String).filter(Boolean)
       } else if (typeof p.photos === 'string' && p.photos) {
         images = p.photos.split(',').map((s) => s.trim()).filter(Boolean)
+      } else if (p.mainimage) {
+        // Personal.cab single main image field (e.g. mainimage: https://images.zone/...)
+        images = [String(p.mainimage)]
       } else if (p.image) {
         images = [String(p.image)]
       } else if (p.photo) {
