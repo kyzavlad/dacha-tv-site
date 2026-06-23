@@ -278,6 +278,206 @@ export async function sendPersonalCabOrder(
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Order LIFECYCLE (read-only status lookups)
+//
+// add_order only tells us whether Personal.cab ACCEPTED the order at submit time.
+// It says nothing about what happens afterwards — the supplier can later mark an
+// accepted order "Не выполнен" (not fulfilled), cancel it, or attach a TTN. To
+// react to that we poll the supplier with read methods:
+//   get_order_details — GET ?key=KEY&method=get_order_details&id=ORDERID
+//   get_orders        — GET ?key=KEY&method=get_orders&from=YYYYMMDD&to=YYYYMMDD
+//
+// These are READ-only and create nothing. Unlike add_order (whose POST body is
+// broken by type=json), the GET read methods expect type=json and return JSON.
+// Both helpers NEVER throw — supplier failures must never reach the checkout UI.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Normalized lifecycle status, derived from the supplier's free-text status so
+// callers can branch without re-implementing string matching everywhere.
+export type NormalizedSupplierStatus =
+  | 'fulfilled'      // Выполнен / Виконано / completed / done
+  | 'processing'     // Новый / В обработке / new / pending
+  | 'shipped'        // Отправлен / has a TTN
+  | 'cancelled'      // Отменен / Скасовано / canceled
+  | 'not_fulfilled'  // Не выполнен — the exact problem state we are chasing
+  | 'unknown'        // anything we cannot confidently classify
+
+// Normalized view of a single supplier order, plus the raw supplier object so
+// the admin/diag can always inspect the untouched response.
+export interface SupplierOrderInfo {
+  order_id?: string
+  raw_status?: string
+  status: NormalizedSupplierStatus
+  ttn?: string
+  payment?: string
+  delivery?: string
+  total?: string
+  raw: Record<string, unknown>
+}
+
+// Result wrapper for a lifecycle lookup. ok=false means the request itself
+// failed (network/HTTP/parse) — NOT that the order is in a bad state.
+export interface SupplierStatusResult {
+  ok: boolean
+  found: boolean
+  message: string
+  orders: SupplierOrderInfo[]
+  http_status?: number
+  raw_response?: unknown
+}
+
+// Map a supplier free-text status (ru/uk/en) to a normalized lifecycle value.
+export function normalizeSupplierStatus(raw: string | null | undefined): NormalizedSupplierStatus {
+  const s = (raw ?? '').toString().trim().toLowerCase()
+  if (!s) return 'unknown'
+  // "Не выполнен" / "не виконано" — check the negative BEFORE the positive so
+  // "выполнен" inside "не выполнен" does not get mis-read as fulfilled.
+  if (/(^|[^а-яіїєґ])не\s*вы?полнен|не\s*викона|not\s*fulfil/.test(s)) return 'not_fulfilled'
+  if (/отмен|скасов|cancel|відмін/.test(s)) return 'cancelled'
+  if (/выполнен|викона|complete|done|fulfil|готов/.test(s)) return 'fulfilled'
+  if (/отправл|відправл|ship|відвантаж/.test(s)) return 'shipped'
+  if (/нов|обработ|оброб|pending|process|очік|prinят|прийн/.test(s)) return 'processing'
+  return 'unknown'
+}
+
+// Pull the first present, non-empty value across a list of candidate keys
+// (case-insensitive). Supplier responses are inconsistent about field names.
+function pickField(obj: Record<string, unknown>, keys: string[]): string | undefined {
+  const lowerMap = new Map<string, unknown>()
+  for (const k of Object.keys(obj)) lowerMap.set(k.toLowerCase(), obj[k])
+  for (const key of keys) {
+    const v = lowerMap.get(key.toLowerCase())
+    if (v != null && v !== '' && typeof v !== 'object') return String(v)
+  }
+  return undefined
+}
+
+// Normalize one raw supplier order object into SupplierOrderInfo.
+function toSupplierOrderInfo(raw: Record<string, unknown>): SupplierOrderInfo {
+  const order_id = pickField(raw, ['order_id', 'id', 'number', 'order_number', 'orderid'])
+  const raw_status = pickField(raw, ['status', 'state', 'order_status', 'status_name', 'statusname'])
+  const ttn = pickField(raw, ['ttn', 'np_ttn', 'declaration', 'tracking', 'tracking_number', 'ttn_number'])
+  const payment = pickField(raw, ['method_payment', 'payment', 'payment_method', 'pay'])
+  const delivery = pickField(raw, ['delivery', 'location', 'warehouse', 'np_warehouse', 'address'])
+  const total = pickField(raw, ['total', 'sum', 'amount', 'total_price', 'price'])
+  return {
+    order_id,
+    raw_status,
+    status: normalizeSupplierStatus(raw_status),
+    ttn,
+    payment,
+    delivery,
+    total,
+    raw,
+  }
+}
+
+// Shared GET helper for read methods. Includes type=json (correct for reads).
+// Never throws — returns a structured failure instead.
+async function supplierApiGet(
+  params: Record<string, string>,
+): Promise<{ ok: boolean; httpStatus?: number; parsed: unknown; text: string; error?: string }> {
+  const apiUrl = process.env.SUPPLIER_API_URL
+  const apiKey = process.env.SUPPLIER_API_KEY
+  if (!apiUrl || !apiKey) {
+    return { ok: false, parsed: null, text: '', error: 'SUPPLIER_API_URL та SUPPLIER_API_KEY не налаштовані' }
+  }
+  const base = apiUrl.replace(/\/$/, '')
+  const endpoint = `${base}/`
+  const qp = new URLSearchParams({ key: apiKey, type: 'json', ...params })
+  const url = `${endpoint}?${qp}`
+  try {
+    const res = await fetch(url, { headers: { Accept: 'application/json' }, cache: 'no-store' })
+    const text = await res.text()
+    let parsed: unknown = null
+    try {
+      parsed = text ? JSON.parse(text) : null
+    } catch {
+      parsed = { _raw_text: text }
+    }
+    return { ok: res.ok, httpStatus: res.status, parsed, text }
+  } catch (e) {
+    return { ok: false, parsed: null, text: '', error: e instanceof Error ? e.message : String(e) }
+  }
+}
+
+// Extract an array of order-like objects from an arbitrary supplier response.
+function extractOrderList(parsed: unknown): Record<string, unknown>[] {
+  if (Array.isArray(parsed)) return parsed.filter((x) => x && typeof x === 'object') as Record<string, unknown>[]
+  if (parsed && typeof parsed === 'object') {
+    const obj = parsed as Record<string, unknown>
+    for (const key of ['orders', 'data', 'result', 'items', 'order']) {
+      const v = obj[key]
+      if (Array.isArray(v)) return v.filter((x) => x && typeof x === 'object') as Record<string, unknown>[]
+      if (v && typeof v === 'object') return [v as Record<string, unknown>]
+    }
+    // A single order object returned at the top level (has an id-ish field).
+    if (pickField(obj, ['order_id', 'id', 'number', 'status'])) return [obj]
+  }
+  return []
+}
+
+// Look up ONE order by its Personal.cab id. Read-only. Never throws.
+export async function getPersonalCabOrderDetails(id: string): Promise<SupplierStatusResult> {
+  const orderId = (id ?? '').toString().trim()
+  if (!orderId) {
+    return { ok: false, found: false, message: 'Не вказано id замовлення', orders: [] }
+  }
+  const { ok, httpStatus, parsed, error } = await supplierApiGet({ method: 'get_order_details', id: orderId })
+  if (!ok) {
+    return {
+      ok: false,
+      found: false,
+      message: error ?? `HTTP ${httpStatus ?? '?'} від постачальника`,
+      orders: [],
+      http_status: httpStatus,
+      raw_response: parsed,
+    }
+  }
+  const list = extractOrderList(parsed).map(toSupplierOrderInfo)
+  return {
+    ok: true,
+    found: list.length > 0,
+    message: list.length > 0
+      ? `Знайдено замовлення ${orderId}: ${list[0].raw_status ?? '(статус відсутній)'}`
+      : `Замовлення ${orderId} не знайдено у відповіді постачальника`,
+    orders: list,
+    http_status: httpStatus,
+    raw_response: parsed,
+  }
+}
+
+// List orders in a date range (YYYYMMDD). Read-only. Never throws.
+export async function getPersonalCabOrders(from: string, to: string): Promise<SupplierStatusResult> {
+  const f = (from ?? '').toString().trim()
+  const t = (to ?? '').toString().trim()
+  const ymd = /^\d{8}$/
+  if (!ymd.test(f) || !ymd.test(t)) {
+    return { ok: false, found: false, message: 'from/to мають бути у форматі YYYYMMDD', orders: [] }
+  }
+  const { ok, httpStatus, parsed, error } = await supplierApiGet({ method: 'get_orders', from: f, to: t })
+  if (!ok) {
+    return {
+      ok: false,
+      found: false,
+      message: error ?? `HTTP ${httpStatus ?? '?'} від постачальника`,
+      orders: [],
+      http_status: httpStatus,
+      raw_response: parsed,
+    }
+  }
+  const list = extractOrderList(parsed).map(toSupplierOrderInfo)
+  return {
+    ok: true,
+    found: list.length > 0,
+    message: `Отримано ${list.length} замовлень за період ${f}–${t}`,
+    orders: list,
+    http_status: httpStatus,
+    raw_response: parsed,
+  }
+}
+
 // Backward-compatible auto-send entry point used by checkout. Honours the global
 // SUPPLIER_ORDER_MODE: returns a non-sent result (without touching the API) when
 // the kill switch is on; otherwise forwards in the configured test/live mode.

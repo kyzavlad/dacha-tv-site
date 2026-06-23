@@ -88,7 +88,25 @@ async function apiPost(params, body) {
   return { httpStatus: res.status, ok: res.ok, text, json }
 }
 
-// ── Read-only: product feed reachability ─────────────────────────────────────
+// Candidate keys for common product fields (supplier feed naming varies).
+const SKU_KEYS = ['sku', 'article', 'vendor_code', 'code', 'id', 'product_sku']
+const NAME_KEYS = ['name', 'title', 'product_name', 'model']
+const STOCK_KEYS = ['stock', 'quantity', 'qty', 'count', 'available', 'availability', 'in_stock', 'instock', 'balance', 'rest']
+const STATUS_KEYS = ['status', 'state', 'active', 'enabled', 'visible']
+
+function pick(obj, keys) {
+  if (!obj || typeof obj !== 'object') return undefined
+  const lower = new Map(Object.keys(obj).map((k) => [k.toLowerCase(), obj[k]]))
+  for (const k of keys) {
+    const v = lower.get(k.toLowerCase())
+    if (v != null && v !== '' && typeof v !== 'object') return v
+  }
+  return undefined
+}
+
+// ── Read-only: product feed reachability + optional product lookup ───────────
+// --search=TEXT       case-insensitive match on product name/title
+// --products-sku=SKU  exact (case-insensitive) match on a SKU field
 async function diagProducts() {
   console.log('\n── get_products (read-only) ───────────────────────────────')
   console.log(`GET ${safeUrl({ method: 'get_products' })}`)
@@ -99,15 +117,69 @@ async function diagProducts() {
       : Array.isArray(json?.products) ? json.products
       : Array.isArray(json?.data) ? json.data
       : null
-    if (list) {
-      console.log(`✔ products returned: ${list.length}`)
-      if (list[0]) console.log(`  sample item keys: ${Object.keys(list[0]).join(', ')}`)
-    } else {
+    if (!list) {
       console.log(`top-level keys: ${Object.keys(json ?? {}).join(', ') || '(none)'}`)
       console.log(`raw (first 400): ${(text || '(empty)').slice(0, 400)}`)
+      return
+    }
+    console.log(`✔ products returned: ${list.length}`)
+    if (list[0]) console.log(`  sample item keys: ${Object.keys(list[0]).join(', ')}`)
+
+    // Optional lookup of a specific product to diagnose stock/status.
+    const search = (opts.search ?? '').toString().trim().toLowerCase()
+    const skuQuery = (opts['products-sku'] ?? opts.sku ?? '').toString().trim().toLowerCase()
+    if (!search && !skuQuery) return
+
+    const matches = list.filter((item) => {
+      const name = String(pick(item, NAME_KEYS) ?? '').toLowerCase()
+      const sku = String(pick(item, SKU_KEYS) ?? '').toLowerCase()
+      if (skuQuery && sku === skuQuery) return true
+      if (search && name.includes(search)) return true
+      return false
+    })
+
+    console.log(`\n  lookup (${skuQuery ? `sku=${skuQuery} ` : ''}${search ? `search="${search}"` : ''}) → ${matches.length} match(es)`)
+    matches.slice(0, 10).forEach((item, i) => {
+      const sku = pick(item, SKU_KEYS)
+      const name = pick(item, NAME_KEYS)
+      const stock = pick(item, STOCK_KEYS)
+      const status = pick(item, STATUS_KEYS)
+      console.log(`   [${i + 1}] sku=${sku ?? '(?)'} | name=${name ?? '(?)'}`)
+      console.log(`        stock=${stock ?? '(no stock field)'} | status=${status ?? '(no status field)'}`)
+      console.log(`        keys: ${Object.keys(item).join(', ')}`)
+    })
+    if (matches.length === 0) {
+      console.log('   ⚠ No product matched. The SKU sent at checkout may not exist in the supplier feed (→ "Не выполнен").')
     }
   } catch (e) {
     console.error(`✖ get_products failed: ${e.message}`)
+  }
+}
+
+// ── Read-only: order lifecycle lookups ───────────────────────────────────────
+// --order-status=ID            → get_order_details
+// --orders=YYYYMMDD-YYYYMMDD    → get_orders for a date range
+async function diagOrderStatus() {
+  const id = (opts['order-status'] ?? '').toString().trim()
+  const range = (opts.orders ?? '').toString().trim()
+  if (id) {
+    console.log('\n── get_order_details (read-only) ──────────────────────────')
+    console.log(`GET ${safeUrl({ method: 'get_order_details', id })}`)
+    const { httpStatus, json, text } = await apiGet({ method: 'get_order_details', id })
+    console.log(`HTTP ${httpStatus}`)
+    console.log(`raw (first 800): ${(text || '(empty)').slice(0, 800)}`)
+    const obj = Array.isArray(json) ? json[0] : (json?.orders?.[0] ?? json?.data?.[0] ?? json)
+    if (obj && typeof obj === 'object') {
+      console.log(`  status=${pick(obj, STATUS_KEYS) ?? '(?)'} | ttn=${pick(obj, ['ttn', 'np_ttn', 'declaration', 'tracking']) ?? '(?)'}`)
+    }
+  }
+  if (range) {
+    const [from, to] = range.split('-')
+    console.log('\n── get_orders (read-only) ─────────────────────────────────')
+    console.log(`GET ${safeUrl({ method: 'get_orders', from, to })}`)
+    const { httpStatus, text } = await apiGet({ method: 'get_orders', from, to })
+    console.log(`HTTP ${httpStatus}`)
+    console.log(`raw (first 800): ${(text || '(empty)').slice(0, 800)}`)
   }
 }
 
@@ -196,6 +268,7 @@ async function main() {
 
   // Diagnostics always run (read-only, safe).
   await diagProducts()
+  await diagOrderStatus()
   const foundLocation = await diagWarehouses(city)
 
   if (flags.has('--live')) {
