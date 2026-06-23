@@ -97,7 +97,7 @@ function fieldErrors(err: z.ZodError): Record<string, string[]> {
 }
 
 // Send normalized booking payload to n8n webhook (WEBHOOK_URL).
-// Called after the DB insert so booking_id is available.
+// Used by non-lavender hourly and daily bookings; lavender uses notifyBooking.
 function sendBookingWebhook(payload: Record<string, unknown>): void {
   const webhookUrl = process.env.WEBHOOK_URL
   if (!webhookUrl) return
@@ -106,6 +106,55 @@ function sendBookingWebhook(payload: Record<string, unknown>): void {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ source: 'website', ...payload, created_at: new Date().toISOString() }),
   }).catch(() => {})
+}
+
+// Fail-safe dual-channel notification for lavender bookings.
+// Both channels run concurrently via Promise.allSettled so one failing never
+// blocks the other. Caller awaits this before the DB insert so DB failure can
+// never silently swallow a booking notification.
+async function notifyBooking({
+  trace,
+  message,
+  payload,
+}: {
+  trace: string
+  message: string
+  payload: Record<string, unknown>
+}): Promise<void> {
+  const tasks: Promise<void>[] = []
+
+  const token = process.env.TELEGRAM_BOT_TOKEN
+  const chatId = process.env.TELEGRAM_CHAT_ID_FLOWERS || process.env.TELEGRAM_CHAT_ID
+  if (token && chatId) {
+    tasks.push(
+      fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId, text: message }),
+      })
+        .then((r) => { console.log(`[lavender-booking ${trace}] direct telegram sent ok=${r.ok} status=${r.status}`) })
+        .catch((e) => { console.error(`[lavender-booking ${trace}] direct telegram failed:`, String(e)) })
+    )
+  } else {
+    console.warn(`[lavender-booking ${trace}] direct telegram skipped (missing ${!token ? 'TELEGRAM_BOT_TOKEN' : 'chat id'})`)
+  }
+
+  const webhookUrl = process.env.WEBHOOK_URL
+  if (webhookUrl) {
+    tasks.push(
+      fetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+        .then((r) => { console.log(`[lavender-booking ${trace}] webhook sent ok=${r.ok} status=${r.status}`) })
+        .catch((e) => { console.error(`[lavender-booking ${trace}] webhook failed:`, String(e)) })
+    )
+  } else {
+    console.warn(`[lavender-booking ${trace}] webhook skipped (no WEBHOOK_URL)`)
+  }
+
+  await Promise.allSettled(tasks)
 }
 
 export async function submitHourlyBooking(formData: FormData): Promise<ActionResult> {
@@ -130,6 +179,8 @@ export async function submitHourlyBooking(formData: FormData): Promise<ActionRes
 
   const d = parsed.data
   const isLavender = d.serviceSlug === LAVENDER_SLUG
+  const trace = Math.random().toString(36).slice(2, 10).toUpperCase()
+  if (isLavender) console.log(`[lavender-booking ${trace}] validated`)
 
   // Lavender-specific server-side rules (mirror the form). Other hourly services
   // are unaffected.
@@ -186,6 +237,76 @@ export async function submitHourlyBooking(formData: FormData): Promise<ActionRes
     })
     const total = price.total
 
+    // Build notification data before the DB write. All variables are available
+    // after price computation, so we can notify even when the insert fails.
+    const pageLink = publicUrl(d.source || '/lavender')
+    const pad = (h: number) => `${String(h).padStart(2, '0')}:00`
+    const time = pad(d.bookingHour)
+    const timeEnd = pad(d.bookingHour + durationHours)
+    const timingText = `${d.bookingDate} · ${time}–${timeEnd} · ${durationHours} год.`
+    const guestWord = (n: number) => (n === 1 ? 'особа' : n >= 2 && n <= 4 ? 'особи' : 'осіб')
+    const guestsText = extraGuests > 0
+      ? `${guestCount} ${guestWord(guestCount)} (включено ${includedGuests}, додатково +${extraGuests})`
+      : `${guestCount} ${guestWord(guestCount)}`
+    const bouquetLine = bouquetQty > 0
+      ? `Букети лаванди: ${bouquetQty} шт × ${BOUQUET_PRICE_UAH} ₴ = ${price.bouquetTotal.toLocaleString('uk-UA')} ₴`
+      : ''
+
+    // PRIMARY NOTIFICATION — fires before DB insert so no DB failure can
+    // silently swallow a booking. For lavender we use the fail-safe notifyBooking
+    // helper (plain-text Telegram + n8n webhook, Promise.allSettled, trace logs).
+    if (isLavender) {
+      console.log(`[lavender-booking ${trace}] primary notification queued`)
+      const tgMessage = [
+        '🌿 НОВЕ БРОНЮВАННЯ ЛАВАНДИ',
+        `Ім'я: ${d.name}`,
+        `Телефон: ${d.phone}`,
+        `Дата: ${d.bookingDate}`,
+        `Час: ${time}–${timeEnd} (${durationHours} год.)`,
+        `Гостей: ${guestsText}`,
+        ...(bouquetLine ? [bouquetLine] : []),
+        `Вартість: ${total.toLocaleString('uk-UA')} ₴`,
+        ...(d.comment ? [`Коментар: ${d.comment}`] : []),
+        `Сторінка: ${pageLink}`,
+      ].join('\n')
+      await notifyBooking({
+        trace,
+        message: tgMessage,
+        payload: {
+          source: 'website',
+          type: 'lavender_booking',
+          booking_type: 'lavender',
+          name: d.name,
+          phone: d.phone,
+          date: d.bookingDate,
+          time,
+          time_end: timeEnd,
+          duration_hours: durationHours,
+          guests: guestCount,
+          guest_count: guestCount,
+          included_guests: includedGuests,
+          extra_guests: extraGuests,
+          extra_guests_total: price.extraTotal,
+          bouquet_quantity: bouquetQty,
+          bouquet_unit_price: BOUQUET_PRICE_UAH,
+          bouquet_total: price.bouquetTotal,
+          base_total: price.base,
+          total_price: total,
+          timing: timingText,
+          timing_text: timingText,
+          guests_text: guestsText,
+          bouquet_line: bouquetLine,
+          product: d.serviceName,
+          service_name: d.serviceName,
+          slug: d.serviceSlug,
+          page_url: pageLink,
+          message: d.comment ?? null,
+          comment: d.comment ?? null,
+          created_at: new Date().toISOString(),
+        },
+      })
+    }
+
     // Store the time range redundantly in check_in/check_out (which exist on
     // every schema) so availability still works even if the duration_hours
     // column is missing in production. On timestamp columns this preserves the
@@ -234,75 +355,21 @@ export async function submitHourlyBooking(formData: FormData): Promise<ActionRes
     }
 
     if (error) {
-      console.error('[booking] failed to save hourly booking:', error)
+      if (isLavender) {
+        console.error(`[lavender-booking ${trace}] db insert failed:`, error.message)
+      } else {
+        console.error('[booking] failed to save hourly booking:', error)
+      }
       return { success: false, error: 'Не вдалося зберегти бронювання. Спробуйте ще раз.' }
     }
 
-    const pageLink = publicUrl(d.source || '/lavender')
-    const pad = (h: number) => `${String(h).padStart(2, '0')}:00`
-    const time = pad(d.bookingHour)
-    const timeEnd = pad(d.bookingHour + durationHours)
-    const timingText = `${d.bookingDate} · ${time}–${timeEnd} · ${durationHours} год.`
-    const guestWord = (n: number) => (n === 1 ? 'особа' : n >= 2 && n <= 4 ? 'особи' : 'осіб')
-    const guestsText = extraGuests > 0
-      ? `${guestCount} ${guestWord(guestCount)} (включено ${includedGuests}, додатково +${extraGuests})`
-      : `${guestCount} ${guestWord(guestCount)}`
-    const bouquetLine = bouquetQty > 0
-      ? `Букети лаванди: ${bouquetQty} шт × ${BOUQUET_PRICE_UAH} ₴ = ${price.bouquetTotal.toLocaleString('uk-UA')} ₴`
-      : ''
-
-    // Telegram — structured message; guests_text/bouquet_line are preformatted
-    // so the message can never show "0 осіб" or drop the bouquet line.
-    sendTelegramNotification({
-      type: 'lavender_booking',
-      name: d.name,
-      phone: d.phone,
-      product: d.serviceName,
-      timing: timingText,
-      guests_text: guestsText,
-      bouquet_line: bouquetLine || undefined,
-      total_price_uah: total,
-      message: d.comment,
-      source: pageLink,
-    }, { skipWebhook: true }).catch(() => {})
-
-    // n8n webhook — complete normalized payload. Includes new explicit fields AND
-    // legacy-compatible names so the Edit Fields node never drops data.
-    sendBookingWebhook({
-      type: 'lavender_booking',
-      source: 'website',
-      name: d.name,
-      phone: d.phone,
-      product: d.serviceName,
-      service_name: d.serviceName,
-      page_url: pageLink,
-      slug: d.serviceSlug,
-      date: d.bookingDate,
-      time,
-      time_end: timeEnd,
-      duration_hours: durationHours,
-      guest_count: guestCount,
-      guests: guestCount,
-      included_guests: includedGuests,
-      extra_guests: extraGuests,
-      extra_guests_total: price.extraTotal,
-      bouquet_quantity: bouquetQty,
-      bouquet_unit_price: BOUQUET_PRICE_UAH,
-      bouquet_total: price.bouquetTotal,
-      base_total: price.base,
-      total_price: total,
-      timing: timingText,
-      timing_text: timingText,
-      guests_text: guestsText,
-      bouquet_line: bouquetLine,
-      message: d.comment ?? null,
-      comment: d.comment ?? null,
-    })
+    if (isLavender) console.log(`[lavender-booking ${trace}] db insert ok`)
   } catch (e) {
     console.error('[booking] unexpected error saving hourly booking:', e)
     return { success: false, error: 'Не вдалося зберегти бронювання. Спробуйте ще раз.' }
   }
 
+  if (isLavender) console.log(`[lavender-booking ${trace}] completed`)
   return { success: true }
 }
 
