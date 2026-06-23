@@ -36,6 +36,7 @@ import {
   type SeoCounts,
 } from '@/lib/catalog/seo-generate'
 export type { SeoCounts }
+import { generateProductSeoTemplate } from '@/lib/catalog/seo-template'
 
 // ─── Unified, serialization-safe action result ───────────────────────────────
 // Every pipeline *mutation* returns exactly this shape. Step-specific extras
@@ -285,8 +286,19 @@ export async function getSeoCountsAction(): Promise<SeoCounts> {
   try {
     return JSON.parse(JSON.stringify(await getSeoCounts())) as SeoCounts
   } catch {
-    return { webhookConfigured: false, categoriesMissing: 0, productsMissing: 0, legacyFallback: 0, aiGenerated: 0, manualLocked: 0 }
+    return { webhookConfigured: false, categoriesMissing: 0, productsMissing: 0, legacyFallback: 0, aiGenerated: 0, templateGenerated: 0, manualLocked: 0 }
   }
+}
+
+// In-app deterministic SEO baseline (no n8n/AI). Dry-run previews counts +
+// samples; apply writes meta_title/meta_description for published products that
+// still lack them. Template rows stay eligible for n8n AI upgrade.
+export async function previewProductSeoTemplateAction(): Promise<ActionResult> {
+  return safeAction('Базове SEO (перевірка)', () => generateProductSeoTemplate({ apply: false, limit: 500 }), [])
+}
+
+export async function generateProductSeoTemplateAction(): Promise<ActionResult> {
+  return safeAction('Базове SEO товарів', () => generateProductSeoTemplate({ apply: true, limit: 500 }), ['/admin/catalog/pipeline', '/catalog'])
 }
 
 export async function generateCategorySeoBatchAction(): Promise<ActionResult> {

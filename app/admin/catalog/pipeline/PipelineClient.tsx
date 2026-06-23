@@ -17,6 +17,8 @@ import {
   getSeoCountsAction,
   generateCategorySeoBatchAction,
   generateProductSeoBatchAction,
+  previewProductSeoTemplateAction,
+  generateProductSeoTemplateAction,
   backfillSeoDescriptionFallbackAction,
 } from './actions'
 import type { ActionResult, FeedDiagResult, CatalogDiagnostics, SeoCounts } from './actions'
@@ -518,6 +520,8 @@ export function PipelineClient({
   const [rManual,   setRManual]   = usePersistedResult('pipeline_r_manual')
   const [rSeoCat,   setRSeoCat]   = usePersistedResult('pipeline_r_seo_cat')
   const [rSeoProd,  setRSeoProd]  = usePersistedResult('pipeline_r_seo_prod')
+  const [rSeoTplPrev, setRSeoTplPrev] = usePersistedResult('pipeline_r_seo_tpl_prev')
+  const [rSeoTpl,   setRSeoTpl]   = usePersistedResult('pipeline_r_seo_tpl')
   const [rSeoFb,    setRSeoFb]    = usePersistedResult('pipeline_r_seo_fb')
 
   // Feed diagnostic lives in component state (hits the live API; not persisted).
@@ -539,9 +543,11 @@ export function PipelineClient({
   const [pMigDiag,  sMigDiag]  = useTransition()
   const [pSeoCat,   sSeoCat]   = useTransition()
   const [pSeoProd,  sSeoProd]  = useTransition()
+  const [pSeoTplPrev, sSeoTplPrev] = useTransition()
+  const [pSeoTpl,   sSeoTpl]   = useTransition()
   const [pSeoFb,    sSeoFb]    = useTransition()
 
-  const anyPending = pProducts || pImport || pSeo || pPublish || pBackfill || pRepair || pFinalize || pManual || pDiag || pMigDiag || pSeoCat || pSeoProd || pSeoFb || refreshing
+  const anyPending = pProducts || pImport || pSeo || pPublish || pBackfill || pRepair || pFinalize || pManual || pDiag || pMigDiag || pSeoCat || pSeoProd || pSeoTplPrev || pSeoTpl || pSeoFb || refreshing
 
   const loadDiagnostics = useCallback(() => {
     sMigDiag(async () => {
@@ -806,6 +812,7 @@ export function PipelineClient({
           <Stat label="Категорій без SEO" value={(seo?.categoriesMissing ?? 0).toLocaleString('uk-UA')} tone={seo && seo.categoriesMissing > 0 ? 'amber' : 'green'} />
           <Stat label="Товарів без SEO" value={(seo?.productsMissing ?? 0).toLocaleString('uk-UA')} tone={seo && seo.productsMissing > 0 ? 'amber' : 'green'} />
           <Stat label="AI згенеровано" value={(seo?.aiGenerated ?? 0).toLocaleString('uk-UA')} tone="green" />
+          <Stat label="Шаблон (базове)" value={(seo?.templateGenerated ?? 0).toLocaleString('uk-UA')} tone="green" />
           <Stat label="Legacy fallback" value={(seo?.legacyFallback ?? 0).toLocaleString('uk-UA')} />
           <Stat label="Ручний замок" value={(seo?.manualLocked ?? 0).toLocaleString('uk-UA')} />
           <Stat label="n8n webhook" value={n8nSeoConfigured ? 'OK' : '—'} tone={n8nSeoConfigured ? 'green' : 'red'} />
@@ -840,6 +847,29 @@ export function PipelineClient({
         disabled={anyPending || !n8nSeoConfigured || blockSeoGen}
         onRun={() => run(sSeoProd, generateProductSeoBatchAction, setRSeoProd)}
         result={rSeoProd}
+        note={blockSeoGen ? migHint('Відсутні SEO-колонки (міграція 054).') : undefined}
+      />
+
+      <StepCard
+        title="Базове SEO без AI — перевірка (dry-run)"
+        description="Показує, скільки опублікованих товарів отримають meta_title + meta_description зі вбудованого шаблону (назва + категорія + ціна). Нічого не записує. Працює без n8n."
+        buttonLabel="▶ Перевірити"
+        pending={pSeoTplPrev}
+        disabled={anyPending || blockSeoGen}
+        onRun={() => run(sSeoTplPrev, previewProductSeoTemplateAction, setRSeoTplPrev)}
+        result={rSeoTplPrev}
+        note={blockSeoGen ? migHint('Відсутні SEO-колонки (міграція 054).') : undefined}
+      />
+
+      <StepCard
+        title="Згенерувати базове SEO без AI"
+        description="Записує meta_title + meta_description (українською) для партії (500) опублікованих товарів без SEO. Не чіпає ручний замок, AI та ручні описи; не перезаписує заповнені поля. Товари лишаються в черзі n8n для AI-покращення."
+        buttonLabel="▶ Згенерувати"
+        buttonClass={BTN_BLUE}
+        pending={pSeoTpl}
+        disabled={anyPending || blockSeoGen}
+        onRun={() => run(sSeoTpl, generateProductSeoTemplateAction, setRSeoTpl)}
+        result={rSeoTpl}
         note={blockSeoGen ? migHint('Відсутні SEO-колонки (міграція 054).') : undefined}
       />
 

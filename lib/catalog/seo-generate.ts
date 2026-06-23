@@ -17,6 +17,7 @@ export interface SeoCounts {
   productsMissing: number
   legacyFallback: number
   aiGenerated: number
+  templateGenerated: number
   manualLocked: number
 }
 
@@ -45,14 +46,15 @@ async function safeCount(
 
 export async function getSeoCounts(): Promise<SeoCounts> {
   const client = getAdminClient()
-  const [categoriesMissing, productsMissing, legacyFallback, aiGenerated, manualLocked] = await Promise.all([
+  const [categoriesMissing, productsMissing, legacyFallback, aiGenerated, templateGenerated, manualLocked] = await Promise.all([
     safeCount(() => client.from('catalog_categories').select('id', { count: 'exact', head: true }).eq('is_published', true).eq('seo_status', 'missing')),
     safeCount(() => client.from('catalog_products').select('id', { count: 'exact', head: true }).eq('status', 'published').eq('seo_status', 'missing')),
     safeCount(() => client.from('catalog_products').select('id', { count: 'exact', head: true }).eq('seo_source', 'fallback')),
     safeCount(() => client.from('catalog_products').select('id', { count: 'exact', head: true }).eq('seo_status', 'ai')),
+    safeCount(() => client.from('catalog_products').select('id', { count: 'exact', head: true }).eq('seo_source', 'template')),
     safeCount(() => client.from('catalog_products').select('id', { count: 'exact', head: true }).eq('seo_manual_lock', true)),
   ])
-  return { webhookConfigured: !!webhookUrl(), categoriesMissing, productsMissing, legacyFallback, aiGenerated, manualLocked }
+  return { webhookConfigured: !!webhookUrl(), categoriesMissing, productsMissing, legacyFallback, aiGenerated, templateGenerated, manualLocked }
 }
 
 // Shared quality guidelines forwarded to n8n so the AI prompt stays consistent
@@ -131,7 +133,9 @@ export async function sendProductSeoBatch(limit = SEO_BATCH_DEFAULT): Promise<Se
     .select('id, slug, name_ua, category_slug, description, short_description, meta_title, meta_description, price_uah, main_image_url, unit_label, lead_type, source')
     .eq('status', 'published')
     .neq('seo_manual_lock', true)
-    .in('seo_status', ['missing', 'queued'])
+    // 'template' rows carry a deterministic baseline (lib/catalog/seo-template.ts)
+    // and remain eligible so n8n/AI can UPGRADE them with richer copy.
+    .in('seo_status', ['missing', 'queued', 'template'])
     .not('main_image_url', 'is', null)
     .gt('price_uah', 0)
     .not('category_slug', 'is', null)
