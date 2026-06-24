@@ -241,31 +241,15 @@ export default async function LavenderPage() {
             {/* Map card */}
             <div className="flex flex-col gap-3">
               <div className="rounded-2xl overflow-hidden shadow-xl border border-purple-100 bg-white">
-                {/* Static map with "Open in Maps" overlay — no API key needed */}
+                {/* Embedded Google Maps — no API key needed, no client handlers */}
                 <div className="relative aspect-video bg-gray-100">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={`https://maps.googleapis.com/maps/api/staticmap?center=49.9420503,36.0561702&zoom=15&size=800x450&maptype=roadmap&markers=color:purple%7C49.9420503,36.0561702&key=`}
-                    alt="Карта лавандового поля Дача TV"
-                    className="w-full h-full object-cover"
+                  <iframe
+                    src="https://www.google.com/maps?q=49.9420503,36.0561702&hl=uk&z=15&output=embed"
+                    title="Карта лавандового поля Дача TV"
+                    className="absolute inset-0 w-full h-full border-0"
                     loading="lazy"
-                    onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
-                  />
-                  {/* Fallback purple gradient shown when static API is not configured */}
-                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-purple-50 to-lavender-100 -z-0">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-10 h-10 text-purple-300 mb-2" aria-hidden="true">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
-                    </svg>
-                    <p className="text-purple-400 text-sm font-medium">смт Коротич, вул. Дачна, 27</p>
-                  </div>
-                  {/* Clickable overlay to open Google Maps */}
-                  <a
-                    href="https://www.google.com/maps/dir/?api=1&destination=49.9420503,36.0561702"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="absolute inset-0 z-10"
-                    aria-label="Відкрити маршрут у Google Maps"
+                    referrerPolicy="no-referrer-when-downgrade"
+                    allowFullScreen
                   />
                 </div>
                 {/* Address + CTA row */}
@@ -287,7 +271,7 @@ export default async function LavenderPage() {
                   </a>
                 </div>
               </div>
-              <p className="text-xs text-gray-400 text-center">Натисніть на карту, щоб відкрити маршрут</p>
+              <p className="text-xs text-gray-400 text-center">Карта: смт Коротич, вул. Дачна, 27</p>
             </div>
           </div>
         </section>

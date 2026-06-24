@@ -1,20 +1,20 @@
 import Link from 'next/link'
 
-// Operational tabs first; the generic inquiries/leads inbox ("Вхідні заявки")
-// is still wired to the public contact/lead forms (/api/inquiries), so it stays
-// but is placed last. "Каталог магазину" is the unified shop catalog (was the
-// ambiguous second "Продукти").
+// Operational tabs first. Бронювання = lavender/service bookings;
+// Вхідні = checkout fallback orders + general inquiries (/api/inquiries).
+// The legacy /admin/orders tab is intentionally hidden for now: real checkout
+// fallback orders currently arrive in /admin as inquiries, so the orders page
+// is empty and confusing. The route still exists and direct URLs keep working.
 const NAV_LINKS = [
   { href: '/admin/bookings', label: 'Бронювання' },
-  { href: '/admin/orders', label: 'Замовлення' },
-  { href: '/admin/catalog', label: 'Каталог магазину' },
+  { href: '/admin', label: 'Вхідні' },
+  { href: '/admin/catalog', label: 'Каталог' },
   { href: '/admin/catalog/pipeline', label: 'Пайплайн' },
   { href: '/admin/apiary', label: 'Продукти пасіки' },
   { href: '/admin/honey', label: 'Мед' },
   { href: '/admin/flowers', label: 'Квіти' },
   { href: '/admin/services', label: 'Послуги' },
   { href: '/admin/beekeeper', label: 'Пасічникам' },
-  { href: '/admin', label: 'Вхідні заявки' },
 ]
 
 export default function AdminLayout({

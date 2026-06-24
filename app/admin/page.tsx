@@ -17,9 +17,12 @@ const STATUS_FILTERS = [
   { value: 'cancelled', label: 'Скасовано' },
 ]
 
+// Lavender/service bookings are managed in /admin/bookings, so we do NOT expose
+// "Бронювання" as a main type tab here. Legacy booking-classified inquiry rows
+// (if any old ones exist) are hidden from the default view but remain reachable
+// via the direct ?type=booking URL, where they are clearly labelled as legacy.
 const TYPE_FILTERS = [
   { value: 'all', label: 'Всі типи' },
-  { value: 'booking', label: '💜 Бронювання' },
   { value: 'order', label: '🛒 Замовлення' },
   { value: 'inquiry', label: '📋 Заявки' },
 ]
@@ -103,17 +106,20 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
     }
   }
 
-  // Client-side type classification + filter
+  // Client-side type classification + filter.
+  // Legacy lavender/service booking rows are managed in /admin/bookings, so they
+  // are excluded from the default "all" view here. They stay reachable via the
+  // direct ?type=booking URL (where a legacy banner is shown), never deleted.
   const classified = inquiries.map((inq) => ({ inq, kind: classifyInquiry(inq) }))
   const filtered = safeType === 'all'
-    ? inquiries
+    ? classified.filter((c) => c.kind !== 'booking').map((c) => c.inq)
     : classified.filter((c) => c.kind === safeType).map((c) => c.inq)
 
   const newCount = filtered.filter((i) => i.status === 'new').length
+  const isLegacyBookingView = safeType === 'booking'
 
   // Count per type (before type filter, within current status filter)
   const typeCounts = {
-    booking: classified.filter((c) => c.kind === 'booking').length,
     order: classified.filter((c) => c.kind === 'order').length,
     inquiry: classified.filter((c) => c.kind === 'inquiry').length,
   }
@@ -130,7 +136,9 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
       {/* Type filter */}
       <div className="flex flex-wrap gap-2 mb-3">
         {TYPE_FILTERS.map(({ value, label }) => {
-          const count = value === 'all' ? inquiries.length : typeCounts[value as keyof typeof typeCounts]
+          const count = value === 'all'
+            ? typeCounts.order + typeCounts.inquiry
+            : typeCounts[value as keyof typeof typeCounts]
           return (
             <a
               key={value}
@@ -168,6 +176,17 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
           </a>
         ))}
       </div>
+
+      {isLegacyBookingView && (
+        <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 mb-6">
+          <p className="text-purple-800 text-sm font-semibold">💜 Застарілі бронювання (legacy)</p>
+          <p className="text-purple-700 text-sm mt-0.5">
+            Це старі рядки бронювань, що збереглися як заявки. Актуальні бронювання
+            керуються на сторінці{' '}
+            <a href="/admin/bookings" className="underline font-medium">Бронювання</a>.
+          </p>
+        </div>
+      )}
 
       {error && (
         <div className="bg-red-50 border border-red-200 rounded-xl p-5 mb-6 space-y-2">
