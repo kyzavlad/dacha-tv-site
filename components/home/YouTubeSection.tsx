@@ -8,6 +8,10 @@ interface YouTubeSectionProps {
   videoId?: string
 }
 
+// Content pillars of the Dacha TV channel — это бренд-канал про дачу й
+// господарство, а не лише про мед. Rendered as elegant chips under the video.
+const CHANNEL_TOPICS = ['Дача', 'Господарство', 'Пасіка', 'Квіти', 'Лаванда', 'Товари', 'Практичні рішення']
+
 export function YouTubeSection({ siteSettings, videoId }: YouTubeSectionProps) {
   const resolvedVideoId = videoId || LAUNCH_YOUTUBE_VIDEO_ID
   const channelUrl = siteSettings?.youtube_url || LAUNCH_YOUTUBE_URL
@@ -17,19 +21,32 @@ export function YouTubeSection({ siteSettings, videoId }: YouTubeSectionProps) {
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="text-center mb-10">
           <span className="text-xs font-semibold text-honey-500 uppercase tracking-widest mb-3 block">
-            YouTube
+            YouTube-канал Дача TV
           </span>
           <h2 id="youtube-heading" className="font-serif text-3xl md:text-4xl font-bold text-cream mb-4">
-            Дача TV зсередини
+            Корисні відео про дачу й господарство
           </h2>
-          <p className="text-cream/65 text-lg max-w-xl mx-auto">
-            Реальна робота нашого господарства: пасіка, поле, продукти й щоденні турботи. Нічого не приховуємо.
+          <p className="text-cream/65 text-lg max-w-2xl mx-auto">
+            Наш бренд-канал — це практичні відео про дачу, господарство, пасіку, квіти, лаванду,
+            товари та готові рішення для дому й саду. Дивіться, як усе влаштовано насправді.
           </p>
+
+          {/* Content pillars */}
+          <div className="flex flex-wrap justify-center gap-2 mt-6">
+            {CHANNEL_TOPICS.map((topic) => (
+              <span
+                key={topic}
+                className="text-xs font-medium text-cream/75 bg-white/8 border border-white/12 rounded-full px-3.5 py-1.5"
+              >
+                {topic}
+              </span>
+            ))}
+          </div>
         </div>
 
         <YouTubeFacade
           videoId={resolvedVideoId}
-          title="Дача TV — сімейне господарство на Харківщині"
+          title="Дача TV — корисні відео про дачу, господарство та пасіку"
           className="shadow-2xl mb-8"
         />
 
