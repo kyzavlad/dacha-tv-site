@@ -26,6 +26,12 @@ import {
   importProductSeoSheetAction,
   previewCategorySeoSheetAction,
   importCategorySeoSheetAction,
+  findOrphanedAction,
+  recoverOrphanedAction,
+  extractSupplierImagesDryRunAction,
+  extractSupplierImagesAction,
+  seoSheetPriorityDryRunAction,
+  seoSheetPriorityImportAction,
 } from './actions'
 import type { ActionResult, FeedDiagResult, CatalogDiagnostics, SeoCounts } from './actions'
 import type { PipelineStats } from '@/lib/catalog/pipeline'
@@ -540,6 +546,12 @@ export function PipelineClient({
   const [rShProd,   setRShProd]   = usePersistedResult('pipeline_r_sheet_prod')
   const [rShCatPrev, setRShCatPrev] = usePersistedResult('pipeline_r_sheet_cat_prev')
   const [rShCat,    setRShCat]    = usePersistedResult('pipeline_r_sheet_cat')
+  const [rOrphanDiag,  setROrphanDiag]  = usePersistedResult('pipeline_r_orphan_diag')
+  const [rOrphanFix,   setROrphanFix]   = usePersistedResult('pipeline_r_orphan_fix')
+  const [rImgDry,      setRImgDry]      = usePersistedResult('pipeline_r_img_dry')
+  const [rImgApply,    setRImgApply]    = usePersistedResult('pipeline_r_img_apply')
+  const [rSeoPriDry,   setRSeoPriDry]   = usePersistedResult('pipeline_r_seo_pri_dry')
+  const [rSeoPriApply, setRSeoPriApply] = usePersistedResult('pipeline_r_seo_pri_apply')
 
   // Feed diagnostic lives in component state (hits the live API; not persisted).
   const [rDiag, setRDiag] = useState<FeedDiagResult | { error: string } | null>(null)
@@ -569,8 +581,14 @@ export function PipelineClient({
   const [pShProd,   sShProd]   = useTransition()
   const [pShCatPrev, sShCatPrev] = useTransition()
   const [pShCat,    sShCat]    = useTransition()
+  const [pOrphanDiag,  sOrphanDiag]  = useTransition()
+  const [pOrphanFix,   sOrphanFix]   = useTransition()
+  const [pImgDry,      sImgDry]      = useTransition()
+  const [pImgApply,    sImgApply]    = useTransition()
+  const [pSeoPriDry,   sSeoPriDry]   = useTransition()
+  const [pSeoPriApply, sSeoPriApply] = useTransition()
 
-  const anyPending = pProducts || pImportDry || pImport || pImportFull || pSeo || pPublish || pBackfill || pRepair || pFinalize || pManual || pDiag || pMigDiag || pSeoCat || pSeoProd || pSeoTplPrev || pSeoTpl || pSeoFb || pShProdPrev || pShProd || pShCatPrev || pShCat || refreshing
+  const anyPending = pProducts || pImportDry || pImport || pImportFull || pSeo || pPublish || pBackfill || pRepair || pFinalize || pManual || pDiag || pMigDiag || pSeoCat || pSeoProd || pSeoTplPrev || pSeoTpl || pSeoFb || pShProdPrev || pShProd || pShCatPrev || pShCat || pOrphanDiag || pOrphanFix || pImgDry || pImgApply || pSeoPriDry || pSeoPriApply || refreshing
 
   const loadDiagnostics = useCallback(() => {
     sMigDiag(async () => {
@@ -753,6 +771,78 @@ export function PipelineClient({
         disabled={anyPending}
         onRun={() => run(sImportFull, fullImportBatchAction, setRImportFull)}
         result={rImportFull}
+      />
+
+      {/* Пріоритетний імпорт SEO-товарів */}
+      <StepCard
+        title="Пріоритетний імпорт SEO-товарів (перевірка)"
+        description="Показує, скільки артикулів із SEO-таблиці є в supplier_products, але ще не в каталозі. Запустіть перед застосуванням."
+        buttonLabel="🔍 Перевірити"
+        buttonClass={BTN_BLUE}
+        pendingLabel="Перевірка…"
+        pending={pSeoPriDry}
+        disabled={anyPending}
+        onRun={() => run(sSeoPriDry, seoSheetPriorityDryRunAction, setRSeoPriDry)}
+        result={rSeoPriDry}
+      />
+      <StepCard
+        title="Пріоритетний імпорт SEO-товарів"
+        description="Імпортує лише ті товари з SEO-таблиці, яких ще немає в каталозі. Дозволяє відразу застосувати SEO, не чекаючи повного бекlogу."
+        buttonLabel="▶ Імпортувати пріоритетні"
+        buttonClass={BTN_AMBER}
+        pendingLabel="Імпорт…"
+        pending={pSeoPriApply}
+        disabled={anyPending}
+        onRun={() => run(sSeoPriApply, seoSheetPriorityImportAction, setRSeoPriApply)}
+        result={rSeoPriApply}
+      />
+
+      {/* Відновлення осиротілих схвалених рядків */}
+      <StepCard
+        title="Осиротілі схвалені рядки (діагностика)"
+        description="Знаходить рядки supplier_products з is_approved=true, яких немає в catalog_products — симптом перерваного імпорту."
+        buttonLabel="🔍 Перевірити"
+        buttonClass={BTN_BLUE}
+        pendingLabel="Пошук…"
+        pending={pOrphanDiag}
+        disabled={anyPending}
+        onRun={() => run(sOrphanDiag, findOrphanedAction, setROrphanDiag)}
+        result={rOrphanDiag}
+      />
+      <StepCard
+        title="Відновлення осиротілих рядків"
+        description="Скидає is_approved=false для осиротілих рядків. Після цього вони знову потрапляють у чергу і можуть бути імпортовані."
+        buttonLabel="▶ Відновити"
+        buttonClass={BTN_AMBER}
+        pendingLabel="Відновлення…"
+        pending={pOrphanFix}
+        disabled={anyPending}
+        onRun={() => run(sOrphanFix, recoverOrphanedAction, setROrphanFix)}
+        result={rOrphanFix}
+      />
+
+      {/* Витяг зображень постачальника з raw_data */}
+      <StepCard
+        title="Зображення постачальника (перевірка)"
+        description="Перевіряє, скільки рядків supplier_products мають images.zone URL у raw_data, але порожній main_image_url."
+        buttonLabel="🔍 Перевірити"
+        buttonClass={BTN_BLUE}
+        pendingLabel="Перевірка…"
+        pending={pImgDry}
+        disabled={anyPending}
+        onRun={() => run(sImgDry, extractSupplierImagesDryRunAction, setRImgDry)}
+        result={rImgDry}
+      />
+      <StepCard
+        title="Витяг зображень із raw_data"
+        description="Копіює images.zone URL із raw_data.mainimage у supplier_products.main_image_url. Не перезаписує наявні зображення."
+        buttonLabel="▶ Заповнити зображення"
+        buttonClass={BTN_AMBER}
+        pendingLabel="Заповнення…"
+        pending={pImgApply}
+        disabled={anyPending}
+        onRun={() => run(sImgApply, extractSupplierImagesAction, setRImgApply)}
+        result={rImgApply}
       />
 
       <StepCard

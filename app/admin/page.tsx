@@ -5,22 +5,30 @@ import { InquiryCard } from '@/components/admin/InquiryCard'
 import type { Inquiry, InquiryStatus } from '@/types'
 
 export const metadata: Metadata = {
-  title: 'Адмін: Заявки',
+  title: 'Адмін: Вхідні заявки',
   robots: 'noindex, nofollow',
 }
 
 const STATUS_FILTERS = [
   { value: 'all', label: 'Всі' },
   { value: 'new', label: 'Нові' },
-  { value: 'contacted', label: 'Зателефонований' },
+  { value: 'contacted', label: 'Зателефоновано' },
   { value: 'completed', label: 'Виконано' },
   { value: 'cancelled', label: 'Скасовано' },
 ]
 
+const TYPE_FILTERS = [
+  { value: 'all', label: 'Всі типи' },
+  { value: 'booking', label: '💜 Бронювання' },
+  { value: 'order', label: '🛒 Замовлення' },
+  { value: 'inquiry', label: '📋 Заявки' },
+]
+
 const VALID_STATUSES = ['new', 'contacted', 'completed', 'cancelled']
+const VALID_TYPES = ['booking', 'order', 'inquiry']
 
 interface AdminPageProps {
-  searchParams: Promise<{ status?: string }>
+  searchParams: Promise<{ status?: string; type?: string }>
 }
 
 function normalizeInquiry(row: Record<string, unknown>): Inquiry {
@@ -37,9 +45,27 @@ function normalizeInquiry(row: Record<string, unknown>): Inquiry {
   }
 }
 
+function classifyInquiry(inq: Inquiry): 'booking' | 'order' | 'inquiry' {
+  const notes = inq.notes ?? ''
+  const source = (inq.source ?? '').toLowerCase()
+  if (notes.trim().startsWith('{"_type":"checkout_order_fallback"')) return 'order'
+  if (source.includes('lavender') || source.includes('booking') || source.includes('service')) return 'booking'
+  if (inq.product?.toLowerCase().includes('лаванд') || inq.product?.toLowerCase().includes('оренда')) return 'booking'
+  return 'inquiry'
+}
+
+function buildAdminUrl(status: string, type: string): string {
+  const params = new URLSearchParams()
+  if (status !== 'all') params.set('status', status)
+  if (type !== 'all') params.set('type', type)
+  const qs = params.toString()
+  return `/admin${qs ? `?${qs}` : ''}`
+}
+
 export default async function AdminPage({ searchParams }: AdminPageProps) {
-  const { status = 'all' } = await searchParams
+  const { status = 'all', type = 'all' } = await searchParams
   const safeStatus = VALID_STATUSES.includes(status) ? status : 'all'
+  const safeType = VALID_TYPES.includes(type) ? type : 'all'
 
   let inquiries: Inquiry[] = []
   let error: string | null = null
@@ -48,7 +74,6 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
 
   try {
     const supabase = getAdminClient()
-    // Use select('*'): returns only columns that exist, no column-missing errors
     let query = supabase
       .from('inquiries')
       .select('*')
@@ -73,29 +98,68 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
       error = 'Supabase не налаштовано'
       errorDetail = 'Встановіть NEXT_PUBLIC_SUPABASE_URL та SUPABASE_SERVICE_ROLE_KEY у Vercel.'
     } else {
-      error = 'Помилка з\'єднання з базою даних'
+      error = 'Помилка зʼєднання з базою даних'
       errorDetail = msg
     }
   }
 
-  const newCount = inquiries.filter((i) => i.status === 'new').length
+  // Client-side type classification + filter
+  const classified = inquiries.map((inq) => ({ inq, kind: classifyInquiry(inq) }))
+  const filtered = safeType === 'all'
+    ? inquiries
+    : classified.filter((c) => c.kind === safeType).map((c) => c.inq)
+
+  const newCount = filtered.filter((i) => i.status === 'new').length
+
+  // Count per type (before type filter, within current status filter)
+  const typeCounts = {
+    booking: classified.filter((c) => c.kind === 'booking').length,
+    order: classified.filter((c) => c.kind === 'order').length,
+    inquiry: classified.filter((c) => c.kind === 'inquiry').length,
+  }
 
   return (
     <div className="px-4 sm:px-6 py-8 max-w-3xl">
       <div className="mb-6">
-        <h1 className="text-xl font-bold text-gray-900">Заявки</h1>
+        <h1 className="text-xl font-bold text-gray-900">Вхідні заявки</h1>
         {newCount > 0 && (
           <p className="text-sm text-gray-500 mt-0.5">{newCount} нових</p>
         )}
       </div>
 
+      {/* Type filter */}
+      <div className="flex flex-wrap gap-2 mb-3">
+        {TYPE_FILTERS.map(({ value, label }) => {
+          const count = value === 'all' ? inquiries.length : typeCounts[value as keyof typeof typeCounts]
+          return (
+            <a
+              key={value}
+              href={buildAdminUrl(safeStatus, value)}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${
+                safeType === value
+                  ? 'bg-gray-900 text-white'
+                  : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
+              }`}
+            >
+              {label}
+              {count > 0 && (
+                <span className={`text-xs px-1.5 py-0.5 rounded-full ${safeType === value ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-500'}`}>
+                  {count}
+                </span>
+              )}
+            </a>
+          )
+        })}
+      </div>
+
+      {/* Status filter */}
       <div className="flex flex-wrap gap-2 mb-6">
         {STATUS_FILTERS.map(({ value, label }) => (
           <a
             key={value}
-            href={`/admin${value !== 'all' ? `?status=${value}` : ''}`}
+            href={buildAdminUrl(value, safeType)}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors min-h-[40px] flex items-center ${
-              safeStatus === value || (value === 'all' && safeStatus === 'all')
+              safeStatus === value
                 ? 'bg-gray-900 text-white'
                 : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
             }`}
@@ -126,15 +190,15 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
         </div>
       )}
 
-      {!error && inquiries.length === 0 && (
+      {!error && filtered.length === 0 && (
         <div className="text-center py-16">
           <p className="text-bark/50 text-lg">Заявок немає</p>
         </div>
       )}
 
-      {inquiries.length > 0 && (
+      {filtered.length > 0 && (
         <div className="space-y-4">
-          {inquiries.map((inquiry) => (
+          {filtered.map((inquiry) => (
             <InquiryCard key={inquiry.id} inquiry={inquiry} />
           ))}
         </div>
