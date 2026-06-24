@@ -82,6 +82,47 @@ export interface SyncProductsResult {
   samples?: Array<{ sku: string; name: string }>
 }
 
+export interface OrphanedApprovedResult {
+  ok: boolean
+  total_approved: number
+  orphaned: number
+  orphaned_ids: string[]
+  samples: Array<{ id: string; supplier_sku: string; name: string }>
+  message: string
+}
+
+export interface RecoverOrphanedResult {
+  ok: boolean
+  orphaned: number
+  recovered: number
+  message: string
+}
+
+export interface ExtractImagesResult {
+  ok: boolean
+  applied: boolean
+  total: number
+  missing: number
+  extractable: number
+  updated: number
+  errors: number
+  samples: Array<{ sku: string; url: string }>
+  message: string
+}
+
+export interface SeoSheetPriorityResult {
+  ok: boolean
+  applied: boolean
+  sheet_skus: number
+  in_supplier: number
+  already_in_catalog: number
+  importable: number
+  imported: number
+  errors: number
+  samples: Array<{ sku: string; name: string }>
+  message: string
+}
+
 export interface PublishResult {
   ok: boolean
   updated: number
@@ -311,24 +352,48 @@ export async function syncCatalogCategories(): Promise<SyncCategoriesResult> {
 // SEO fields (description, meta_title, meta_description) are NOT set here — Step 6 handles those.
 //
 // opts.dryRun=true: compute toInsert/toUpdatePrice counts but write nothing and do NOT
-// mark is_approved=true. Returns wouldInsert/wouldUpdate/backlogImportable/samples.
+//   mark is_approved=true. Returns wouldInsert/wouldUpdate/backlogImportable/samples.
+// opts.skuFilter: import ONLY the listed SKUs (ignores is_approved flag — used for
+//   targeted SEO-sheet-first import). Limit is still respected as a cap.
 export async function syncProductsToCatalog(
   limit: number,
-  opts: { dryRun?: boolean } = {},
+  opts: { dryRun?: boolean; skuFilter?: string[] } = {},
 ): Promise<SyncProductsResult> {
   const dryRun = opts.dryRun === true
   const client = getAdminClient()
 
-  const { data: supplierProducts, error: fetchErr } = await client
-    .from('supplier_products')
-    .select('id, supplier_sku, name, name_ua, slug, supplier_category_id, price_uah, supplier_price_usd, main_image_url, images')
-    .eq('is_approved', false)
-    .not('name', 'is', null)
-    .gt('price_uah', 0)
-    .limit(limit)
+  // Load supplier products — either a targeted SKU list or the next unapproved batch.
+  let supplierProducts: Array<{
+    id: unknown; supplier_sku: unknown; name: unknown; name_ua: unknown; slug: unknown
+    supplier_category_id: unknown; price_uah: unknown; supplier_price_usd: unknown
+    main_image_url: unknown; images: unknown
+  }> = []
 
-  if (fetchErr || !supplierProducts) {
-    return { ok: false, inserted: 0, updated: 0, skipped: 0, errors: 0, errorGroups: {}, message: fetchErr?.message ?? 'Failed to fetch supplier products' }
+  if (opts.skuFilter && opts.skuFilter.length > 0) {
+    // Targeted import: load the specific SKUs regardless of is_approved.
+    const FILTER_CHUNK = 300
+    for (let i = 0; i < opts.skuFilter.length; i += FILTER_CHUNK) {
+      const { data } = await client
+        .from('supplier_products')
+        .select('id, supplier_sku, name, name_ua, slug, supplier_category_id, price_uah, supplier_price_usd, main_image_url, images')
+        .in('supplier_sku', opts.skuFilter.slice(i, i + FILTER_CHUNK))
+        .not('name', 'is', null)
+        .gt('price_uah', 0)
+        .limit(limit)
+      if (data) supplierProducts.push(...data)
+    }
+  } else {
+    const { data, error: fetchErr } = await client
+      .from('supplier_products')
+      .select('id, supplier_sku, name, name_ua, slug, supplier_category_id, price_uah, supplier_price_usd, main_image_url, images')
+      .eq('is_approved', false)
+      .not('name', 'is', null)
+      .gt('price_uah', 0)
+      .limit(limit)
+    if (fetchErr || !data) {
+      return { ok: false, inserted: 0, updated: 0, skipped: 0, errors: 0, errorGroups: {}, message: fetchErr?.message ?? 'Failed to fetch supplier products' }
+    }
+    supplierProducts = data
   }
 
   if (supplierProducts.length === 0) {
@@ -336,7 +401,7 @@ export async function syncProductsToCatalog(
   }
 
   // Resolve category slug via supplier_category_id → catalog_categories.slug
-  const catIds = [...new Set(supplierProducts.map((p) => p.supplier_category_id).filter(Boolean))]
+  const catIds = [...new Set(supplierProducts.map((p) => p.supplier_category_id).filter(Boolean) as string[])]
   const catSlugMap = new Map<string, string>()
   if (catIds.length > 0) {
     const { data: cats } = await client
@@ -350,13 +415,20 @@ export async function syncProductsToCatalog(
 
   // Check which SKUs already exist in catalog_products
   const skus = supplierProducts.map((p) => p.supplier_sku as string)
-  const [{ data: existingRows }, { data: allSlugs }] = await Promise.all([
-    client.from('catalog_products').select('supplier_sku').in('supplier_sku', skus),
-    client.from('catalog_products').select('slug'),
-  ])
+  const { data: existingRows } = await client
+    .from('catalog_products')
+    .select('supplier_sku')
+    .in('supplier_sku', skus)
   const existingSkus = new Set((existingRows ?? []).map((r) => r.supplier_sku as string))
-  // Track all slugs (existing + reserved in this batch) to prevent collisions
-  const usedSlugs = new Set((allSlugs ?? []).map((r) => r.slug as string))
+
+  // Load ALL existing slugs — paginated past the PostgREST 1000-row cap.
+  // A plain .select('slug') silently returns only the first 1000 rows, making
+  // 2000+ slugs invisible to the in-memory collision check and causing false
+  // negatives that later surface as a catalog_products_slug_key unique violation.
+  const slugRows = await selectAllRows<{ slug: string }>(
+    (from, to) => client.from('catalog_products').select('slug').order('slug', { ascending: true }).range(from, to),
+  )
+  const usedSlugs = new Set(slugRows.map((r) => r.slug).filter(Boolean))
 
   const toInsert: Record<string, unknown>[] = []
   const toUpdatePrice: { sku: string; price_uah: number; main_image_url: string | null; images: unknown }[] = []
@@ -374,15 +446,23 @@ export async function syncProductsToCatalog(
       continue
     }
     const name = (sp.name_ua || sp.name || '') as string
-    const categorySlug = sp.supplier_category_id ? (catSlugMap.get(sp.supplier_category_id) ?? null) : null
+    const categorySlug = sp.supplier_category_id ? (catSlugMap.get(sp.supplier_category_id as string) ?? null) : null
 
-    // Collision-safe slug: try name → name+sku → sku alone (guaranteed unique since supplier_sku is unique)
+    // Collision-safe slug: name → name+sku → sku → sku-N (up to 999).
+    // The numeric suffix loop ensures that even duplicate-sku products in a batch
+    // always get a unique slug rather than colliding on the DB constraint.
     const candidateA = autoSlug(name)
     const candidateB = autoSlug(`${name} ${sku}`)
     const candidateC = autoSlug(sku) || sku.toLowerCase().replace(/[^a-z0-9]/g, '-')
-    const slug = !usedSlugs.has(candidateA) ? candidateA
+    let slug = !usedSlugs.has(candidateA) ? candidateA
       : !usedSlugs.has(candidateB) ? candidateB
       : candidateC
+    if (usedSlugs.has(slug)) {
+      for (let n = 2; n <= 999; n++) {
+        const candidate = `${candidateC}-${n}`
+        if (!usedSlugs.has(candidate)) { slug = candidate; break }
+      }
+    }
     usedSlugs.add(slug)
 
     const priceUah = sp.price_uah as number
@@ -435,13 +515,41 @@ export async function syncProductsToCatalog(
   const errors: string[] = []
   const CHUNK = 200
 
-  // Insert new products
+  // SKU → supplier_products.id map — used to track which rows to approve.
+  const skuToSpId = new Map(supplierProducts.map((p) => [p.supplier_sku as string, p.id as string]))
+  // Only IDs of rows that were CONFIRMED inserted or updated go into this set.
+  // Rows whose insert failed are NOT approved so they stay in the queue and retry.
+  const approvedIds = new Set<string>()
+
+  // Insert new products — per-row fallback when a chunk fails so one bad slug
+  // cannot abort 200 rows. The slug generation above prevents most collisions;
+  // this fallback handles any residual edge case.
   for (let i = 0; i < toInsert.length; i += CHUNK) {
+    const chunk = toInsert.slice(i, i + CHUNK)
     const { error } = await client
       .from('catalog_products')
-      .upsert(toInsert.slice(i, i + CHUNK), { onConflict: 'supplier_sku', ignoreDuplicates: true })
-    if (error) errors.push(error.message)
-    else inserted += Math.min(CHUNK, toInsert.length - i)
+      .upsert(chunk, { onConflict: 'supplier_sku', ignoreDuplicates: true })
+    if (error) {
+      // Isolate the failing row(s); save the rest individually.
+      for (const row of chunk) {
+        const { error: e2 } = await client
+          .from('catalog_products')
+          .upsert([row], { onConflict: 'supplier_sku', ignoreDuplicates: true })
+        if (e2) {
+          errors.push(e2.message)
+        } else {
+          inserted++
+          const spId = skuToSpId.get(row.supplier_sku as string)
+          if (spId) approvedIds.add(spId)
+        }
+      }
+    } else {
+      inserted += chunk.length
+      for (const row of chunk) {
+        const spId = skuToSpId.get(row.supplier_sku as string)
+        if (spId) approvedIds.add(spId)
+      }
+    }
   }
 
   // Update prices for existing products (API data wins — never from sheet)
@@ -450,17 +558,23 @@ export async function syncProductsToCatalog(
       .from('catalog_products')
       .update({ price_uah, main_image_url, images, updated_at: new Date().toISOString() })
       .eq('supplier_sku', sku)
-    if (error) errors.push(error.message)
-    else updated++
+    if (error) {
+      errors.push(error.message)
+    } else {
+      updated++
+      const spId = skuToSpId.get(sku)
+      if (spId) approvedIds.add(spId)
+    }
   }
 
-  // Mark all processed supplier_products as approved (excludes from next batch)
-  const processedIds = supplierProducts.map((p) => p.id as string)
-  for (let i = 0; i < processedIds.length; i += 500) {
+  // Mark ONLY confirmed rows as approved — a failed insert must NOT be approved
+  // because the product is absent from catalog_products and would become an orphan.
+  const idsToApprove = [...approvedIds]
+  for (let i = 0; i < idsToApprove.length; i += 500) {
     await client
       .from('supplier_products')
       .update({ is_approved: true })
-      .in('id', processedIds.slice(i, i + 500))
+      .in('id', idsToApprove.slice(i, i + 500))
   }
 
   const errorGroups: Record<string, number> = {}
@@ -1068,5 +1182,302 @@ export async function backfillCatalogImages(
     catalogMissingImage: missing.length, eligible: eligible.length,
     updated, errors, samples,
     message: `Заповнено зображення для ${updated} товарів${errors > 0 ? `, помилок: ${errors}` : ''}.`,
+  }
+}
+
+// ─── Orphaned approved products ──────────────────────────────────────────────
+// Finds supplier_products rows where is_approved=true but NO matching row exists
+// in catalog_products (by supplier_product_id or supplier_sku). This happens when
+// an import batch fails mid-way but all processed IDs are marked approved anyway.
+export async function findOrphanedApprovedProducts(): Promise<OrphanedApprovedResult> {
+  const client = getAdminClient()
+
+  const { count: totalApproved } = await client
+    .from('supplier_products')
+    .select('id', { count: 'exact', head: true })
+    .eq('is_approved', true)
+
+  if (!totalApproved) {
+    return { ok: true, total_approved: 0, orphaned: 0, orphaned_ids: [], samples: [], message: 'Немає схвалених рядків постачальника' }
+  }
+
+  // Load all approved rows (paginated).
+  const approvedRows = await selectAllRows<{ id: string; supplier_sku: string; name: string | null }>(
+    (from, to) => client.from('supplier_products')
+      .select('id, supplier_sku, name')
+      .eq('is_approved', true)
+      .order('id', { ascending: true })
+      .range(from, to),
+  )
+
+  if (approvedRows.length === 0) {
+    return { ok: true, total_approved: totalApproved, orphaned: 0, orphaned_ids: [], samples: [], message: 'Немає схвалених рядків постачальника' }
+  }
+
+  // Determine which supplier_products are represented in catalog_products.
+  const spIds = approvedRows.map((r) => r.id).filter(Boolean)
+  const spSkus = approvedRows.map((r) => r.supplier_sku).filter(Boolean)
+
+  const inCatalogSpIds = new Set<string>()
+  const inCatalogSkus = new Set<string>()
+
+  for (let i = 0; i < spIds.length; i += 300) {
+    const { data } = await client
+      .from('catalog_products')
+      .select('supplier_product_id')
+      .in('supplier_product_id', spIds.slice(i, i + 300))
+      .not('supplier_product_id', 'is', null)
+    for (const r of data ?? []) {
+      if (r.supplier_product_id) inCatalogSpIds.add(r.supplier_product_id as string)
+    }
+  }
+
+  for (let i = 0; i < spSkus.length; i += 300) {
+    const { data } = await client
+      .from('catalog_products')
+      .select('supplier_sku')
+      .in('supplier_sku', spSkus.slice(i, i + 300))
+    for (const r of data ?? []) {
+      if (r.supplier_sku) inCatalogSkus.add(r.supplier_sku as string)
+    }
+  }
+
+  const orphaned = approvedRows.filter((r) => !inCatalogSpIds.has(r.id) && !inCatalogSkus.has(r.supplier_sku))
+
+  return {
+    ok: true,
+    total_approved: totalApproved,
+    orphaned: orphaned.length,
+    orphaned_ids: orphaned.map((r) => r.id),
+    samples: orphaned.slice(0, 20).map((r) => ({ id: r.id, supplier_sku: r.supplier_sku, name: r.name ?? '' })),
+    message: `Знайдено ${orphaned.length} схвалених рядків без відповідного каталогового товару (з ${totalApproved} схвалених)`,
+  }
+}
+
+// Resets is_approved=false for orphaned rows so they re-enter the import queue.
+// Dry-run by default — pass apply=true to write.
+export async function recoverOrphanedProducts(opts: { apply?: boolean } = {}): Promise<RecoverOrphanedResult> {
+  const apply = opts.apply === true
+  const diag = await findOrphanedApprovedProducts()
+
+  if (diag.orphaned === 0) {
+    return { ok: true, orphaned: 0, recovered: 0, message: 'Осиротілих рядків не знайдено — всі схвалені мають відповідний товар у каталозі' }
+  }
+
+  if (!apply) {
+    return {
+      ok: true,
+      orphaned: diag.orphaned,
+      recovered: 0,
+      message: `DRY RUN — ${diag.orphaned} осиротілих схвалених рядків буде скинуто до is_approved=false і повернуто в чергу. Запустіть з apply=true.`,
+    }
+  }
+
+  const client = getAdminClient()
+  const ids = diag.orphaned_ids
+  let recovered = 0
+
+  for (let i = 0; i < ids.length; i += 500) {
+    const { error } = await client
+      .from('supplier_products')
+      .update({ is_approved: false })
+      .in('id', ids.slice(i, i + 500))
+    if (!error) recovered += Math.min(500, ids.length - i)
+  }
+
+  return {
+    ok: true,
+    orphaned: diag.orphaned,
+    recovered,
+    message: `Скинуто is_approved=false для ${recovered} осиротілих рядків — вони знову в черзі на імпорт`,
+  }
+}
+
+// ─── Supplier image extraction ────────────────────────────────────────────────
+// Scans supplier_products.raw_data for image URLs (images.zone domain) and
+// backfills main_image_url for rows that are still missing one.
+// Never overwrites an existing main_image_url. Dry-run by default.
+const IMAGES_ZONE_PREFIX = 'https://images.zone/'
+
+function extractImageFromRawData(rawData: unknown): string | null {
+  if (!rawData || typeof rawData !== 'object') return null
+  const p = rawData as Record<string, unknown>
+
+  const scalar: unknown[] = [p.mainimage, p.main_image, p.image, p.photo, p.picture, p.thumbnail, p.img]
+  for (const v of scalar) {
+    if (!v) continue
+    const url = String(v).trim()
+    if (url.startsWith(IMAGES_ZONE_PREFIX)) return url
+  }
+
+  for (const field of ['images', 'pictures', 'photos']) {
+    if (Array.isArray(p[field]) && (p[field] as unknown[]).length > 0) {
+      const url = String((p[field] as unknown[])[0]).trim()
+      if (url.startsWith(IMAGES_ZONE_PREFIX)) return url
+    }
+  }
+
+  return null
+}
+
+export async function extractSupplierImages(opts: { apply?: boolean; limit?: number } = {}): Promise<ExtractImagesResult> {
+  const apply = opts.apply === true
+  const rowLimit = opts.limit && opts.limit > 0 ? opts.limit : 200000
+  const client = getAdminClient()
+
+  const { count: total } = await client
+    .from('supplier_products')
+    .select('id', { count: 'exact', head: true })
+
+  const missing = await selectAllRows<{ id: string; supplier_sku: string; raw_data: unknown }>(
+    (from, to) => client.from('supplier_products')
+      .select('id, supplier_sku, raw_data')
+      .is('main_image_url', null)
+      .order('id', { ascending: true })
+      .range(from, to),
+  )
+
+  const candidates = missing.slice(0, rowLimit)
+  const extractable: Array<{ id: string; sku: string; url: string }> = []
+  for (const row of candidates) {
+    const url = extractImageFromRawData(row.raw_data)
+    if (url) extractable.push({ id: row.id, sku: row.supplier_sku, url })
+  }
+
+  const samples = extractable.slice(0, 10).map((r) => ({ sku: r.sku, url: r.url }))
+
+  if (!apply) {
+    return {
+      ok: true, applied: false,
+      total: total ?? 0, missing: missing.length,
+      extractable: extractable.length,
+      updated: 0, errors: 0, samples,
+      message: `DRY RUN — ${extractable.length} з ${missing.length} рядків постачальника без зображення мають images.zone URL у raw_data.`,
+    }
+  }
+
+  let updated = 0, errors = 0
+  for (const { id, url } of extractable) {
+    const { error } = await client
+      .from('supplier_products')
+      .update({ main_image_url: url, images: [url], updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .is('main_image_url', null)
+    if (error) errors++
+    else updated++
+  }
+
+  return {
+    ok: errors === 0, applied: true,
+    total: total ?? 0, missing: missing.length,
+    extractable: extractable.length,
+    updated, errors, samples,
+    message: `Заповнено зображення для ${updated} рядків постачальника з raw_data${errors > 0 ? `, помилок: ${errors}` : ''}.`,
+  }
+}
+
+// ─── SEO-sheet priority import ────────────────────────────────────────────────
+// Imports ONLY the products listed in the PRODUCT_SEO_CSV_URL sheet that are
+// present in supplier_products but absent from catalog_products. Running this
+// first lets the SEO sheet import run immediately after without waiting for the
+// full 190k-row backlog to drain through importBatch.
+// Dry-run by default — pass apply=true to write.
+export async function importSeoSheetPriorityProducts(opts: {
+  apply?: boolean
+  limit?: number
+} = {}): Promise<SeoSheetPriorityResult> {
+  const apply = opts.apply === true
+  const limit = opts.limit && opts.limit > 0 ? opts.limit : 5000
+
+  const csvUrl = (process.env.PRODUCT_SEO_CSV_URL ?? '').trim()
+  if (!csvUrl) {
+    return {
+      ok: false, applied: false, sheet_skus: 0, in_supplier: 0, already_in_catalog: 0,
+      importable: 0, imported: 0, errors: 0, samples: [],
+      message: 'PRODUCT_SEO_CSV_URL не налаштовано',
+    }
+  }
+
+  // Load the sheet and extract SKUs (first recognizable column).
+  const { fetchCsvText, parseCsv, normalizeHeaders, getCol } = await import('./csv-utils')
+  const fetched = await fetchCsvText(csvUrl)
+  if (!fetched.ok) {
+    return {
+      ok: false, applied: false, sheet_skus: 0, in_supplier: 0, already_in_catalog: 0,
+      importable: 0, imported: 0, errors: 0, samples: [],
+      message: `Не вдалося завантажити SEO-таблицю: ${fetched.error}`,
+    }
+  }
+
+  const allRows = parseCsv(fetched.text)
+  if (allRows.length < 2) {
+    return {
+      ok: false, applied: false, sheet_skus: 0, in_supplier: 0, already_in_catalog: 0,
+      importable: 0, imported: 0, errors: 0, samples: [],
+      message: 'SEO-таблиця порожня',
+    }
+  }
+
+  const headers = normalizeHeaders(allRows[0])
+  const dataRows = allRows.slice(1)
+  const sheetSkus = [...new Set(
+    dataRows.map((row) => getCol(row, headers, 'sku').trim()).filter(Boolean)
+  )]
+
+  const client = getAdminClient()
+
+  // Find sheet SKUs in supplier_products
+  const inSupplierSkus = new Set<string>()
+  for (let i = 0; i < sheetSkus.length; i += 300) {
+    const { data } = await client
+      .from('supplier_products')
+      .select('supplier_sku')
+      .in('supplier_sku', sheetSkus.slice(i, i + 300))
+    for (const r of data ?? []) inSupplierSkus.add(r.supplier_sku as string)
+  }
+
+  // Find which are already in catalog_products
+  const inCatalogSkus = new Set<string>()
+  for (let i = 0; i < sheetSkus.length; i += 300) {
+    const { data } = await client
+      .from('catalog_products')
+      .select('supplier_sku')
+      .in('supplier_sku', sheetSkus.slice(i, i + 300))
+    for (const r of data ?? []) inCatalogSkus.add(r.supplier_sku as string)
+  }
+
+  const importable = [...inSupplierSkus].filter((sku) => !inCatalogSkus.has(sku))
+
+  const base = {
+    sheet_skus: sheetSkus.length,
+    in_supplier: inSupplierSkus.size,
+    already_in_catalog: inCatalogSkus.size,
+    importable: importable.length,
+  }
+
+  if (importable.length === 0) {
+    return {
+      ok: true, applied: apply, ...base, imported: 0, errors: 0, samples: [],
+      message: `Усі ${inSupplierSkus.size} товари з SEO-таблиці вже є в каталозі`,
+    }
+  }
+
+  if (!apply) {
+    const samples = importable.slice(0, 10).map((sku) => ({ sku, name: '' }))
+    return {
+      ok: true, applied: false, ...base, imported: 0, errors: 0, samples,
+      message: `DRY RUN — ${importable.length} товарів з SEO-таблиці можна імпортувати. Запустіть з apply=true.`,
+    }
+  }
+
+  // Run targeted import for those SKUs
+  const result = await syncProductsToCatalog(limit, { skuFilter: importable })
+
+  return {
+    ok: result.ok, applied: true, ...base,
+    imported: result.inserted,
+    errors: result.errors,
+    samples: (result.samples ?? []).map((s) => ({ sku: s.sku, name: s.name })),
+    message: `Імпортовано ${result.inserted} з ${importable.length} пріоритетних товарів з SEO-таблиці${result.errors > 0 ? `, помилок: ${result.errors}` : ''}`,
   }
 }

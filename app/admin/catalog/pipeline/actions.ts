@@ -8,6 +8,10 @@ import {
   backfillCategorySlugs,
   repairCategoryNamesFromProducts,
   normalizeAndFinalizeCategories,
+  findOrphanedApprovedProducts,
+  recoverOrphanedProducts,
+  extractSupplierImages,
+  importSeoSheetPriorityProducts,
 } from '@/lib/catalog/pipeline'
 import { seedManualCatalog } from '@/lib/catalog/manual-seed'
 import { getCatalogDiagnostics, type CatalogDiagnostics } from '@/lib/catalog/diagnostics'
@@ -147,6 +151,48 @@ export async function fullImportBatchAction(): Promise<ActionResult> {
   return safeAction(
     'Повний імпорт у каталог',
     () => importBatch(10000, { skipCap: true }),
+    ['/admin/catalog/pipeline', '/catalog'],
+  )
+}
+
+// Diagnostic: find approved supplier rows absent from catalog_products (dry-run).
+export async function findOrphanedAction(): Promise<ActionResult> {
+  return safeAction('Діагностика осиротілих рядків', () => findOrphanedApprovedProducts(), [])
+}
+
+// Recovery: reset is_approved=false for orphaned rows so they re-queue.
+export async function recoverOrphanedAction(): Promise<ActionResult> {
+  return safeAction(
+    'Відновлення осиротілих рядків',
+    () => recoverOrphanedProducts({ apply: true }),
+    ['/admin/catalog/pipeline'],
+  )
+}
+
+// Supplier image extraction: copy raw_data.mainimage → supplier_products.main_image_url (dry-run).
+export async function extractSupplierImagesDryRunAction(): Promise<ActionResult> {
+  return safeAction('Витяг зображень постачальника (перевірка)', () => extractSupplierImages({ apply: false }), [])
+}
+
+// Supplier image extraction: apply.
+export async function extractSupplierImagesAction(): Promise<ActionResult> {
+  return safeAction(
+    'Витяг зображень постачальника',
+    () => extractSupplierImages({ apply: true }),
+    ['/admin/catalog/pipeline'],
+  )
+}
+
+// SEO-sheet priority import: show how many sheet SKUs can be imported first (dry-run).
+export async function seoSheetPriorityDryRunAction(): Promise<ActionResult> {
+  return safeAction('Пріоритетний імпорт SEO-товарів (перевірка)', () => importSeoSheetPriorityProducts({ apply: false }), [])
+}
+
+// SEO-sheet priority import: apply.
+export async function seoSheetPriorityImportAction(): Promise<ActionResult> {
+  return safeAction(
+    'Пріоритетний імпорт SEO-товарів',
+    () => importSeoSheetPriorityProducts({ apply: true }),
     ['/admin/catalog/pipeline', '/catalog'],
   )
 }
