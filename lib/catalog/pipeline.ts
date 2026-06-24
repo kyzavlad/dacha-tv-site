@@ -75,6 +75,11 @@ export interface SyncProductsResult {
   errors: number
   errorGroups: Record<string, number>
   message: string
+  // Populated on dry-run only
+  wouldInsert?: number
+  wouldUpdate?: number
+  backlogImportable?: number
+  samples?: Array<{ sku: string; name: string }>
 }
 
 export interface PublishResult {
@@ -304,7 +309,14 @@ export async function syncCatalogCategories(): Promise<SyncCategoriesResult> {
 // Existing catalog products: update price_uah and main_image_url from API only.
 // New products: insert with status='draft'.
 // SEO fields (description, meta_title, meta_description) are NOT set here — Step 6 handles those.
-export async function syncProductsToCatalog(limit: number): Promise<SyncProductsResult> {
+//
+// opts.dryRun=true: compute toInsert/toUpdatePrice counts but write nothing and do NOT
+// mark is_approved=true. Returns wouldInsert/wouldUpdate/backlogImportable/samples.
+export async function syncProductsToCatalog(
+  limit: number,
+  opts: { dryRun?: boolean } = {},
+): Promise<SyncProductsResult> {
+  const dryRun = opts.dryRun === true
   const client = getAdminClient()
 
   const { data: supplierProducts, error: fetchErr } = await client
@@ -390,6 +402,33 @@ export async function syncProductsToCatalog(limit: number): Promise<SyncProducts
       is_featured: false,
       display_order: 0,
     })
+  }
+
+  // Dry-run: report what would happen without touching the DB or is_approved.
+  if (dryRun) {
+    const { count: backlogImportable } = await client
+      .from('supplier_products')
+      .select('id', { count: 'exact', head: true })
+      .eq('is_approved', false)
+      .not('name', 'is', null)
+      .gt('price_uah', 0)
+    const samples = toInsert.slice(0, 10).map((p) => ({
+      sku: String(p.supplier_sku ?? ''),
+      name: String(p.name_ua ?? ''),
+    }))
+    return {
+      ok: true,
+      inserted: 0,
+      updated: 0,
+      skipped: 0,
+      errors: 0,
+      errorGroups: {},
+      message: `DRY RUN — додати ${toInsert.length}, оновити ${toUpdatePrice.length}. Черга: ${backlogImportable ?? '?'} готових`,
+      wouldInsert: toInsert.length,
+      wouldUpdate: toUpdatePrice.length,
+      backlogImportable: backlogImportable ?? 0,
+      samples,
+    }
   }
 
   let inserted = 0, updated = 0

@@ -48,6 +48,8 @@ export interface SheetImportResult {
   contentType?: string
   bodyPreview?: string
   finalUrl?: string
+  // Language / column warnings surfaced in the Banner
+  sheetWarning?: string
 }
 
 function emptyResult(apply: boolean): SheetImportResult {
@@ -353,7 +355,11 @@ export async function importCategorySeoFromSheet(
   const headers = allRows[0]
   const idxOf = (names: string[]) => headers.findIndex((h) => names.includes(h.toLowerCase().trim()))
   const nameIdx = idxOf(['category', 'категорія', 'категория', 'category name', 'назва категорії', 'назва'])
-  const descIdx = idxOf(['description', 'опис', 'описание', 'description_ua'])
+  // Only an EXPLICITLY named description_ua column writes to the visible Ukrainian description.
+  // Generic 'description' / 'описание' columns are likely Russian supplier text — writing
+  // them to description_ua would corrupt the public Ukrainian category description.
+  const descUaIdx   = idxOf(['description_ua'])
+  const descGenIdx  = idxOf(['description', 'опис', 'описание'])
   const metaTitleIdx = idxOf(['meta_title', 'meta title', 'seo title'])
   const metaDescIdx = idxOf(['meta_description', 'meta description', 'seo description'])
   const kwIdx = idxOf(['meta_keywords', 'keywords'])
@@ -415,6 +421,13 @@ export async function importCategorySeoFromSheet(
   r.rows = dataRows.length
   const now = new Date().toISOString()
 
+  // Warn when a generic description column is present but we deliberately skip it.
+  // This prevents accidentally overwriting the visible Ukrainian description with Russian text.
+  if (descGenIdx >= 0 && descUaIdx < 0) {
+    const colName = headers[descGenIdx] ?? 'description'
+    r.sheetWarning = `Колонка «${colName}» пропущена — мова невідома (може бути російська). Щоб писати до description_ua, назвіть колонку «description_ua».`
+  }
+
   for (const row of dataRows) {
     const nameRaw = (row[nameIdx] ?? '').trim()
     if (!nameRaw) continue
@@ -461,8 +474,10 @@ export async function importCategorySeoFromSheet(
       else recordValidationErrors(r, v.reasons)
     }
 
-    // Long-form category description → description_ua only when empty.
-    const sheetLongDesc = descIdx >= 0 ? (row[descIdx] ?? '').trim() : ''
+    // Long-form category description → description_ua ONLY from explicit description_ua column.
+    // Generic 'description'/'описание' columns are skipped to avoid writing Russian supplier
+    // text into the visible Ukrainian category description.
+    const sheetLongDesc = descUaIdx >= 0 ? (row[descUaIdx] ?? '').trim() : ''
     if (sheetLongDesc && (force || isEmpty(cat.description_ua))) {
       const v = validateDescription(sheetLongDesc)
       if (v.ok) { payload.description_ua = v.value; writtenFields.push('description_ua') }

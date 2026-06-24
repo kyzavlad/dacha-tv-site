@@ -8,6 +8,8 @@ import {
   getAutomationStatusAction,
   importBatchAction,
   publishBatchAction,
+  dryRunImportBatchAction,
+  fullImportBatchAction,
   backfillCategorySlugsAction,
   repairCategoryNamesAction,
   normalizeAndFinalizeCategoriesAction,
@@ -28,7 +30,7 @@ import {
 import type { ActionResult, FeedDiagResult, CatalogDiagnostics, SeoCounts } from './actions'
 import type { PipelineStats } from '@/lib/catalog/pipeline'
 import type { AutomationStatus, AutomationLastRun } from '@/lib/catalog/automation'
-import { AUTOMATION_MAX_PUBLISHED } from '@/lib/catalog/automation-config'
+import { AUTOMATION_MAX_PUBLISHED, AUTOMATION_BATCH_SIZE } from '@/lib/catalog/automation-config'
 import type { EnvStatus } from './page'
 
 function usePersistedResult(key: string) {
@@ -519,9 +521,11 @@ export function PipelineClient({
   const [autoStatus, setAutoStatus] = useState(initialAutomation)
   const [refreshing, startRefresh] = useTransition()
 
-  const [rProducts, setRProducts] = usePersistedResult('pipeline_r2')
-  const [rImport,   setRImport]   = usePersistedResult('pipeline_r5')
-  const [rSeo,      setRSeo]      = usePersistedResult('pipeline_r6')
+  const [rProducts,    setRProducts]    = usePersistedResult('pipeline_r2')
+  const [rImportDry,   setRImportDry]   = usePersistedResult('pipeline_r_import_dry')
+  const [rImport,      setRImport]      = usePersistedResult('pipeline_r5')
+  const [rImportFull,  setRImportFull]  = usePersistedResult('pipeline_r_import_full')
+  const [rSeo,         setRSeo]         = usePersistedResult('pipeline_r6')
   const [rPublish,  setRPublish]  = usePersistedResult('pipeline_r8')
   const [rBackfill, setRBackfill] = usePersistedResult('pipeline_r_backfill')
   const [rRepair,   setRRepair]   = usePersistedResult('pipeline_r_repair')
@@ -544,9 +548,11 @@ export function PipelineClient({
   // SEO counts — loaded on mount and after each SEO action.
   const [seo, setSeo] = useState<SeoCounts | null>(null)
 
-  const [pProducts, sProducts] = useTransition()
-  const [pImport,   sImport]   = useTransition()
-  const [pSeo,      sSeo]      = useTransition()
+  const [pProducts,    sProducts]    = useTransition()
+  const [pImportDry,   sImportDry]   = useTransition()
+  const [pImport,      sImport]      = useTransition()
+  const [pImportFull,  sImportFull]  = useTransition()
+  const [pSeo,         sSeo]         = useTransition()
   const [pPublish,  sPublish]  = useTransition()
   const [pBackfill, sBackfill] = useTransition()
   const [pRepair,   sRepair]   = useTransition()
@@ -564,7 +570,7 @@ export function PipelineClient({
   const [pShCatPrev, sShCatPrev] = useTransition()
   const [pShCat,    sShCat]    = useTransition()
 
-  const anyPending = pProducts || pImport || pSeo || pPublish || pBackfill || pRepair || pFinalize || pManual || pDiag || pMigDiag || pSeoCat || pSeoProd || pSeoTplPrev || pSeoTpl || pSeoFb || pShProdPrev || pShProd || pShCatPrev || pShCat || refreshing
+  const anyPending = pProducts || pImportDry || pImport || pImportFull || pSeo || pPublish || pBackfill || pRepair || pFinalize || pManual || pDiag || pMigDiag || pSeoCat || pSeoProd || pSeoTplPrev || pSeoTpl || pSeoFb || pShProdPrev || pShProd || pShCatPrev || pShCat || refreshing
 
   const loadDiagnostics = useCallback(() => {
     sMigDiag(async () => {
@@ -709,18 +715,44 @@ export function PipelineClient({
         runStatus={<RunStatusRow run={runsByType.get('products')} />}
       />
 
+      {/* Dry-run import — safe to run first; writes nothing */}
+      <StepCard
+        title="Пробний запуск імпорту"
+        description="Перевіряє, скільки товарів можна перенести з черги постачальника, але нічого не записує. Запустіть перед реальним імпортом."
+        buttonLabel="🔍 Перевірити"
+        buttonClass={BTN_BLUE}
+        pendingLabel="Перевірка…"
+        pending={pImportDry}
+        disabled={anyPending}
+        onRun={() => run(sImportDry, dryRunImportBatchAction, setRImportDry)}
+        result={rImportDry}
+      />
+
       <StepCard
         step={2}
-        title="Імпорт у каталог"
+        title="Імпорт у каталог (партія)"
         description={stats.supplierProductsNew > 0
-          ? `${stats.supplierProductsNew.toLocaleString('uk-UA')} нових товарів готові до імпорту. Оновлює ціни/залишки існуючих (не дублює).`
-          : 'Переносить нові товари у каталог, оновлює ціни та залишки існуючих (не дублює).'}
+          ? `${stats.supplierProductsNew.toLocaleString('uk-UA')} нових товарів готові до імпорту. Переносить партію ${AUTOMATION_BATCH_SIZE}, оновлює ціни/зображення існуючих.`
+          : `Переносить партію ${AUTOMATION_BATCH_SIZE} нових товарів у каталог, оновлює ціни та зображення існуючих (не дублює).`}
         buttonLabel="▶ Запустити"
         pending={pImport}
         disabled={anyPending}
         onRun={() => run(sImport, importBatchAction, setRImport)}
         result={rImport}
         runStatus={<RunStatusRow run={runsByType.get('import_batch')} />}
+      />
+
+      {/* Full import — bypasses published cap, processes entire backlog in one call */}
+      <StepCard
+        title="Повний імпорт (весь бекlog)"
+        description={`Переносить усю чергу (до 10 000 товарів за раз) без обмеження ліміту ${AUTOMATION_MAX_PUBLISHED.toLocaleString('uk-UA')}. Використовуйте після пробного запуску.`}
+        buttonLabel="▶ Повний імпорт"
+        buttonClass={BTN_AMBER}
+        pendingLabel="Імпорт…"
+        pending={pImportFull}
+        disabled={anyPending}
+        onRun={() => run(sImportFull, fullImportBatchAction, setRImportFull)}
+        result={rImportFull}
       />
 
       <StepCard
