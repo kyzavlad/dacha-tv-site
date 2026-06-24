@@ -109,6 +109,8 @@ async function getCoverage() {
               checked: rows.length,
               in_supplier: rows.filter((r) => r.in_supplier).length,
               in_catalog: rows.filter((r) => r.in_catalog).length,
+              published: rows.filter((r) => r.catalog_status === 'published').length,
+              draft: rows.filter((r) => r.catalog_status === 'draft').length,
               not_in_catalog: rows.filter((r) => r.in_supplier && !r.in_catalog).length,
             },
           }
@@ -117,6 +119,24 @@ async function getCoverage() {
     } catch (e) {
       seoSheetCheck = { configured: true, error: String(e) }
     }
+  }
+
+  // ── Next recommended action ──────────────────────────────────────────────
+  // Deterministic guidance based on the current counts. Ordered by priority:
+  // images first (cheap, no publish risk) → import backlog → publish drafts →
+  // SEO last (only meaningful once rows exist in catalog and are published).
+  const seoNotInCatalog = (seoSheetCheck.summary as { not_in_catalog?: number } | undefined)?.not_in_catalog ?? 0
+  let nextAction: string
+  if (spWithImage === 0 && spTotal > 0) {
+    nextAction = 'IMAGES: supplier_products.with_image=0 — run supplier-images dry-run, then apply, then catalog backfill-images. Do this before publishing so live products have photos.'
+  } else if (seoNotInCatalog > 0) {
+    nextAction = `IMPORT (SEO-first): ${seoNotInCatalog}/20 SEO-sheet SKUs are in supplier but not catalog — run import-seo-priority (apply) so the SEO sheet can match, OR continue the general backlog import below.`
+  } else if (spImportable > 0) {
+    nextAction = `IMPORT: ${spImportable.toLocaleString('en-US')} importable supplier rows remain — run import-products dry-run then apply in batches of ~3000 (limit bypasses the import cap).`
+  } else if (cpDraft > 0) {
+    nextAction = `PUBLISH: ${cpDraft.toLocaleString('en-US')} draft products ready — run publish-products dry-run then apply (limit or skipCap=true).`
+  } else {
+    nextAction = 'SEO: catalog imported and published — run product SEO sheet import, then product-seo-template to fill any remaining published rows.'
   }
 
   return {
@@ -142,8 +162,11 @@ async function getCoverage() {
       max_published: AUTOMATION_MAX_PUBLISHED,
       batch_size: AUTOMATION_BATCH_SIZE,
       cap_active: capActive,
+      cap_scope: 'import_only',
+      cap_note: 'AUTOMATION_MAX_PUBLISHED gates the daily auto-IMPORT only. Manual import (?limit=) and manual publish are not capped.',
       note: capActive ? `Ліміт ${AUTOMATION_MAX_PUBLISHED} опублікованих досягнуто — авто-імпорт призупинено` : null,
     },
+    next_recommended_action: nextAction,
     seo_sheet_check: seoSheetCheck,
   }
 }

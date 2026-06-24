@@ -130,6 +130,18 @@ export interface PublishResult {
   message: string
 }
 
+export interface ManualPublishResult {
+  ok: boolean
+  applied: boolean
+  draftTotal: number          // total draft catalog_products
+  wouldPublish: number        // drafts that would be published this run (after limit)
+  published: number           // rows actually flipped to published (0 on dry run)
+  skipped: number             // drafts left unpublished because of the limit
+  errors: number
+  samples: Array<{ sku: string; name: string }>
+  message: string
+}
+
 export interface BackfillResult {
   ok: boolean
   updated: number
@@ -832,6 +844,77 @@ export async function publishAllCatalogProducts(): Promise<PublishResult> {
     if (!error) updated += Math.min(CHUNK, idList.length - i)
   }
   return { ok: true, updated, message: `Опубліковано ${updated} товарів` }
+}
+
+// Manual, controlled publish: flip up to `limit` draft catalog_products to
+// published, with a dry-run default and full reporting. This is the protected
+// counterpart to the daily publishBatch() (which publishes ALL drafts at once).
+//
+// There is NO publish cap in the codebase — AUTOMATION_MAX_PUBLISHED only gates
+// IMPORT (importBatch stops importing once 3000 are published). Publishing drafts
+// is therefore always allowed; this function adds dry-run + batching + counts so a
+// bulk publish can be reviewed before it goes live.
+//
+// SAFETY: touches ONLY status (+ updated_at). Never price, image, category, SEO.
+export async function publishDraftProducts(
+  opts: { dryRun?: boolean; limit?: number } = {},
+): Promise<ManualPublishResult> {
+  const dryRun = opts.dryRun === true
+  const limit = opts.limit && opts.limit > 0 ? opts.limit : 100000
+  const client = getAdminClient()
+
+  const { count: draftTotal } = await client
+    .from('catalog_products')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'draft')
+
+  // Load draft rows (paginated past the 1000-row cap), oldest first, then cap.
+  const draftRows = await selectAllRows<{ id: string; supplier_sku: string | null; name_ua: string | null }>(
+    (from, to) => client.from('catalog_products')
+      .select('id, supplier_sku, name_ua')
+      .eq('status', 'draft')
+      .order('created_at', { ascending: true })
+      .range(from, to),
+  )
+
+  const candidates = draftRows.slice(0, limit)
+  const skipped = Math.max(0, draftRows.length - candidates.length)
+  const samples = candidates.slice(0, 10).map((r) => ({
+    sku: String(r.supplier_sku ?? ''),
+    name: String(r.name_ua ?? ''),
+  }))
+
+  if (dryRun) {
+    return {
+      ok: true, applied: false,
+      draftTotal: draftTotal ?? 0,
+      wouldPublish: candidates.length,
+      published: 0, skipped, errors: 0, samples,
+      message: `DRY RUN — буде опубліковано ${candidates.length} з ${draftTotal ?? 0} draft-товарів${skipped > 0 ? ` (${skipped} понад ліміт залишаться draft)` : ''}.`,
+    }
+  }
+
+  let published = 0, errors = 0
+  const ids = candidates.map((c) => c.id)
+  const CHUNK = 500
+  for (let i = 0; i < ids.length; i += CHUNK) {
+    const slice = ids.slice(i, i + CHUNK)
+    const { error } = await client
+      .from('catalog_products')
+      .update({ status: 'published', updated_at: new Date().toISOString() })
+      .in('id', slice)
+      .eq('status', 'draft') // never re-touch an already-published row
+    if (error) errors += slice.length
+    else published += slice.length
+  }
+
+  return {
+    ok: errors === 0, applied: true,
+    draftTotal: draftTotal ?? 0,
+    wouldPublish: candidates.length,
+    published, skipped, errors, samples,
+    message: `Опубліковано ${published} товарів${skipped > 0 ? `, ${skipped} залишилось draft (ліміт)` : ''}${errors > 0 ? `, помилок: ${errors}` : ''}.`,
+  }
 }
 
 // ─── Full category normalization ──────────────────────────────────────────────
