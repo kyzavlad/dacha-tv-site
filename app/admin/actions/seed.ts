@@ -61,8 +61,8 @@ const LAUNCH_SITE_SETTINGS = {
   instagram_url: 'https://instagram.com/dachatv.store',
   facebook_url: 'https://facebook.com/kyzmenko.sergej',
   tiktok_url: 'https://tiktok.com/@vladkuzmenkosxy',
-  hero_tagline: 'Мед прямо з вулика',
-  hero_subtext: 'Натуральний мед із сімейної пасіки на Харківщині. Збираємо, фасуємо та відправляємо особисто.',
+  hero_tagline: 'Дача TV — товари, продукти й послуги для дому, саду та господарства',
+  hero_subtext: 'Мед і продукти пасіки, натуральні продукти, квіти, лаванда, металопрофіль та товари для господарства — з перевірених джерел і зручним замовленням онлайн.',
 }
 
 export interface SyncResult {

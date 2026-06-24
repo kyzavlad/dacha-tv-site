@@ -4,7 +4,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { getSupabaseClient } from '@/lib/supabase/client'
 import { HourlyCalendar } from '@/components/bookings/HourlyCalendar'
-import { LAUNCH_INSTAGRAM_URL } from '@/lib/launch-defaults'
+import { LAVENDER_INSTAGRAM_URL, LAVENDER_INSTAGRAM_HANDLE } from '@/lib/launch-defaults'
 
 export const metadata: Metadata = {
   title: 'Лавандове поле',
@@ -20,15 +20,16 @@ export const metadata: Metadata = {
 }
 
 // Static Instagram gallery cards — shown when no Instagram API token is
-// configured. Each card uses a CSS gradient + emoji so the section always
-// renders gracefully without any third-party embed.
+// configured (we never scrape Instagram). Each card uses a layered violet CSS
+// gradient + emoji so the section always renders gracefully and on-brand for
+// lavender, without any fragile third-party embed.
 const INSTAGRAM_CARDS = [
-  { gradient: 'from-purple-400 via-violet-500 to-purple-600', emoji: '🌿', caption: 'Цвітіння лаванди', tag: '#лавандовеполе' },
-  { gradient: 'from-violet-400 via-purple-500 to-fuchsia-500', emoji: '💜', caption: 'Фотосесія в полі', tag: '#dachatv' },
-  { gradient: 'from-purple-300 via-violet-400 to-purple-500', emoji: '📸', caption: 'Магічне світанок', tag: '#коротич' },
-  { gradient: 'from-violet-500 via-purple-600 to-indigo-600', emoji: '🌾', caption: 'Свіжі букети лаванди', tag: '#букетлаванди' },
-  { gradient: 'from-fuchsia-400 via-purple-500 to-violet-600', emoji: '🎀', caption: 'Підготовка до сезону', tag: '#харківщина' },
-  { gradient: 'from-purple-200 via-violet-300 to-purple-400', emoji: '🌅', caption: 'Захід над полем', tag: '#дачаtv' },
+  { gradient: 'from-purple-400 via-violet-500 to-purple-700', emoji: '🌿', caption: 'Цвітіння лавандового поля', tag: '#лавандовеполе' },
+  { gradient: 'from-violet-400 via-purple-500 to-fuchsia-500', emoji: '💜', caption: 'Фотосесія серед лаванди', tag: '#lavender_stories' },
+  { gradient: 'from-purple-300 via-violet-400 to-purple-600', emoji: '📸', caption: 'Світанок над полем', tag: '#коротич' },
+  { gradient: 'from-violet-500 via-purple-600 to-indigo-600', emoji: '💐', caption: 'Свіжі букети лаванди', tag: '#букетлаванди' },
+  { gradient: 'from-fuchsia-400 via-purple-500 to-violet-700', emoji: '🌅', caption: 'Захід сонця в полі', tag: '#харківщина' },
+  { gradient: 'from-purple-200 via-violet-300 to-purple-500', emoji: '🪻', caption: 'Сезон лаванди', tag: '#lavanda' },
 ]
 
 async function getLavenderService() {
@@ -189,54 +190,76 @@ export default async function LavenderPage() {
         )}
 
         {/* ── Instagram block ──────────────────────────────────────────── */}
+        {/* Premium, lavender-specific Instagram showcase. We never scrape
+            Instagram — these are elegant static "latest post" style cards that
+            all link to the dedicated lavender profile, so the section stays
+            beautiful and unbroken even when Instagram is unavailable. */}
         <section id="instagram" className="scroll-mt-20">
-          <div className="text-center mb-8">
-            <span className="text-xs font-semibold text-purple-500 uppercase tracking-widest mb-2 block">@dachatv.store</span>
-            <h2 className="font-serif text-2xl md:text-3xl font-bold text-gray-900 mb-3">
-              Лаванда в Instagram
-            </h2>
-            <p className="text-gray-500 max-w-sm mx-auto text-sm leading-relaxed">
-              Дивіться актуальні фото, цвітіння та живі сторіс з поля.
-            </p>
-          </div>
+          <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#3c2466] via-[#4a2d7a] to-[#5b3a93] p-6 sm:p-10 md:p-12">
+            {/* Soft glow accents */}
+            <div className="pointer-events-none absolute -top-16 -right-16 w-64 h-64 rounded-full bg-fuchsia-500/20 blur-3xl" aria-hidden="true" />
+            <div className="pointer-events-none absolute -bottom-20 -left-10 w-64 h-64 rounded-full bg-violet-400/20 blur-3xl" aria-hidden="true" />
 
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-            {INSTAGRAM_CARDS.map((card, i) => (
-              <a
-                key={i}
-                href={LAUNCH_INSTAGRAM_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="group relative overflow-hidden rounded-2xl aspect-square focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-500"
-                aria-label={`${card.caption} — Instagram`}
-              >
-                {/* Gradient background */}
-                <div className={`absolute inset-0 bg-gradient-to-br ${card.gradient} transition-transform duration-300 group-hover:scale-105`} />
-                {/* Center emoji */}
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <span className="text-4xl md:text-5xl drop-shadow-sm select-none">{card.emoji}</span>
-                </div>
-                {/* Caption overlay */}
-                <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/55 to-transparent px-3 py-3 translate-y-1 group-hover:translate-y-0 transition-transform duration-200">
-                  <p className="text-white text-xs font-semibold leading-snug">{card.caption}</p>
-                  <p className="text-white/65 text-xs mt-0.5">{card.tag}</p>
-                </div>
-              </a>
-            ))}
-          </div>
+            <div className="relative">
+              <div className="text-center mb-8">
+                <a
+                  href={LAVENDER_INSTAGRAM_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 text-xs font-semibold text-white/70 uppercase tracking-widest mb-3 hover:text-white transition-colors"
+                >
+                  <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4" aria-hidden="true">
+                    <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 1 0 0 12.324 6.162 6.162 0 0 0 0-12.324zM12 16a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm6.406-11.845a1.44 1.44 0 1 0 0 2.881 1.44 1.44 0 0 0 0-2.881z" />
+                  </svg>
+                  {LAVENDER_INSTAGRAM_HANDLE}
+                </a>
+                <h2 className="font-serif text-2xl md:text-3xl font-bold text-white mb-3">
+                  Лаванда в Instagram
+                </h2>
+                <p className="text-white/60 max-w-md mx-auto text-sm leading-relaxed">
+                  Цвітіння, фотосесії та живі сторіс просто з поля. Підписуйтесь, щоб не пропустити сезон.
+                </p>
+              </div>
 
-          <div className="text-center mt-8">
-            <a
-              href={LAUNCH_INSTAGRAM_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-2.5 px-8 py-4 bg-gradient-to-r from-purple-600 to-violet-600 text-white font-semibold rounded-2xl hover:from-purple-700 hover:to-violet-700 active:scale-[0.98] transition-all shadow-lg shadow-purple-200 w-full sm:w-auto justify-center"
-            >
-              <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 flex-shrink-0" aria-hidden="true">
-                <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 1 0 0 12.324 6.162 6.162 0 0 0 0-12.324zM12 16a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm6.406-11.845a1.44 1.44 0 1 0 0 2.881 1.44 1.44 0 0 0 0-2.881z" />
-              </svg>
-              Підписатися в Instagram
-            </a>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                {INSTAGRAM_CARDS.map((card, i) => (
+                  <a
+                    key={i}
+                    href={LAVENDER_INSTAGRAM_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="group relative overflow-hidden rounded-2xl aspect-square ring-1 ring-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                    aria-label={`${card.caption} — Instagram`}
+                  >
+                    {/* Gradient background */}
+                    <div className={`absolute inset-0 bg-gradient-to-br ${card.gradient} transition-transform duration-300 group-hover:scale-105`} />
+                    {/* Center emoji */}
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <span className="text-4xl md:text-5xl drop-shadow-sm select-none">{card.emoji}</span>
+                    </div>
+                    {/* Caption overlay */}
+                    <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/60 to-transparent px-3 py-3 translate-y-1 group-hover:translate-y-0 transition-transform duration-200">
+                      <p className="text-white text-xs font-semibold leading-snug">{card.caption}</p>
+                      <p className="text-white/65 text-xs mt-0.5">{card.tag}</p>
+                    </div>
+                  </a>
+                ))}
+              </div>
+
+              <div className="text-center mt-8">
+                <a
+                  href={LAVENDER_INSTAGRAM_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2.5 px-8 py-4 bg-white text-purple-900 font-semibold rounded-2xl hover:bg-purple-50 active:scale-[0.98] transition-all shadow-lg shadow-black/20 w-full sm:w-auto justify-center"
+                >
+                  <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 flex-shrink-0" aria-hidden="true">
+                    <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 1 0 0 12.324 6.162 6.162 0 0 0 0-12.324zM12 16a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm6.406-11.845a1.44 1.44 0 1 0 0 2.881 1.44 1.44 0 0 0 0-2.881z" />
+                  </svg>
+                  Підписатися в Instagram
+                </a>
+              </div>
+            </div>
           </div>
         </section>
 

@@ -3,6 +3,10 @@ export const LAUNCH_PHONE_SECONDARY = '+380934665801'
 export const LAUNCH_YOUTUBE_URL = 'https://www.youtube.com/@dacha_tv'
 export const LAUNCH_YOUTUBE_VIDEO_ID = 'Qwmi6Igjp4I'
 export const LAUNCH_INSTAGRAM_URL = 'https://instagram.com/dachatv.store'
+// Lavender field has its own dedicated Instagram account, separate from the
+// main brand profile above. Used only on the /lavender page.
+export const LAVENDER_INSTAGRAM_URL = 'https://www.instagram.com/_lavender_stories'
+export const LAVENDER_INSTAGRAM_HANDLE = '@_lavender_stories'
 export const LAUNCH_FACEBOOK_URL = 'https://facebook.com/kyzmenko.sergej'
 export const LAUNCH_FACEBOOK_URL_2 = 'https://facebook.com/profile.php?id=100093442074407'
 export const LAUNCH_TIKTOK_URL = 'https://tiktok.com/@vladkuzmenkosxy'
