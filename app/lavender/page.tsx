@@ -4,6 +4,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { getSupabaseClient } from '@/lib/supabase/client'
 import { HourlyCalendar } from '@/components/bookings/HourlyCalendar'
+import { YouTubeFacade } from '@/components/shared/YouTubeFacade'
 import { LAVENDER_INSTAGRAM_URL, LAVENDER_INSTAGRAM_HANDLE } from '@/lib/launch-defaults'
 
 export const metadata: Metadata = {
@@ -188,6 +189,32 @@ export default async function LavenderPage() {
             <p>Інформацію оновлюємо. Зв&apos;яжіться з нами для деталей.</p>
           </div>
         )}
+
+        {/* ── How to get here video ────────────────────────────────────── */}
+        {/* Lightweight click-to-load facade (no heavy YouTube scripts, no
+            scraping). 16:9, responsive, never overflows on mobile. */}
+        <section id="route" className="scroll-mt-20">
+          <div className="text-center mb-8">
+            <span className="text-xs font-semibold text-purple-500 uppercase tracking-widest mb-2 block">
+              Як нас знайти
+            </span>
+            <h2 className="font-serif text-2xl md:text-3xl font-bold text-gray-900 mb-3">
+              Як доїхати до лавандової локації
+            </h2>
+            <p className="text-gray-500 max-w-md mx-auto text-sm leading-relaxed">
+              Подивіться коротке відео з маршрутом до поля — так буде простіше
+              спланувати дорогу й знайти нас ще до бронювання.
+            </p>
+          </div>
+
+          <div className="max-w-3xl mx-auto">
+            <YouTubeFacade
+              videoId="Us1llGkYt9s"
+              title="Як доїхати до лавандового поля Дача TV"
+              className="shadow-xl"
+            />
+          </div>
+        </section>
 
         {/* ── Instagram block ──────────────────────────────────────────── */}
         {/* Premium, lavender-specific Instagram showcase. We never scrape
