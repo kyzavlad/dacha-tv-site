@@ -1,0 +1,132 @@
+// ─── SEO quality validation (Business Campus principle) ───────────────────────
+// Shared, dependency-free validators used by the Google-Sheets SEO importers
+// (and reusable by any other writer) to guarantee that nothing low-quality ever
+// reaches a published meta field.
+//
+// Business Campus rules enforced here:
+//   • the buyer understands the page immediately — so: no raw technical slugs
+//     (cat-38853), no HTML markup, no empty strings;
+//   • no BS / no fake claims — so: no medical / "100% guarantee" / "best in the
+//     world" style copy;
+//   • practical and clean — so: sane length windows and no keyword-stuffing spam.
+//
+// Length policy: soft windows are advisory (a value outside them is still
+// accepted), hard caps are blocking (a value past them is rejected so the human
+// fixes the sheet rather than us silently truncating into awkward copy).
+
+export const META_TITLE_SOFT_MIN = 35
+export const META_TITLE_SOFT_MAX = 65
+export const META_TITLE_HARD_MAX = 70
+
+export const META_DESC_SOFT_MIN = 120
+export const META_DESC_SOFT_MAX = 170
+export const META_DESC_HARD_MAX = 180
+
+export const KEYWORDS_HARD_MAX = 255
+
+// Fake-guarantee / medical / superlative claims. Conservative on purpose — only
+// patterns that are clearly unsupportable marketing BS, not ordinary product
+// language.
+const BANNED_PATTERNS: Array<{ re: RegExp; label: string }> = [
+  { re: /\b100\s*%\s*гарант/i,                          label: '«100% гарантія»' },
+  { re: /гарант\w*\s+здоров/i,                          label: 'гарантія здоров’я' },
+  { re: /(виліков\w*|зцілю\w*|лікує|оздоровлю\w* повніст)/i, label: 'медичні твердження' },
+  { re: /(чудодійн|магічн)\w*/i,                        label: '«чудодійний / магічний»' },
+  { re: /найкращ\w*\s+(в|у)\s+(світі|україні)/i,        label: '«найкращий у світі/Україні»' },
+  { re: /№\s*1\s+(в|у)\s+(світі|україні)/i,             label: '«№1 у світі/Україні»' },
+  { re: /абсолютно\s+безпечн\w*/i,                      label: '«абсолютно безпечно»' },
+  { re: /схудн\w*\s+(за|на)\s+\d/i,                     label: 'обіцянки схуднення' },
+]
+
+// Collapse whitespace + trim. Does NOT strip HTML (callers decide).
+export function collapse(s: string | null | undefined): string {
+  return (s ?? '').replace(/\s+/g, ' ').trim()
+}
+
+// Strip HTML tags + decode-ish entities to spaces, then collapse. Used for
+// long-form description fields where the sheet may legitimately carry markup
+// that we want to drop rather than reject.
+export function stripHtml(s: string | null | undefined): string {
+  return collapse((s ?? '').replace(/<[^>]*>/g, ' ').replace(/&[a-z#0-9]+;/gi, ' '))
+}
+
+export function hasHtml(s: string): boolean {
+  return /<[^>]+>/.test(s) || /&[a-z]+;/i.test(s)
+}
+
+// Raw technical category slug like cat-38853, cat_185, or a bare leaked id.
+export function hasCatSlug(s: string): boolean {
+  return /\bcat[-_]?\d+\b/i.test(s)
+}
+
+// Keyword-stuffing: the same 4+ char token repeated 5+ times.
+export function hasSpammyRepetition(s: string): boolean {
+  const words = s.toLowerCase().match(/[\p{L}\p{N}]{4,}/gu) ?? []
+  const counts = new Map<string, number>()
+  for (const w of words) {
+    const n = (counts.get(w) ?? 0) + 1
+    counts.set(w, n)
+    if (n >= 5) return true
+  }
+  return false
+}
+
+export function bannedClaim(s: string): string | null {
+  for (const { re, label } of BANNED_PATTERNS) if (re.test(s)) return label
+  return null
+}
+
+export interface FieldValidation {
+  ok: boolean
+  reasons: string[] // human-readable Ukrainian reasons, empty when ok
+}
+
+// Checks common to every text field.
+function commonChecks(value: string, reasons: string[]): void {
+  if (hasHtml(value)) reasons.push('містить HTML')
+  if (hasCatSlug(value)) reasons.push('містить технічний slug (cat-NNN)')
+  if (hasSpammyRepetition(value)) reasons.push('повтор слів (keyword stuffing)')
+  const claim = bannedClaim(value)
+  if (claim) reasons.push(`недопустиме твердження: ${claim}`)
+}
+
+export function validateMetaTitle(raw: string | null | undefined): FieldValidation {
+  const v = collapse(raw)
+  const reasons: string[] = []
+  if (!v) return { ok: false, reasons: ['порожній meta_title'] }
+  if (v.length > META_TITLE_HARD_MAX) reasons.push(`meta_title задовгий (${v.length} > ${META_TITLE_HARD_MAX})`)
+  commonChecks(v, reasons)
+  return { ok: reasons.length === 0, reasons }
+}
+
+export function validateMetaDescription(raw: string | null | undefined): FieldValidation {
+  const v = collapse(raw)
+  const reasons: string[] = []
+  if (!v) return { ok: false, reasons: ['порожній meta_description'] }
+  if (v.length > META_DESC_HARD_MAX) reasons.push(`meta_description задовгий (${v.length} > ${META_DESC_HARD_MAX})`)
+  commonChecks(v, reasons)
+  return { ok: reasons.length === 0, reasons }
+}
+
+export function validateKeywords(raw: string | null | undefined): FieldValidation {
+  const v = collapse(raw)
+  const reasons: string[] = []
+  if (!v) return { ok: false, reasons: ['порожні keywords'] }
+  if (v.length > KEYWORDS_HARD_MAX) reasons.push(`keywords задовгі (${v.length} > ${KEYWORDS_HARD_MAX})`)
+  if (hasHtml(v)) reasons.push('містить HTML')
+  if (hasCatSlug(v)) reasons.push('містить технічний slug (cat-NNN)')
+  return { ok: reasons.length === 0, reasons }
+}
+
+// Long-form description: HTML is stripped (not rejected). Returns the cleaned
+// value so callers write the sanitised text, not the raw markup.
+export function validateDescription(raw: string | null | undefined): FieldValidation & { value: string } {
+  const v = stripHtml(raw)
+  const reasons: string[] = []
+  if (!v) return { ok: false, reasons: ['порожній опис'], value: '' }
+  if (v.length < 20) reasons.push('опис надто короткий (<20)')
+  if (hasCatSlug(v)) reasons.push('містить технічний slug (cat-NNN)')
+  const claim = bannedClaim(v)
+  if (claim) reasons.push(`недопустиме твердження: ${claim}`)
+  return { ok: reasons.length === 0, reasons, value: v }
+}
