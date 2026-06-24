@@ -123,7 +123,11 @@ export interface ImportBatchResult {
 }
 
 // Import without publishing — allows SEO to run before products go live.
-export async function importBatch(limit = AUTOMATION_BATCH_SIZE): Promise<ImportBatchResult> {
+// opts.skipCap=true bypasses the AUTOMATION_MAX_PUBLISHED guard (use for manual bulk imports).
+export async function importBatch(
+  limit = AUTOMATION_BATCH_SIZE,
+  opts: { skipCap?: boolean } = {},
+): Promise<ImportBatchResult> {
   const client = getAdminClient()
   const startedAt = Date.now()
 
@@ -136,7 +140,7 @@ export async function importBatch(limit = AUTOMATION_BATCH_SIZE): Promise<Import
     const { count: publishedCount } = await client
       .from('catalog_products').select('id', { count: 'exact', head: true }).eq('status', 'published')
 
-    if ((publishedCount ?? 0) >= AUTOMATION_MAX_PUBLISHED) {
+    if (!opts.skipCap && (publishedCount ?? 0) >= AUTOMATION_MAX_PUBLISHED) {
       await client.from('supplier_sync_log').update({
         status: 'completed',
         products_total: 0,

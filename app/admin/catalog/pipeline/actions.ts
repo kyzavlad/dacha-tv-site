@@ -26,6 +26,8 @@ import {
   publishBatch,
   runProductSeo,
 } from '@/lib/catalog/automation'
+import { syncProductsToCatalog } from '@/lib/catalog/pipeline'
+import { AUTOMATION_BATCH_SIZE } from '@/lib/catalog/automation-config'
 import type { AutomationStatus } from '@/lib/catalog/automation'
 import {
   getSeoCounts,
@@ -127,6 +129,26 @@ export async function syncApiProductsAction(): Promise<ActionResult> {
 
 export async function importBatchAction(): Promise<ActionResult> {
   return safeAction('Імпорт у каталог', () => importBatch())
+}
+
+// Dry-run: computes what would be inserted/updated but writes nothing and does
+// NOT mark supplier rows as is_approved=true.
+export async function dryRunImportBatchAction(): Promise<ActionResult> {
+  return safeAction(
+    'Пробний запуск імпорту',
+    () => syncProductsToCatalog(AUTOMATION_BATCH_SIZE, { dryRun: true }),
+    [],
+  )
+}
+
+// Full import with no published-count cap — for manually loading the full backlog.
+// Uses a large limit so all importable rows in the queue are processed in one call.
+export async function fullImportBatchAction(): Promise<ActionResult> {
+  return safeAction(
+    'Повний імпорт у каталог',
+    () => importBatch(10000, { skipCap: true }),
+    ['/admin/catalog/pipeline', '/catalog'],
+  )
 }
 
 export async function publishBatchAction(): Promise<ActionResult> {
