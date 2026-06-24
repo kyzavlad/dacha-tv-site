@@ -25,12 +25,12 @@ export const metadata: Metadata = {
 // gradient + emoji so the section always renders gracefully and on-brand for
 // lavender, without any fragile third-party embed.
 const INSTAGRAM_CARDS = [
-  { gradient: 'from-purple-400 via-violet-500 to-purple-700', emoji: '🌿', caption: 'Цвітіння лавандового поля', tag: '#лавандовеполе' },
-  { gradient: 'from-violet-400 via-purple-500 to-fuchsia-500', emoji: '💜', caption: 'Фотосесія серед лаванди', tag: '#lavender_stories' },
-  { gradient: 'from-purple-300 via-violet-400 to-purple-600', emoji: '📸', caption: 'Світанок над полем', tag: '#коротич' },
-  { gradient: 'from-violet-500 via-purple-600 to-indigo-600', emoji: '💐', caption: 'Свіжі букети лаванди', tag: '#букетлаванди' },
-  { gradient: 'from-fuchsia-400 via-purple-500 to-violet-700', emoji: '🌅', caption: 'Захід сонця в полі', tag: '#харківщина' },
-  { gradient: 'from-purple-200 via-violet-300 to-purple-500', emoji: '🪻', caption: 'Сезон лаванди', tag: '#lavanda' },
+  { gradient: 'from-[#6b3fa0] via-[#7c4db8] to-[#9b6fd4]', accent: 'from-fuchsia-500/30 to-transparent', emoji: '🪻', caption: 'Цвітіння лавандового поля', tag: '#лавандовеполе' },
+  { gradient: 'from-[#4a2d7a] via-[#6b3fa0] to-[#8b5cc7]', accent: 'from-violet-300/20 to-transparent', emoji: '💜', caption: 'Фотосесія серед лаванди', tag: '#lavender_stories' },
+  { gradient: 'from-[#3c2466] via-[#5b3a93] to-[#7c4db8]', accent: 'from-purple-300/20 to-transparent', emoji: '📸', caption: 'Світанок над полем', tag: '#коротич' },
+  { gradient: 'from-[#5b3a93] via-[#7c4db8] to-[#a37dd4]', accent: 'from-white/10 to-transparent', emoji: '💐', caption: 'Свіжі букети лаванди', tag: '#букетлаванди' },
+  { gradient: 'from-[#8b3a8b] via-[#9b4db8] to-[#7c4db8]', accent: 'from-fuchsia-400/25 to-transparent', emoji: '🌅', caption: 'Захід сонця в полі', tag: '#харківщина' },
+  { gradient: 'from-[#2d1f5e] via-[#4a2d7a] to-[#6b4fa0]', accent: 'from-indigo-300/20 to-transparent', emoji: '🌿', caption: 'Сезон лаванди', tag: '#lavanda' },
 ]
 
 async function getLavenderService() {
@@ -107,26 +107,48 @@ export default async function LavenderPage() {
                   оздоровчих заходів. Вартість включає 5 осіб, кожна додаткова — 200 ₴.
                 </p>
 
-                <div className="rounded-2xl border border-purple-100 bg-purple-50/60 p-5 space-y-2.5 text-sm">
-                  <div className="flex gap-3">
-                    <span className="text-purple-600 font-semibold w-28 flex-shrink-0">Ціна:</span>
-                    <span className="text-gray-700">06:00–15:00: 1000 ₴/год · 15:00–21:00: 1200 ₴/год</span>
+                {/* Price tiers */}
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-purple-500 uppercase tracking-widest">Вартість оренди</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="rounded-2xl bg-gradient-to-br from-purple-50 to-violet-100 border border-purple-100 p-4">
+                      <p className="text-xs text-purple-500 font-medium mb-1">Ранок / день</p>
+                      <p className="text-lg font-bold text-purple-900 leading-none">1 000 ₴</p>
+                      <p className="text-xs text-purple-600 mt-1">за годину · 06:00–15:00</p>
+                    </div>
+                    <div className="rounded-2xl bg-gradient-to-br from-violet-50 to-fuchsia-100 border border-violet-100 p-4">
+                      <p className="text-xs text-violet-500 font-medium mb-1">Вечір</p>
+                      <p className="text-lg font-bold text-violet-900 leading-none">1 200 ₴</p>
+                      <p className="text-xs text-violet-600 mt-1">за годину · 15:00–21:00</p>
+                    </div>
                   </div>
-                  <div className="flex gap-3">
-                    <span className="text-purple-600 font-semibold w-28 flex-shrink-0">Включено:</span>
-                    <span className="text-gray-700">{service.capacity ?? 5} осіб</span>
+                </div>
+
+                {/* Details rows */}
+                <div className="rounded-2xl border border-purple-100 bg-purple-50/40 divide-y divide-purple-100/60">
+                  <div className="flex items-center justify-between px-4 py-3">
+                    <span className="text-sm text-gray-500 flex items-center gap-2">
+                      <span aria-hidden="true">👥</span> Включено гостей
+                    </span>
+                    <span className="text-sm font-semibold text-gray-800">до {service.capacity ?? 5} осіб</span>
                   </div>
-                  <div className="flex gap-3">
-                    <span className="text-purple-600 font-semibold w-28 flex-shrink-0">Додатково:</span>
-                    <span className="text-gray-700">+{service.extra_guest_price_uah ?? 200} ₴/особа</span>
+                  <div className="flex items-center justify-between px-4 py-3">
+                    <span className="text-sm text-gray-500 flex items-center gap-2">
+                      <span aria-hidden="true">➕</span> Додатковий гість
+                    </span>
+                    <span className="text-sm font-semibold text-gray-800">+{service.extra_guest_price_uah ?? 200} ₴/особа</span>
                   </div>
-                  <div className="flex gap-3">
-                    <span className="text-purple-600 font-semibold w-28 flex-shrink-0">Час роботи:</span>
-                    <span className="text-gray-700">{String(service.slot_start_hour ?? 6).padStart(2, '0')}:00–{String(service.slot_end_hour ?? 21).padStart(2, '0')}:00</span>
+                  <div className="flex items-center justify-between px-4 py-3">
+                    <span className="text-sm text-gray-500 flex items-center gap-2">
+                      <span aria-hidden="true">🕐</span> Час роботи
+                    </span>
+                    <span className="text-sm font-semibold text-gray-800">{String(service.slot_start_hour ?? 6).padStart(2, '0')}:00–{String(service.slot_end_hour ?? 21).padStart(2, '0')}:00</span>
                   </div>
-                  <div className="flex gap-3">
-                    <span className="text-purple-600 font-semibold w-28 flex-shrink-0">Сезон:</span>
-                    <span className="text-gray-700">Червень – Липень</span>
+                  <div className="flex items-center justify-between px-4 py-3">
+                    <span className="text-sm text-gray-500 flex items-center gap-2">
+                      <span aria-hidden="true">🪻</span> Сезон
+                    </span>
+                    <span className="text-sm font-semibold text-gray-800">Червень – Липень</span>
                   </div>
                 </div>
 
@@ -255,19 +277,23 @@ export default async function LavenderPage() {
                     href={LAVENDER_INSTAGRAM_URL}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="group relative overflow-hidden rounded-2xl aspect-square ring-1 ring-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                    className="group relative overflow-hidden rounded-2xl aspect-square ring-1 ring-white/15 focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
                     aria-label={`${card.caption} — Instagram`}
                   >
-                    {/* Gradient background */}
-                    <div className={`absolute inset-0 bg-gradient-to-br ${card.gradient} transition-transform duration-300 group-hover:scale-105`} />
+                    {/* Base gradient */}
+                    <div className={`absolute inset-0 bg-gradient-to-br ${card.gradient} transition-transform duration-500 group-hover:scale-[1.06]`} />
+                    {/* Radial accent glow — top-left */}
+                    <div className={`pointer-events-none absolute -top-6 -left-6 w-2/3 h-2/3 rounded-full bg-gradient-radial ${card.accent} blur-2xl`} aria-hidden="true" />
+                    {/* Subtle noise overlay for depth */}
+                    <div className="absolute inset-0 opacity-[0.04] mix-blend-overlay bg-[url('/noise.png')] bg-repeat" aria-hidden="true" />
                     {/* Center emoji */}
                     <div className="absolute inset-0 flex items-center justify-center">
-                      <span className="text-4xl md:text-5xl drop-shadow-sm select-none">{card.emoji}</span>
+                      <span className="text-4xl md:text-5xl filter drop-shadow-lg select-none group-hover:scale-110 transition-transform duration-300">{card.emoji}</span>
                     </div>
-                    {/* Caption overlay */}
-                    <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/60 to-transparent px-3 py-3 translate-y-1 group-hover:translate-y-0 transition-transform duration-200">
+                    {/* Caption bar */}
+                    <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent px-3 py-3 translate-y-0.5 group-hover:translate-y-0 transition-transform duration-200">
                       <p className="text-white text-xs font-semibold leading-snug">{card.caption}</p>
-                      <p className="text-white/65 text-xs mt-0.5">{card.tag}</p>
+                      <p className="text-white/55 text-[10px] mt-0.5 tracking-wide">{card.tag}</p>
                     </div>
                   </a>
                 ))}
