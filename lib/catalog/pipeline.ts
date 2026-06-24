@@ -102,9 +102,13 @@ export interface RecoverOrphanedResult {
 export interface ExtractImagesResult {
   ok: boolean
   applied: boolean
+  limit: number
+  selected: number
   total: number
   missing: number
   extractable: number
+  remainingMissing: number
+  remainingExtractable?: number
   updated: number
   errors: number
   samples: Array<{ sku: string; url: string }>
@@ -1443,59 +1447,121 @@ function extractImageFromRawData(rawData: unknown): string | null {
   return null
 }
 
+const SUPPLIER_IMAGES_DEFAULT_LIMIT = 1000
+const SUPPLIER_IMAGES_MAX_LIMIT = 5000
+const SUPPLIER_IMAGES_CHUNK = 100
+const SUPPLIER_IMAGES_DRY_SAMPLE = 500
+
 export async function extractSupplierImages(opts: { apply?: boolean; limit?: number } = {}): Promise<ExtractImagesResult> {
   const apply = opts.apply === true
-  const rowLimit = opts.limit && opts.limit > 0 ? opts.limit : 200000
+  const rawLimit = opts.limit && opts.limit > 0 ? opts.limit : SUPPLIER_IMAGES_DEFAULT_LIMIT
+  const limit = Math.min(rawLimit, SUPPLIER_IMAGES_MAX_LIMIT)
   const client = getAdminClient()
+
+  console.log(`[supplier-images] start — apply=${apply} limit=${limit}`)
 
   const { count: total } = await client
     .from('supplier_products')
     .select('id', { count: 'exact', head: true })
 
-  const missing = await selectAllRows<{ id: string; supplier_sku: string; raw_data: unknown }>(
-    (from, to) => client.from('supplier_products')
+  const { count: missingCount } = await client
+    .from('supplier_products')
+    .select('id', { count: 'exact', head: true })
+    .is('main_image_url', null)
+
+  const missing = missingCount ?? 0
+
+  if (!apply) {
+    // Dry-run: sample up to SUPPLIER_IMAGES_DRY_SAMPLE rows to estimate extractable rate
+    const { data: sampleRows } = await client
+      .from('supplier_products')
       .select('id, supplier_sku, raw_data')
       .is('main_image_url', null)
       .order('id', { ascending: true })
-      .range(from, to),
-  )
+      .limit(SUPPLIER_IMAGES_DRY_SAMPLE)
 
-  const candidates = missing.slice(0, rowLimit)
+    const sampleCandidates = sampleRows ?? []
+    let sampleExtractable = 0
+    const samples: Array<{ sku: string; url: string }> = []
+    for (const row of sampleCandidates) {
+      const url = extractImageFromRawData(row.raw_data)
+      if (url) {
+        sampleExtractable++
+        if (samples.length < 10) samples.push({ sku: row.supplier_sku, url })
+      }
+    }
+
+    const rate = sampleCandidates.length > 0 ? sampleExtractable / sampleCandidates.length : 0
+    const remainingExtractable = Math.round(missing * rate)
+
+    console.log(`[supplier-images] dry-run: total=${total ?? 0} missing=${missing} sample=${sampleCandidates.length} extractable_in_sample=${sampleExtractable} rate=${(rate * 100).toFixed(1)}%`)
+
+    return {
+      ok: true, applied: false,
+      limit, selected: sampleCandidates.length,
+      total: total ?? 0, missing,
+      extractable: sampleExtractable,
+      remainingMissing: missing,
+      remainingExtractable,
+      updated: 0, errors: 0, samples,
+      message: `DRY RUN — у вибірці ${sampleCandidates.length} рядків: ${sampleExtractable} мають images.zone URL. Оцінка по всіх: ~${remainingExtractable} з ${missing} без зображення.`,
+    }
+  }
+
+  // Apply: load only `limit` rows, update in chunks
+  const { data: candidateRows } = await client
+    .from('supplier_products')
+    .select('id, supplier_sku, raw_data')
+    .is('main_image_url', null)
+    .order('id', { ascending: true })
+    .limit(limit)
+
+  const candidates = candidateRows ?? []
+  console.log(`[supplier-images] apply: loaded ${candidates.length} candidates`)
+
   const extractable: Array<{ id: string; sku: string; url: string }> = []
   for (const row of candidates) {
     const url = extractImageFromRawData(row.raw_data)
     if (url) extractable.push({ id: row.id, sku: row.supplier_sku, url })
   }
 
+  console.log(`[supplier-images] apply: ${extractable.length} extractable from ${candidates.length} loaded`)
+
   const samples = extractable.slice(0, 10).map((r) => ({ sku: r.sku, url: r.url }))
-
-  if (!apply) {
-    return {
-      ok: true, applied: false,
-      total: total ?? 0, missing: missing.length,
-      extractable: extractable.length,
-      updated: 0, errors: 0, samples,
-      message: `DRY RUN — ${extractable.length} з ${missing.length} рядків постачальника без зображення мають images.zone URL у raw_data.`,
-    }
-  }
-
   let updated = 0, errors = 0
-  for (const { id, url } of extractable) {
-    const { error } = await client
-      .from('supplier_products')
-      .update({ main_image_url: url, images: [url], updated_at: new Date().toISOString() })
-      .eq('id', id)
-      .is('main_image_url', null)
-    if (error) errors++
-    else updated++
+
+  for (let i = 0; i < extractable.length; i += SUPPLIER_IMAGES_CHUNK) {
+    const chunk = extractable.slice(i, i + SUPPLIER_IMAGES_CHUNK)
+    for (const { id, url } of chunk) {
+      const { error } = await client
+        .from('supplier_products')
+        .update({ main_image_url: url, images: [url], updated_at: new Date().toISOString() })
+        .eq('id', id)
+        .is('main_image_url', null)
+      if (error) errors++
+      else updated++
+    }
+    console.log(`[supplier-images] progress: ${Math.min(i + SUPPLIER_IMAGES_CHUNK, extractable.length)}/${extractable.length} processed, updated=${updated} errors=${errors}`)
   }
+
+  // HEAD count to report remaining after this run
+  const { count: remainingMissingCount } = await client
+    .from('supplier_products')
+    .select('id', { count: 'exact', head: true })
+    .is('main_image_url', null)
+
+  const remainingMissing = remainingMissingCount ?? 0
+
+  console.log(`[supplier-images] done: updated=${updated} errors=${errors} remainingMissing=${remainingMissing}`)
 
   return {
     ok: errors === 0, applied: true,
-    total: total ?? 0, missing: missing.length,
+    limit, selected: candidates.length,
+    total: total ?? 0, missing,
     extractable: extractable.length,
+    remainingMissing,
     updated, errors, samples,
-    message: `Заповнено зображення для ${updated} рядків постачальника з raw_data${errors > 0 ? `, помилок: ${errors}` : ''}.`,
+    message: `Заповнено зображення для ${updated} рядків постачальника з raw_data. Залишилось без зображення: ${remainingMissing}${errors > 0 ? `. Помилок: ${errors}` : ''}.`,
   }
 }
 
