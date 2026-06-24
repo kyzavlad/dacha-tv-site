@@ -37,6 +37,10 @@ import {
 } from '@/lib/catalog/seo-generate'
 export type { SeoCounts }
 import { generateProductSeoTemplate } from '@/lib/catalog/seo-template'
+import {
+  importProductSeoFromSheet,
+  importCategorySeoFromSheet,
+} from '@/lib/catalog/seo-sheet-import'
 
 // ─── Unified, serialization-safe action result ───────────────────────────────
 // Every pipeline *mutation* returns exactly this shape. Step-specific extras
@@ -311,4 +315,25 @@ export async function generateProductSeoBatchAction(): Promise<ActionResult> {
 
 export async function backfillSeoDescriptionFallbackAction(): Promise<ActionResult> {
   return safeAction('SEO fallback з meta_description', () => backfillSeoDescriptionFallback(), ['/admin/catalog/pipeline', '/catalog'])
+}
+
+// ─── Google Sheets SEO import (safe, dry-run-first) ──────────────────────────
+// Merge human-authored SEO from the two Google Sheets WITHOUT overwriting good
+// content. Dry-run previews counts + samples; apply writes only empty fields
+// (force can override). Never touches locks; every value is validated first.
+
+export async function previewProductSeoSheetAction(): Promise<ActionResult> {
+  return safeAction('Імпорт SEO товарів з Sheets (перевірка)', () => importProductSeoFromSheet({ apply: false }), [])
+}
+
+export async function importProductSeoSheetAction(force = false): Promise<ActionResult> {
+  return safeAction('Імпорт SEO товарів з Sheets', () => importProductSeoFromSheet({ apply: true, force }), ['/admin/catalog/pipeline', '/catalog'])
+}
+
+export async function previewCategorySeoSheetAction(): Promise<ActionResult> {
+  return safeAction('Імпорт SEO категорій з Sheets (перевірка)', () => importCategorySeoFromSheet({ apply: false }), [])
+}
+
+export async function importCategorySeoSheetAction(force = false): Promise<ActionResult> {
+  return safeAction('Імпорт SEO категорій з Sheets', () => importCategorySeoFromSheet({ apply: true, force }), ['/admin/catalog/pipeline', '/catalog'])
 }

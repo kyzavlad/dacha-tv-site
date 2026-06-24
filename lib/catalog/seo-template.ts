@@ -198,9 +198,16 @@ export async function generateProductSeoTemplate(opts?: {
   const limit = Math.min(Math.max(opts?.limit ?? 500, 1), 5000)
   const client = getAdminClient()
 
-  // Candidates: published, not manual-locked, not already AI/manual SEO. We
-  // filter "meta empty" in JS (PostgREST empty-string filters are awkward) so we
-  // never overwrite a non-empty field. Oldest-generated first → runs rotate.
+  // Candidates: published, not manual-locked, not already AI/manual SEO, AND
+  // missing at least one meta field. The `.or(... is.null)` is the key to making
+  // repeated runs PROGRESS: without it the query returned rows that already had
+  // both meta fields filled (just because their seo_generated_at sorted first),
+  // the JS guard then dropped them all, and the limit window produced eligible=0
+  // forever. By excluding fully-filled rows at the DB level, every limited window
+  // is populated with rows that genuinely need work, so successive calls advance
+  // through the backlog. The JS non-empty guard below still protects against the
+  // rare empty-string (non-null) case and never overwrites a filled field.
+  // Oldest-generated first → runs rotate.
   const { data, error } = await client
     .from('catalog_products')
     .select('id, supplier_sku, name_ua, category_slug, price_uah, price_prefix, unit_label, meta_title, meta_description, seo_status')
@@ -209,6 +216,7 @@ export async function generateProductSeoTemplate(opts?: {
     .neq('seo_status', 'ai')
     .neq('seo_status', 'manual')
     .not('name_ua', 'is', null)
+    .or('meta_title.is.null,meta_description.is.null')
     .order('seo_generated_at', { ascending: true, nullsFirst: true })
     .limit(limit)
 

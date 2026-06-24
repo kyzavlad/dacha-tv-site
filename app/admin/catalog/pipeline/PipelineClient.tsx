@@ -20,6 +20,10 @@ import {
   previewProductSeoTemplateAction,
   generateProductSeoTemplateAction,
   backfillSeoDescriptionFallbackAction,
+  previewProductSeoSheetAction,
+  importProductSeoSheetAction,
+  previewCategorySeoSheetAction,
+  importCategorySeoSheetAction,
 } from './actions'
 import type { ActionResult, FeedDiagResult, CatalogDiagnostics, SeoCounts } from './actions'
 import type { PipelineStats } from '@/lib/catalog/pipeline'
@@ -183,7 +187,7 @@ function Banner({ result }: { result: StepResult }) {
   )
   if (result.partial) return (
     <div className={`${base} bg-amber-50 border-amber-200 text-amber-800`}>
-      <div>⚠ {result.message}</div>
+      <div className="whitespace-pre-wrap">⚠ {result.message}</div>
       {warnings}
       {result.unmatchedSample && result.unmatchedSample.length > 0 && (
         <div className="mt-1">Не знайдено: {result.unmatchedSample.slice(0, 5).join(', ')}</div>
@@ -194,8 +198,12 @@ function Banner({ result }: { result: StepResult }) {
   )
   if (result.ok) return (
     <div className={`${base} bg-green-50 border-green-100 text-green-800`}>
-      <div>✓ {result.message}</div>
+      <div className="whitespace-pre-wrap">✓ {result.message}</div>
       {warnings}
+      {result.unmatchedSample && result.unmatchedSample.length > 0 && (
+        <div className="mt-1">Не знайдено: {result.unmatchedSample.slice(0, 5).join(', ')}</div>
+      )}
+      {result.errorGroups && <ErrorGroupsBlock errorGroups={result.errorGroups} />}
       {result.matchSources && Object.keys(result.matchSources).length > 0 && (
         <details className="mt-1">
           <summary className="cursor-pointer select-none font-semibold">Метод збігу</summary>
@@ -494,6 +502,7 @@ export function PipelineClient({
   initialStats,
   initialAutomation,
   productSeoUrl,
+  categorySeoUrl,
   envStatus,
   n8nSeoConfigured,
 }: {
@@ -523,6 +532,10 @@ export function PipelineClient({
   const [rSeoTplPrev, setRSeoTplPrev] = usePersistedResult('pipeline_r_seo_tpl_prev')
   const [rSeoTpl,   setRSeoTpl]   = usePersistedResult('pipeline_r_seo_tpl')
   const [rSeoFb,    setRSeoFb]    = usePersistedResult('pipeline_r_seo_fb')
+  const [rShProdPrev, setRShProdPrev] = usePersistedResult('pipeline_r_sheet_prod_prev')
+  const [rShProd,   setRShProd]   = usePersistedResult('pipeline_r_sheet_prod')
+  const [rShCatPrev, setRShCatPrev] = usePersistedResult('pipeline_r_sheet_cat_prev')
+  const [rShCat,    setRShCat]    = usePersistedResult('pipeline_r_sheet_cat')
 
   // Feed diagnostic lives in component state (hits the live API; not persisted).
   const [rDiag, setRDiag] = useState<FeedDiagResult | { error: string } | null>(null)
@@ -546,8 +559,12 @@ export function PipelineClient({
   const [pSeoTplPrev, sSeoTplPrev] = useTransition()
   const [pSeoTpl,   sSeoTpl]   = useTransition()
   const [pSeoFb,    sSeoFb]    = useTransition()
+  const [pShProdPrev, sShProdPrev] = useTransition()
+  const [pShProd,   sShProd]   = useTransition()
+  const [pShCatPrev, sShCatPrev] = useTransition()
+  const [pShCat,    sShCat]    = useTransition()
 
-  const anyPending = pProducts || pImport || pSeo || pPublish || pBackfill || pRepair || pFinalize || pManual || pDiag || pMigDiag || pSeoCat || pSeoProd || pSeoTplPrev || pSeoTpl || pSeoFb || refreshing
+  const anyPending = pProducts || pImport || pSeo || pPublish || pBackfill || pRepair || pFinalize || pManual || pDiag || pMigDiag || pSeoCat || pSeoProd || pSeoTplPrev || pSeoTpl || pSeoFb || pShProdPrev || pShProd || pShCatPrev || pShCat || refreshing
 
   const loadDiagnostics = useCallback(() => {
     sMigDiag(async () => {
@@ -881,6 +898,66 @@ export function PipelineClient({
         disabled={anyPending || blockSeoGen}
         onRun={() => run(sSeoFb, backfillSeoDescriptionFallbackAction, setRSeoFb)}
         result={rSeoFb}
+        note={blockSeoGen ? migHint('Відсутні SEO-колонки (міграція 054).') : undefined}
+      />
+
+      {/* ════════════════════ F. SEO FROM GOOGLE SHEETS (MERGE) ════════════════════ */}
+      <SectionHeader
+        title="SEO з Google Sheets (безпечний мердж)"
+        hint="Імпорт готового SEO з таблиць за SKU / назвою. Спершу dry-run. Не перезаписує ручні/AI/заповнені поля; кожне значення проходить валідацію."
+      />
+
+      <StepCard
+        title="SEO товарів з Sheets — перевірка (dry-run)"
+        description="Показує, скільки товарів отримають meta_title / meta_description / keywords / опис із таблиці (PRODUCT_SEO_CSV_URL), збіг за SKU. Нічого не записує. Показує зразки та помилки валідації."
+        buttonLabel="▶ Перевірити"
+        pendingLabel="Перевірка…"
+        pending={pShProdPrev}
+        disabled={anyPending || !productSeoUrl || blockSeoGen}
+        onRun={() => run(sShProdPrev, previewProductSeoSheetAction, setRShProdPrev)}
+        result={rShProdPrev}
+        note={blockSeoGen ? migHint('Відсутні SEO-колонки (міграція 054).') : undefined}
+      >
+        <EnvUrlDisplay url={productSeoUrl} label="PRODUCT_SEO_CSV_URL" />
+      </StepCard>
+
+      <StepCard
+        title="SEO товарів з Sheets — застосувати"
+        description="Записує SEO з таблиці у порожні поля (meta_title, meta_description, seo_keywords, опис). Збіг за SKU. Не чіпає ручний замок, AI/manual та вже заповнені поля. Позначає seo_source='sheet'."
+        buttonLabel="▶ Застосувати"
+        buttonClass={BTN_BLUE}
+        pendingLabel="Імпорт…"
+        pending={pShProd}
+        disabled={anyPending || !productSeoUrl || blockSeoGen}
+        onRun={() => run(sShProd, () => importProductSeoSheetAction(false), setRShProd)}
+        result={rShProd}
+        note={blockSeoGen ? migHint('Відсутні SEO-колонки (міграція 054).') : undefined}
+      />
+
+      <StepCard
+        title="SEO категорій з Sheets — перевірка (dry-run)"
+        description="Показує, скільки категорій отримають опис / meta із таблиці (CATEGORY_SEO_CSV_URL), збіг за назвою. Нічого не записує. Незбіги виводяться окремо для звірки."
+        buttonLabel="▶ Перевірити"
+        pendingLabel="Перевірка…"
+        pending={pShCatPrev}
+        disabled={anyPending || !categorySeoUrl || blockSeoGen}
+        onRun={() => run(sShCatPrev, previewCategorySeoSheetAction, setRShCatPrev)}
+        result={rShCatPrev}
+        note={blockSeoGen ? migHint('Відсутні SEO-колонки (міграція 054).') : undefined}
+      >
+        <EnvUrlDisplay url={categorySeoUrl} label="CATEGORY_SEO_CSV_URL" />
+      </StepCard>
+
+      <StepCard
+        title="SEO категорій з Sheets — застосувати"
+        description="Записує опис / meta з таблиці у порожні поля категорій. Збіг за назвою (name_ua / name / slug). Не чіпає ручний замок, AI/manual та заповнені поля. Позначає seo_source='sheet'."
+        buttonLabel="▶ Застосувати"
+        buttonClass={BTN_BLUE}
+        pendingLabel="Імпорт…"
+        pending={pShCat}
+        disabled={anyPending || !categorySeoUrl || blockSeoGen}
+        onRun={() => run(sShCat, () => importCategorySeoSheetAction(false), setRShCat)}
+        result={rShCat}
         note={blockSeoGen ? migHint('Відсутні SEO-колонки (міграція 054).') : undefined}
       />
 
