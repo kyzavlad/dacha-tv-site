@@ -60,6 +60,16 @@ function emptyResult(apply: boolean): SheetImportResult {
 
 const isEmpty = (s: unknown) => !collapse(s as string | null | undefined)
 
+// Case-insensitive key for SKU/ID matching.
+const up = (s: unknown) => String(s ?? '').trim().toUpperCase()
+
+// "S-1875" → "1875", "C-25" → "25"; leaves plain codes unchanged. Handles the
+// common case where the sheet prefixes a supplier code that the catalog stores raw.
+function stripSkuPrefix(s: string): string {
+  const m = (s ?? '').trim().match(/^[A-Za-z]{1,4}[-_ ]?(\d.*)$/)
+  return m ? m[1] : (s ?? '').trim()
+}
+
 // Build the summary line shared by both importers.
 function summarise(kind: 'товарів' | 'категорій', r: SheetImportResult): string {
   const head = r.apply ? 'ЗАСТОСОВАНО' : 'DRY RUN'
@@ -142,33 +152,89 @@ export async function importProductSeoFromSheet(
   const dataRows = allRows.slice(1, 1 + limit)
   r.rows = dataRows.length
 
-  // Collect distinct SKUs from the sheet, then load only those catalog rows
-  // (chunked .in — avoids the PostgREST 1000-row cap of a full-table select).
+  // The sheet may carry both an SKU column (e.g. "S-1875") and a raw supplier ID
+  // column. catalog_products.supplier_sku is whatever the supplier feed used as
+  // its primary code (vendor_code ?? sku ?? article ?? id), so we match by SKU
+  // first, then by the raw ID, then by a prefix-stripped variant, and finally
+  // bridge through supplier_products (supplier_sku → id → supplier_product_id).
+  const idIdx = allRows[0].findIndex((h) => {
+    const n = h.toLowerCase().trim()
+    return n === 'id' || n === 'ід' || n === 'product_id' || n === 'productid'
+  })
+
   const client = getAdminClient()
-  const sheetSkus = [...new Set(dataRows.map((row) => getCol(row, headers, 'sku')).filter(Boolean))]
   type ProdRow = {
-    id: string; supplier_sku: string | null
+    id: string; supplier_sku: string | null; supplier_product_id: string | null
     meta_title: string | null; meta_description: string | null; seo_keywords: string | null
     description_ua: string | null; seo_status: string | null; seo_manual_lock: boolean | null
   }
-  const prodMap = new Map<string, ProdRow>()
-  for (let i = 0; i < sheetSkus.length; i += 300) {
-    const { data } = await client
-      .from('catalog_products')
-      .select('id, supplier_sku, meta_title, meta_description, seo_keywords, description_ua, seo_status, seo_manual_lock')
-      .in('supplier_sku', sheetSkus.slice(i, i + 300))
+
+  // Per-row keys, plus the global candidate set used to load only relevant rows.
+  const rowKeys = dataRows.map((row) => {
+    const sku = getCol(row, headers, 'sku')
+    const id = idIdx >= 0 ? (row[idIdx] ?? '').trim() : ''
+    return { sku, id, skuStripped: stripSkuPrefix(sku), idStripped: stripSkuPrefix(id) }
+  })
+  const candidates = new Set<string>()
+  for (const k of rowKeys) {
+    for (const v of [k.sku, k.id, k.skuStripped, k.idStripped]) if (v) candidates.add(up(v))
+  }
+  const candList = [...candidates]
+
+  // catalog_products by supplier_sku (case-insensitive + prefix-stripped index)
+  const PROD_COLS = 'id, supplier_sku, supplier_product_id, meta_title, meta_description, seo_keywords, description_ua, seo_status, seo_manual_lock'
+  const catBySku = new Map<string, ProdRow>()
+  const catByStripped = new Map<string, ProdRow>()
+  for (let i = 0; i < candList.length; i += 300) {
+    const { data } = await client.from('catalog_products').select(PROD_COLS).in('supplier_sku', candList.slice(i, i + 300))
     for (const p of (data ?? []) as ProdRow[]) {
-      if (p.supplier_sku) prodMap.set(p.supplier_sku, p)
+      if (!p.supplier_sku) continue
+      catBySku.set(up(p.supplier_sku), p)
+      catByStripped.set(up(stripSkuPrefix(p.supplier_sku)), p)
     }
+  }
+
+  // Bridge through supplier_products: supplier_sku → id → catalog.supplier_product_id
+  const supBySku = new Map<string, string>() // upper(supplier_sku) → supplier id
+  for (let i = 0; i < candList.length; i += 300) {
+    const { data } = await client.from('supplier_products').select('id, supplier_sku').in('supplier_sku', candList.slice(i, i + 300))
+    for (const s of (data ?? []) as { id: string; supplier_sku: string | null }[]) {
+      if (s.supplier_sku) supBySku.set(up(s.supplier_sku), s.id)
+    }
+  }
+  const supIds = [...new Set(supBySku.values())]
+  const catBySupplierProductId = new Map<string, ProdRow>()
+  for (let i = 0; i < supIds.length; i += 300) {
+    const { data } = await client.from('catalog_products').select(PROD_COLS).in('supplier_product_id', supIds.slice(i, i + 300))
+    for (const p of (data ?? []) as ProdRow[]) {
+      if (p.supplier_product_id) catBySupplierProductId.set(p.supplier_product_id, p)
+    }
+  }
+
+  const resolveProd = (k: { sku: string; id: string; skuStripped: string; idStripped: string }): ProdRow | undefined => {
+    const direct =
+      (k.sku && catBySku.get(up(k.sku))) ||
+      (k.id && catBySku.get(up(k.id))) ||
+      (k.skuStripped && catByStripped.get(up(k.skuStripped))) ||
+      (k.idStripped && catByStripped.get(up(k.idStripped)))
+    if (direct) return direct
+    for (const key of [k.sku, k.id, k.skuStripped, k.idStripped]) {
+      if (!key) continue
+      const supId = supBySku.get(up(key))
+      if (supId) { const c = catBySupplierProductId.get(supId); if (c) return c }
+    }
+    return undefined
   }
 
   const now = new Date().toISOString()
 
-  for (const row of dataRows) {
-    const sku = getCol(row, headers, 'sku')
+  for (let ri = 0; ri < dataRows.length; ri++) {
+    const row = dataRows[ri]
+    const k = rowKeys[ri]
+    const sku = k.sku || k.id
     if (!sku) { continue }
 
-    const prod = prodMap.get(sku)
+    const prod = resolveProd(k)
     if (!prod) {
       r.unmatched++
       if (r.unmatchedSample.length < 20) r.unmatchedSample.push(sku)
@@ -299,8 +365,11 @@ export async function importCategorySeoFromSheet(
   }
 
   const client = getAdminClient()
+  // NOTE: catalog_categories has NO `name` column — only `name_ua` (migration 039).
+  // Selecting a non-existent column makes PostgREST error the whole query, which
+  // previously left `cats` empty and reported every row as unmatched.
   type CatRow = {
-    id: string; name: string | null; name_ua: string | null; slug: string | null
+    id: string; name_ua: string | null; slug: string | null
     supplier_category_id: string | null
     meta_title: string | null; meta_description: string | null; seo_keywords: string | null
     description_ua: string | null; description: string | null
@@ -312,7 +381,7 @@ export async function importCategorySeoFromSheet(
   for (let from = 0; ; from += 1000) {
     const { data, error } = await client
       .from('catalog_categories')
-      .select('id, name, name_ua, slug, supplier_category_id, meta_title, meta_description, seo_keywords, description_ua, description, seo_status, seo_manual_lock')
+      .select('id, name_ua, slug, supplier_category_id, meta_title, meta_description, seo_keywords, description_ua, description, seo_status, seo_manual_lock')
       .order('id', { ascending: true })
       .range(from, from + 999)
     if (error || !data || data.length === 0) break
@@ -325,15 +394,18 @@ export async function importCategorySeoFromSheet(
 
   const norm = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim()
   const byNameUa = new Map(cats.map((c) => [norm(c.name_ua ?? ''), c]))
-  const byName = new Map(cats.map((c) => [norm(c.name ?? ''), c]))
   const bySlug = new Map(cats.map((c) => [c.slug ?? '', c]))
-  const byAutoSlug = new Map(cats.map((c) => [autoSlug(c.name_ua ?? c.name ?? ''), c]))
+  const byAutoSlug = new Map(cats.map((c) => [autoSlug(c.name_ua ?? ''), c]))
 
-  // supplier name → catalog row (via supplier_category_id)
+  // Supplier-side names → catalog row. catalog_categories.supplier_category_id
+  // matches supplier_categories.supplier_id (text), per migration 039. The sheet
+  // often uses the supplier's source-language name (e.g. "SDS-Max", "Акб"), which
+  // is exactly what supplier_categories.name carries — so this is the primary
+  // bridge when name_ua (Ukrainian) does not line up with the sheet.
   const catBySupplierId = new Map(cats.filter((c) => c.supplier_category_id).map((c) => [c.supplier_category_id as string, c]))
   const bySupplierName = new Map<string, CatRow>()
   for (const sc of supplierCats ?? []) {
-    const cat = catBySupplierId.get(sc.supplier_id as string) ?? catBySupplierId.get(sc.id as string)
+    const cat = (sc.supplier_id != null ? catBySupplierId.get(sc.supplier_id as string) : undefined) ?? catBySupplierId.get(sc.id as string)
     if (!cat) continue
     if (sc.name) bySupplierName.set(norm(sc.name as string), cat)
     if (sc.name_ua) bySupplierName.set(norm(sc.name_ua as string), cat)
@@ -350,7 +422,6 @@ export async function importCategorySeoFromSheet(
     const slugFromName = nameRaw.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
     const cat =
       byNameUa.get(norm(nameRaw)) ??
-      byName.get(norm(nameRaw)) ??
       bySupplierName.get(norm(nameRaw)) ??
       bySlug.get(slugFromName) ??
       byAutoSlug.get(autoSlug(nameRaw))
