@@ -74,6 +74,7 @@ export interface SyncProductsResult {
   skipped: number
   errors: number
   errorGroups: Record<string, number>
+  duplicateSlugFixed?: number   // rows where slug was regenerated to avoid 23505
   message: string
   // Populated on dry-run only
   wouldInsert?: number
@@ -413,13 +414,22 @@ export async function syncProductsToCatalog(
     }
   }
 
-  // Check which SKUs already exist in catalog_products
+  // Check which SKUs already exist in catalog_products.
+  // Chunked to 500 SKUs per request — a single .in() over 5000 SKUs generates
+  // a URL that exceeds PostgREST limits and the response is capped at 1000 rows,
+  // both causing incorrect "not existing" false-negatives.
   const skus = supplierProducts.map((p) => p.supplier_sku as string)
-  const { data: existingRows } = await client
-    .from('catalog_products')
-    .select('supplier_sku')
-    .in('supplier_sku', skus)
-  const existingSkus = new Set((existingRows ?? []).map((r) => r.supplier_sku as string))
+  const existingSkus = new Set<string>()
+  const SKU_CHUNK = 500
+  for (let i = 0; i < skus.length; i += SKU_CHUNK) {
+    const { data: existingChunk } = await client
+      .from('catalog_products')
+      .select('supplier_sku')
+      .in('supplier_sku', skus.slice(i, i + SKU_CHUNK))
+    for (const r of existingChunk ?? []) {
+      existingSkus.add(r.supplier_sku as string)
+    }
+  }
 
   // Load ALL existing slugs — paginated past the PostgREST 1000-row cap.
   // A plain .select('slug') silently returns only the first 1000 rows, making
@@ -503,6 +513,7 @@ export async function syncProductsToCatalog(
       skipped: 0,
       errors: 0,
       errorGroups: {},
+      duplicateSlugFixed: 0,
       message: `DRY RUN — додати ${toInsert.length}, оновити ${toUpdatePrice.length}. Черга: ${backlogImportable ?? '?'} готових`,
       wouldInsert: toInsert.length,
       wouldUpdate: toUpdatePrice.length,
@@ -511,7 +522,7 @@ export async function syncProductsToCatalog(
     }
   }
 
-  let inserted = 0, updated = 0
+  let inserted = 0, updated = 0, duplicateSlugFixed = 0
   const errors: string[] = []
   const CHUNK = 200
 
@@ -521,34 +532,58 @@ export async function syncProductsToCatalog(
   // Rows whose insert failed are NOT approved so they stay in the queue and retry.
   const approvedIds = new Set<string>()
 
-  // Insert new products — per-row fallback when a chunk fails so one bad slug
-  // cannot abort 200 rows. The slug generation above prevents most collisions;
-  // this fallback handles any residual edge case.
+  // Insert new products. Chunk upsert first; on any error fall back to per-row
+  // so one bad row cannot abort 200 good ones.
+  // Per-row fallback also handles residual 23505 slug collisions (e.g. from a
+  // concurrent import or a missed slug in selectAllRows) by regenerating the slug
+  // with numeric suffixes up to 10 attempts before giving up on that row.
   for (let i = 0; i < toInsert.length; i += CHUNK) {
     const chunk = toInsert.slice(i, i + CHUNK)
     const { error } = await client
       .from('catalog_products')
       .upsert(chunk, { onConflict: 'supplier_sku', ignoreDuplicates: true })
-    if (error) {
-      // Isolate the failing row(s); save the rest individually.
-      for (const row of chunk) {
-        const { error: e2 } = await client
-          .from('catalog_products')
-          .upsert([row], { onConflict: 'supplier_sku', ignoreDuplicates: true })
-        if (e2) {
-          errors.push(e2.message)
-        } else {
-          inserted++
-          const spId = skuToSpId.get(row.supplier_sku as string)
-          if (spId) approvedIds.add(spId)
-        }
-      }
-    } else {
+    if (!error) {
       inserted += chunk.length
       for (const row of chunk) {
         const spId = skuToSpId.get(row.supplier_sku as string)
         if (spId) approvedIds.add(spId)
       }
+      continue
+    }
+
+    // Chunk failed — isolate and retry each row, handling slug collisions.
+    for (const row of chunk) {
+      const sku = row.supplier_sku as string
+      let currentRow = { ...row }
+      let slugFixed = false
+      let rowOk = false
+      let rowErr = ''
+
+      for (let attempt = 0; attempt <= 10; attempt++) {
+        const { error: e2 } = await client
+          .from('catalog_products')
+          .upsert([currentRow], { onConflict: 'supplier_sku', ignoreDuplicates: true })
+        if (!e2) {
+          inserted++
+          rowOk = true
+          if (slugFixed) duplicateSlugFixed++
+          const spId = skuToSpId.get(sku)
+          if (spId) approvedIds.add(spId)
+          break
+        }
+        const errCode = (e2 as { code?: string }).code
+        if (errCode === '23505' && e2.message.includes('slug')) {
+          // Slug collision — regenerate using SKU as the base with numeric suffix.
+          // The SKU-based slug is stable across retries and avoids the collision.
+          const baseSlug = autoSlug(sku) || sku.toLowerCase().replace(/[^a-z0-9]/g, '-')
+          currentRow = { ...currentRow, slug: `${baseSlug}-${attempt + 2}` }
+          slugFixed = true
+        } else {
+          rowErr = e2.message
+          break
+        }
+      }
+      if (!rowOk && rowErr) errors.push(rowErr)
     }
   }
 
@@ -581,11 +616,16 @@ export async function syncProductsToCatalog(
   for (const e of errors) errorGroups[e] = (errorGroups[e] ?? 0) + 1
 
   if (errors.length) {
-    return { ok: false, inserted, updated, skipped: 0, errors: errors.length, errorGroups, message: `${errors.length} DB помилок: ${errors[0]}` }
+    return {
+      ok: false, inserted, updated, skipped: 0, errors: errors.length, errorGroups,
+      duplicateSlugFixed,
+      message: `${errors.length} DB помилок: ${errors[0]}`,
+    }
   }
   return {
     ok: true, inserted, updated, skipped: 0, errors: 0, errorGroups: {},
-    message: `Додано ${inserted} нових товарів, оновлено ціни у ${updated} існуючих`,
+    duplicateSlugFixed,
+    message: `Додано ${inserted} нових товарів, оновлено ціни у ${updated} існуючих${duplicateSlugFixed > 0 ? `, виправлено ${duplicateSlugFixed} slug-колізій` : ''}`,
   }
 }
 

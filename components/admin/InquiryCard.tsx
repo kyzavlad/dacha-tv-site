@@ -126,16 +126,37 @@ export function InquiryCard({ inquiry }: InquiryCardProps) {
     }
   }
 
-  // Show the raw supplier response for hard failures AND for unconfirmed sends
-  // (HTTP 200 with no order_id) so the admin can verify in Personal.cab.
-  const supplierError =
+  // Extract a human-readable message from the supplier API response object.
+  // The raw JSON is kept available in a collapsed <details> block.
+  function extractSupplierMessage(response: unknown): string {
+    if (!response) return 'Відповідь відсутня'
+    if (typeof response === 'string') return response.length > 400 ? response.slice(0, 400) + '…' : response
+    if (typeof response === 'object' && response !== null) {
+      const r = response as Record<string, unknown>
+      for (const key of ['error', 'message', 'Message', 'description', 'Description', 'result', 'Error']) {
+        const val = r[key]
+        if (typeof val === 'string' && val.trim()) return val.length > 400 ? val.slice(0, 400) + '…' : val
+      }
+      if (typeof r.result === 'object' && r.result !== null) {
+        const nested = r.result as Record<string, unknown>
+        for (const key of ['message', 'error', 'description']) {
+          const val = nested[key]
+          if (typeof val === 'string' && val.trim()) return val
+        }
+      }
+    }
+    return 'Дивіться технічні деталі нижче'
+  }
+
+  const supplierErrorRaw =
     order &&
     (order.supplier_status === 'failed' || order.supplier_status === 'sent_unconfirmed') &&
     order.supplier_response
       ? (typeof order.supplier_response === 'string'
           ? order.supplier_response
-          : JSON.stringify(order.supplier_response))
+          : JSON.stringify(order.supplier_response, null, 2))
       : null
+  const supplierError = supplierErrorRaw
 
   // An order that was accepted by the supplier API can still later become
   // "Не выполнен" / cancelled in Personal.cab. The admin must verify the final
@@ -207,7 +228,20 @@ export function InquiryCard({ inquiry }: InquiryCardProps) {
             </p>
           )}
           {supplierError && (
-            <p className="text-xs text-red-600 font-mono break-all bg-red-50 rounded-lg px-3 py-2">{supplierError}</p>
+            <div className="space-y-1">
+              <div className="text-xs bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+                <p className="font-medium text-red-700 mb-0.5">
+                  {order.supplier_status === 'failed' ? '❌ Помилка постачальника' : '⚠ Відправлено без підтвердження'}
+                </p>
+                <p className="text-red-600">{extractSupplierMessage(order.supplier_response)}</p>
+              </div>
+              <details className="text-xs">
+                <summary className="cursor-pointer select-none text-bark/30 hover:text-bark/50 px-1 py-0.5 list-none">
+                  ▸ Технічні деталі (raw)
+                </summary>
+                <pre className="mt-1 p-2 bg-gray-50 rounded-lg text-bark/50 overflow-x-auto text-[10px] whitespace-pre-wrap break-all leading-relaxed">{supplierError}</pre>
+              </details>
+            </div>
           )}
           {supplierNeedsCheck && (
             <p className="text-xs text-bark/60 bg-honey-50 rounded-lg px-3 py-2">
