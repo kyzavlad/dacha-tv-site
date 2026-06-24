@@ -52,6 +52,21 @@ export function trimToWord(s: string, maxLen: number): string {
   return cut.replace(/[\s,;:.\-–—«»"']+$/, '').trim()
 }
 
+// Returns the cleaned name if it looks like a real human-readable label, or
+// null if it looks like an auto-generated technical slug (e.g. 'cat-38853',
+// 'cat-185', purely numeric IDs). This prevents raw slugs from leaking into
+// published meta copy.
+function resolveHumanCatName(raw: string | null | undefined): string | null {
+  const s = clean(raw)
+  if (!s) return null
+  // Auto-generated numeric patterns: cat-NNN, cat_NNN, catNNN, or bare integers
+  if (/^cat[-_]?\d+$/i.test(s)) return null
+  if (/^\d+$/.test(s)) return null
+  // Very short all-ASCII tokens without any Cyrillic letters are likely slug IDs
+  if (s.length <= 6 && !/[а-яіїєґА-ЯІЇЄҐ]/.test(s)) return null
+  return s
+}
+
 // meta_title: "{name} — {category} | Дача TV", trimmed to ~60 chars. Drops the
 // category, then trims the name, to keep the brand suffix intact.
 export function buildMetaTitle(name: string, category: string | null): string {
@@ -73,9 +88,14 @@ export function buildMetaTitle(name: string, category: string | null): string {
 // meta_description: 140–160 chars, natural Ukrainian. Prefers a clean supplier
 // short description as the opener; otherwise composes from name/category/price.
 // Pads with neutral clauses (greedy best-fit) to land inside the window.
+//
+// category        — human-readable Ukrainian name (used with «» quotes)
+// categoryPhrase  — pre-composed phrase like 'у каталозі Дача TV' used when
+//                   the human category name is unknown (no «» quotes)
 export function buildMetaDescription(opts: {
   name: string
   category: string | null
+  categoryPhrase?: string | null
   price: string | null   // pre-formatted, e.g. "1 200 грн" or "від 100 грн/м²"
   lead?: string | null    // optional supplier short description
 }): string {
@@ -87,7 +107,15 @@ export function buildMetaDescription(opts: {
   if (lead && lead.length >= 40) {
     base = trimToWord(lead, DESC_MAX).replace(/[.!?]+$/, '') + '.'
   } else {
-    const parts = [cat ? `${n} у категорії «${cat}».` : `${n}.`]
+    let opener: string
+    if (cat) {
+      opener = `${n} у категорії «${cat}».`
+    } else if (opts.categoryPhrase) {
+      opener = `${n} ${opts.categoryPhrase}.`
+    } else {
+      opener = `${n}.`
+    }
+    const parts = [opener]
     if (opts.price) parts.push(`Ціна ${opts.price}.`)
     base = parts.join(' ')
   }
@@ -193,16 +221,23 @@ export async function generateProductSeoTemplate(opts?: {
     return { ok: true, apply, scanned: 0, eligible: 0, updated: 0, errors: 0, samples: [], message: 'Немає опублікованих товарів без SEO.' }
   }
 
-  // Resolve category slug → human name for the title/description.
+  // Resolve category slug → human display name for titles/descriptions.
+  // Prefer name_ua → name → nothing. Reject names that are slug-like
+  // (e.g. 'cat-38853', 'cat-185') — they're auto-generated IDs, not
+  // human-readable Ukrainian labels.
   const slugs = [...new Set(rows.map((r) => r.category_slug).filter(Boolean))] as string[]
   const catName = new Map<string, string>()
   for (let i = 0; i < slugs.length; i += 300) {
     const { data: cats } = await client
       .from('catalog_categories')
-      .select('slug, name_ua')
+      .select('slug, name_ua, name')
       .in('slug', slugs.slice(i, i + 300))
     for (const c of cats ?? []) {
-      if (c.slug && c.name_ua) catName.set(c.slug as string, c.name_ua as string)
+      if (!c.slug) continue
+      const label =
+        resolveHumanCatName(c.name_ua as string | null) ??
+        resolveHumanCatName(c.name as string | null)
+      if (label) catName.set(c.slug as string, label)
     }
   }
 
@@ -227,7 +262,15 @@ export async function generateProductSeoTemplate(opts?: {
   for (const r of rows) {
     const name = clean(r.name_ua)
     if (!name) continue
+
+    // Human category name — null when the slug had no matching human label
+    // (e.g. auto-generated slugs like cat-38853). In that case we fall back
+    // to a natural Ukrainian phrase so nothing slug-like ever leaks into copy.
     const category = r.category_slug ? catName.get(r.category_slug) ?? null : null
+    const categoryPhrase = !category && r.category_slug
+      ? 'у каталозі Дача TV'
+      : null
+
     const needTitle = !clean(r.meta_title)
     const needDesc = !clean(r.meta_description)
     if (!needTitle && !needDesc) continue
@@ -238,13 +281,15 @@ export async function generateProductSeoTemplate(opts?: {
       upd.meta_description = buildMetaDescription({
         name,
         category,
+        categoryPhrase,
         price: formatPrice(r),
         lead: r.supplier_sku ? supplierLead.get(r.supplier_sku) ?? null : null,
       })
     }
     updates.push(upd)
 
-    if (samples.length < 8) {
+    // 15 samples so the dry-run shows enough variety to confirm no cat- leaks
+    if (samples.length < 15) {
       samples.push({
         sku: r.supplier_sku,
         meta_title: upd.meta_title,
