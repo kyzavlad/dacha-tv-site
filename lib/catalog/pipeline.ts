@@ -1528,18 +1528,26 @@ export async function extractSupplierImages(opts: { apply?: boolean; limit?: num
   const effectiveLimit = limit
   const client = getAdminClient()
 
-  console.log(`[supplier-images] start — apply=${apply} limit=${limit} effectiveLimit=${effectiveLimit}`)
+  console.log(`[supplier-images] start — apply=${apply} limit=${limit}`)
 
-  const { count: total } = await client
+  const { count: totalCount } = await client
     .from('supplier_products')
     .select('id', { count: 'exact', head: true })
 
-  const { count: missingCount } = await client
+  // Derive missing as total − withImage. The NOT NULL count is O(k) where k is
+  // the number of rows that already have an image (often 0 early in a backfill),
+  // making it fast even without an index. Counting IS NULL on a 200k-row column
+  // with no index is a full sequential scan and can time out on serverless.
+  const { count: withImageCount } = await client
     .from('supplier_products')
     .select('id', { count: 'exact', head: true })
-    .is('main_image_url', null)
+    .not('main_image_url', 'is', null)
 
-  const missing = missingCount ?? 0
+  const total = totalCount ?? 0
+  const withImage = withImageCount ?? 0
+  const missing = Math.max(0, total - withImage)
+
+  console.log(`[supplier-images] counts: total=${total} withImage=${withImage} missing=${missing}`)
 
   if (!apply) {
     // Dry-run: sample up to SUPPLIER_IMAGES_DRY_SAMPLE rows to estimate extractable rate
@@ -1564,17 +1572,17 @@ export async function extractSupplierImages(opts: { apply?: boolean; limit?: num
     const rate = sampleCandidates.length > 0 ? sampleExtractable / sampleCandidates.length : 0
     const remainingExtractable = Math.round(missing * rate)
 
-    console.log(`[supplier-images] dry-run: total=${total ?? 0} missing=${missing} sample=${sampleCandidates.length} extractable_in_sample=${sampleExtractable} rate=${(rate * 100).toFixed(1)}%`)
+    console.log(`[supplier-images] dry-run: sample=${sampleCandidates.length} extractable_in_sample=${sampleExtractable} rate=${(rate * 100).toFixed(1)}% est_extractable=${remainingExtractable}`)
 
     return {
       ok: true, applied: false,
       limit, effectiveLimit, selected: sampleCandidates.length,
-      total: total ?? 0, missing,
+      total, missing,
       extractable: sampleExtractable,
       remainingMissing: missing,
       remainingExtractable,
       updated: 0, errors: 0, samples,
-      message: `DRY RUN — у вибірці ${sampleCandidates.length} рядків: ${sampleExtractable} мають images.zone URL. Оцінка по всіх: ~${remainingExtractable} з ${missing} без зображення.`,
+      message: `DRY RUN — всього ${total}, без зображення ~${missing}. У вибірці ${sampleCandidates.length}: ${sampleExtractable} мають images.zone URL (~${(rate * 100).toFixed(0)}%). Оцінка extractable: ~${remainingExtractable}.`,
     }
   }
 
@@ -1614,24 +1622,24 @@ export async function extractSupplierImages(opts: { apply?: boolean; limit?: num
     console.log(`[supplier-images] progress: ${Math.min(i + SUPPLIER_IMAGES_CHUNK, extractable.length)}/${extractable.length} processed, updated=${updated} errors=${errors}`)
   }
 
-  // HEAD count to report remaining after this run
-  const { count: remainingMissingCount } = await client
+  // Post-apply NOT NULL count → derive remaining (fast: growing from 0 upward)
+  const { count: withImageAfterCount } = await client
     .from('supplier_products')
     .select('id', { count: 'exact', head: true })
-    .is('main_image_url', null)
+    .not('main_image_url', 'is', null)
+  const withImageAfter = withImageAfterCount ?? (withImage + updated)
+  const remainingMissing = Math.max(0, total - withImageAfter)
 
-  const remainingMissing = remainingMissingCount ?? 0
-
-  console.log(`[supplier-images] done: updated=${updated} errors=${errors} remainingMissing=${remainingMissing}`)
+  console.log(`[supplier-images] done: updated=${updated} errors=${errors} withImageAfter=${withImageAfter} remainingMissing=${remainingMissing}`)
 
   return {
     ok: errors === 0, applied: true,
     limit, effectiveLimit, selected: candidates.length,
-    total: total ?? 0, missing,
+    total, missing,
     extractable: extractable.length,
     remainingMissing,
     updated, errors, samples,
-    message: `Заповнено зображення для ${updated} рядків постачальника з raw_data. Залишилось без зображення: ${remainingMissing}${errors > 0 ? `. Помилок: ${errors}` : ''}.`,
+    message: `Заповнено зображення для ${updated} рядків. Залишилось без зображення: ~${remainingMissing}${errors > 0 ? `. Помилок: ${errors}` : ''}.`,
   }
 }
 
