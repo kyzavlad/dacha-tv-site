@@ -5,14 +5,22 @@ interface PaginationProps {
   page: number
   total: number
   baseHref: string  // e.g. /catalog/electronics — ?page=N appended
+  // Extra query params to preserve across page links (e.g. { sort: 'price_asc' }).
+  params?: Record<string, string | undefined>
 }
 
-export function Pagination({ page, total, baseHref }: PaginationProps) {
+export function Pagination({ page, total, baseHref, params }: PaginationProps) {
   const totalPages = Math.ceil(total / CATALOG_PAGE_SIZE)
   if (totalPages <= 1) return null
 
   function pageUrl(p: number) {
-    return p === 1 ? baseHref : `${baseHref}?page=${p}`
+    const sp = new URLSearchParams()
+    for (const [k, v] of Object.entries(params ?? {})) {
+      if (v) sp.set(k, v)
+    }
+    if (p > 1) sp.set('page', String(p))
+    const qs = sp.toString()
+    return qs ? `${baseHref}?${qs}` : baseHref
   }
 
   // Show at most 7 page numbers: first, last, current ±2, with ellipsis

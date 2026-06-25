@@ -1,15 +1,16 @@
 export const dynamic = 'force-dynamic'
 import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
-import { getCategoryBySlug, getPublishedProductsByCategory, CATALOG_PAGE_SIZE, categoryDisplayName } from '@/lib/supabase/catalog'
+import { getCategoryBySlug, getPublishedProductsByCategory, CATALOG_PAGE_SIZE, categoryDisplayName, normalizeSort } from '@/lib/supabase/catalog'
 import { CatalogProductCard } from '@/components/catalog/CatalogProductCard'
 import { Breadcrumb } from '@/components/catalog/Breadcrumb'
 import { Pagination } from '@/components/catalog/Pagination'
+import { CatalogSortSelect } from '@/components/catalog/CatalogSortSelect'
 import { buildSocialMetadata, stripBrand } from '@/lib/seo'
 
 interface Props {
   params: Promise<{ category: string }>
-  searchParams: Promise<{ page?: string }>
+  searchParams: Promise<{ page?: string; sort?: string }>
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
@@ -18,8 +19,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   if (!cat) return { title: 'Категорія не знайдена' }
 
   const displayName = categoryDisplayName(cat.name_ua)
-  const bareTitle = stripBrand(cat.meta_title) || displayName
-  const description = cat.meta_description || cat.description || `Каталог товарів категорії «${displayName}». Замовляйте з доставкою по Україні.`
+  const bareTitle = stripBrand(cat.seo_title || cat.meta_title) || displayName
+  const description = cat.seo_description || cat.meta_description || cat.description || `Каталог товарів категорії «${displayName}». Замовляйте з доставкою по Україні.`
 
   return buildSocialMetadata({
     bareTitle,
@@ -32,18 +33,23 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 export default async function CategoryPage({ params, searchParams }: Props) {
   const { category: slug } = await params
-  const { page: pageStr } = await searchParams
+  const { page: pageStr, sort: sortStr } = await searchParams
   const page = Math.max(1, parseInt(pageStr ?? '1', 10) || 1)
+  const sort = normalizeSort(sortStr)
 
   const [cat, { products, total }] = await Promise.all([
     getCategoryBySlug(slug).catch(() => null),
-    getPublishedProductsByCategory(slug, page).catch(() => ({ products: [], total: 0 })),
+    getPublishedProductsByCategory(slug, page, sort).catch(() => ({ products: [], total: 0 })),
   ])
 
   if (!cat) notFound()
 
   const displayName = categoryDisplayName(cat.name_ua)
   const totalPages = Math.ceil(total / CATALOG_PAGE_SIZE)
+  // Short intro (description) above the grid; longer SEO body (description_ua)
+  // below it. Both are DB-driven and only render when present — never spammy.
+  const intro = (cat.description ?? '').trim()
+  const seoBody = (cat.description_ua ?? '').trim()
 
   return (
     <div className="bg-cream min-h-screen">
@@ -57,8 +63,12 @@ export default async function CategoryPage({ params, searchParams }: Props) {
           <h1 className="font-serif text-3xl md:text-4xl font-bold text-bark mt-4 mb-2">
             {displayName}
           </h1>
-          {cat.description && (
-            <p className="text-gray-500 text-base max-w-2xl">{cat.description}</p>
+          {intro ? (
+            <p className="text-gray-500 text-base max-w-2xl">{intro}</p>
+          ) : (
+            <p className="text-gray-500 text-base max-w-2xl">
+              {displayName} — замовляйте з доставкою по Україні. Оплата після підтвердження замовлення.
+            </p>
           )}
           {total > 0 && (
             <p className="text-xs text-gray-400 mt-2">{total} товарів{page > 1 ? ` · сторінка ${page} з ${totalPages}` : ''}</p>
@@ -73,13 +83,27 @@ export default async function CategoryPage({ params, searchParams }: Props) {
           </div>
         ) : (
           <>
+            {total > CATALOG_PAGE_SIZE / 4 && (
+              <div className="flex justify-end mb-6">
+                <CatalogSortSelect value={sort} />
+              </div>
+            )}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
               {products.map((product) => (
                 <CatalogProductCard key={product.id} product={product} categorySlug={slug} />
               ))}
             </div>
-            <Pagination page={page} total={total} baseHref={`/catalog/${slug}`} />
+            <Pagination page={page} total={total} baseHref={`/catalog/${slug}`} params={{ sort: sort === 'featured' ? undefined : sort }} />
           </>
+        )}
+
+        {seoBody && seoBody !== intro && (
+          <section className="mt-14 border-t border-gray-100 pt-10">
+            <h2 className="font-serif text-xl font-bold text-bark mb-3">Про категорію «{displayName}»</h2>
+            <div className="prose prose-sm max-w-3xl text-gray-600 leading-relaxed whitespace-pre-line">
+              {seoBody}
+            </div>
+          </section>
         )}
       </div>
     </div>

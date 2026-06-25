@@ -1,12 +1,13 @@
 export const dynamic = 'force-dynamic'
 import type { Metadata } from 'next'
-import { getPublishedCatalogProducts, CATALOG_PAGE_SIZE } from '@/lib/supabase/catalog'
+import { getPublishedCatalogProducts, CATALOG_PAGE_SIZE, normalizeSort } from '@/lib/supabase/catalog'
 import { CatalogProductCard } from '@/components/catalog/CatalogProductCard'
 import { Breadcrumb } from '@/components/catalog/Breadcrumb'
 import { Pagination } from '@/components/catalog/Pagination'
+import { CatalogSortSelect } from '@/components/catalog/CatalogSortSelect'
 
 interface Props {
-  searchParams: Promise<{ page?: string }>
+  searchParams: Promise<{ page?: string; sort?: string }>
 }
 
 export const metadata: Metadata = {
@@ -16,10 +17,11 @@ export const metadata: Metadata = {
 }
 
 export default async function AllCatalogProductsPage({ searchParams }: Props) {
-  const { page: pageStr } = await searchParams
+  const { page: pageStr, sort: sortStr } = await searchParams
   const page = Math.max(1, parseInt(pageStr ?? '1', 10) || 1)
+  const sort = normalizeSort(sortStr)
 
-  const { products, total } = await getPublishedCatalogProducts(page).catch(() => ({ products: [], total: 0 }))
+  const { products, total } = await getPublishedCatalogProducts(page, sort).catch(() => ({ products: [], total: 0 }))
   const totalPages = Math.ceil(total / CATALOG_PAGE_SIZE)
 
   return (
@@ -49,6 +51,9 @@ export default async function AllCatalogProductsPage({ searchParams }: Props) {
           </div>
         ) : (
           <>
+            <div className="flex justify-end mb-6">
+              <CatalogSortSelect value={sort} />
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
               {products.map((product) => (
                 <CatalogProductCard
@@ -58,7 +63,7 @@ export default async function AllCatalogProductsPage({ searchParams }: Props) {
                 />
               ))}
             </div>
-            <Pagination page={page} total={total} baseHref="/catalog/all" />
+            <Pagination page={page} total={total} baseHref="/catalog/all" params={{ sort: sort === 'featured' ? undefined : sort }} />
           </>
         )}
       </div>

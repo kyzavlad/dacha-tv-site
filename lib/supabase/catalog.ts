@@ -129,24 +129,85 @@ export async function getCategoryBySlug(slug: string): Promise<CatalogCategory |
   return (data ?? null) as CatalogCategory | null
 }
 
+// ─── Catalog sorting ─────────────────────────────────────────────────────────
+// URL-driven sort for category / all / search listings. Plain query-param so the
+// listing pages stay server-rendered; only a tiny <select> navigates on change.
+export type CatalogSort = 'featured' | 'price_asc' | 'price_desc' | 'newest' | 'name'
+
+export const CATALOG_SORTS: { value: CatalogSort; label: string }[] = [
+  { value: 'featured', label: 'Рекомендовані' },
+  { value: 'price_asc', label: 'Спочатку дешевші' },
+  { value: 'price_desc', label: 'Спочатку дорожчі' },
+  { value: 'newest', label: 'Новинки' },
+  { value: 'name', label: 'За назвою (А–Я)' },
+]
+
+export function normalizeSort(raw: string | null | undefined): CatalogSort {
+  const v = (raw ?? '').trim()
+  return CATALOG_SORTS.some((s) => s.value === v) ? (v as CatalogSort) : 'featured'
+}
+
+// Apply the chosen sort to a catalog_products query builder. Typed as the
+// PostgREST query builder via the parameter's own type so we keep full chaining
+// type-safety without naming the (awkward) supabase-js builder type.
+function applyCatalogSort<Q extends {
+  order(col: string, opts?: { ascending?: boolean; nullsFirst?: boolean }): Q
+}>(query: Q, sort: CatalogSort): Q {
+  switch (sort) {
+    case 'price_asc':
+      return query.order('price_uah', { ascending: true, nullsFirst: false }).order('name_ua', { ascending: true })
+    case 'price_desc':
+      return query.order('price_uah', { ascending: false, nullsFirst: false }).order('name_ua', { ascending: true })
+    case 'newest':
+      return query.order('created_at', { ascending: false })
+    case 'name':
+      return query.order('name_ua', { ascending: true })
+    case 'featured':
+    default:
+      return query
+        .order('is_featured', { ascending: false })
+        .order('display_order', { ascending: true })
+        .order('name_ua', { ascending: true })
+  }
+}
+
 export async function getPublishedProductsByCategory(
   categorySlug: string,
   page: number,
+  sort: CatalogSort = 'featured',
 ): Promise<{ products: CatalogProduct[]; total: number }> {
   const client = getClient()
   if (!client) return { products: [], total: 0 }
   const from = (page - 1) * CATALOG_PAGE_SIZE
   const to = from + CATALOG_PAGE_SIZE - 1
-  const { data, count } = await client
+  const base = client
     .from('catalog_products')
     .select('*', { count: 'exact' })
     .eq('status', 'published')
     .eq('category_slug', categorySlug)
+  const { data, count } = await applyCatalogSort(base, sort).range(from, to)
+  return { products: (data ?? []) as CatalogProduct[], total: count ?? 0 }
+}
+
+// Up to `limit` other published products in the same category, for the
+// "схожі товари" rail on a product page. Cheap: single indexed query, no counts.
+export async function getRelatedCatalogProducts(
+  categorySlug: string | null,
+  excludeSlug: string,
+  limit = 4,
+): Promise<CatalogProduct[]> {
+  const client = getClient()
+  if (!client || !categorySlug || NATURAL_CATEGORY_SLUGS.includes(categorySlug)) return []
+  const { data } = await client
+    .from('catalog_products')
+    .select('*')
+    .eq('status', 'published')
+    .eq('category_slug', categorySlug)
+    .neq('slug', excludeSlug)
     .order('is_featured', { ascending: false })
     .order('display_order', { ascending: true })
-    .order('name_ua', { ascending: true })
-    .range(from, to)
-  return { products: (data ?? []) as CatalogProduct[], total: count ?? 0 }
+    .limit(limit)
+  return (data ?? []) as CatalogProduct[]
 }
 
 export async function getPublishedProductBySlug(
@@ -193,20 +254,18 @@ export async function getPublishedCatalogSlugs(): Promise<{ category: string; pr
 
 export async function getPublishedCatalogProducts(
   page = 1,
+  sort: CatalogSort = 'featured',
 ): Promise<{ products: CatalogProduct[]; total: number }> {
   const client = getClient()
   if (!client) return { products: [], total: 0 }
   const from = (page - 1) * CATALOG_PAGE_SIZE
   const to = from + CATALOG_PAGE_SIZE - 1
-  const { data, count } = await client
+  const base = client
     .from('catalog_products')
     .select('*', { count: 'exact' })
     .eq('status', 'published')
     .or(EXCLUDE_NATURAL_OR)
-    .order('is_featured', { ascending: false })
-    .order('display_order', { ascending: true })
-    .order('name_ua', { ascending: true })
-    .range(from, to)
+  const { data, count } = await applyCatalogSort(base, sort).range(from, to)
   return { products: (data ?? []) as CatalogProduct[], total: count ?? 0 }
 }
 
@@ -217,6 +276,7 @@ export async function getPublishedCatalogProducts(
 export async function searchPublishedCatalogProducts(
   q: string,
   page = 1,
+  sort: CatalogSort = 'featured',
 ): Promise<{ products: CatalogProduct[]; total: number }> {
   const client = getClient()
   const term = q.trim()
@@ -226,18 +286,17 @@ export async function searchPublishedCatalogProducts(
   // Escape PostgREST ilike wildcards so user input can't broaden the match.
   const escaped = term.replace(/[%_,()]/g, ' ').trim()
   const pattern = `%${escaped}%`
-  // Match on either the Ukrainian name_ua or the raw supplier name (Russian).
-  // This avoids making the public UI bilingual while still letting Ukrainian
-  // customers search using the Russian product names from the supplier feed.
-  const { data, count } = await client
+  // Match on the Ukrainian name_ua, the raw supplier name (Russian), or the
+  // supplier SKU — so customers can search by product code as well as name.
+  // Searching `name` avoids making the public UI bilingual while still letting
+  // Ukrainian customers find items by the Russian feed names.
+  const base = client
     .from('catalog_products')
     .select('*', { count: 'exact' })
     .eq('status', 'published')
     .or(EXCLUDE_NATURAL_OR)
-    .or(`name_ua.ilike.${pattern},name.ilike.${pattern}`)
-    .order('is_featured', { ascending: false })
-    .order('name_ua', { ascending: true })
-    .range(from, to)
+    .or(`name_ua.ilike.${pattern},name.ilike.${pattern},supplier_sku.ilike.${pattern}`)
+  const { data, count } = await applyCatalogSort(base, sort).range(from, to)
   return { products: (data ?? []) as CatalogProduct[], total: count ?? 0 }
 }
 

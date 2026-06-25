@@ -6,6 +6,7 @@ import {
   getPublishedProductBySlug,
   getPublishedProductBySlugOnly,
   getCategoryBySlug,
+  getRelatedCatalogProducts,
   hasDisplayablePrice,
   canAddToCart,
   formatCatalogPrice,
@@ -13,6 +14,7 @@ import {
 } from '@/lib/supabase/catalog'
 import { buildSocialMetadata, stripBrand } from '@/lib/seo'
 import { Breadcrumb } from '@/components/catalog/Breadcrumb'
+import { CatalogProductCard } from '@/components/catalog/CatalogProductCard'
 import { AddToCartButton } from '@/components/cart/AddToCartButton'
 import { BuyNowButton } from '@/components/cart/BuyNowButton'
 import { ProductOptions } from '@/components/catalog/ProductOptions'
@@ -55,6 +57,14 @@ export default async function ProductPage({ params }: Props) {
   const product = productByCat ?? (await getPublishedProductBySlugOnly(productSlug).catch(() => null))
 
   if (!product) notFound()
+
+  // Related products from the same category (cheap, single query). Use the
+  // product's own stored category_slug so /catalog/all entries still get a rail.
+  const related = await getRelatedCatalogProducts(
+    product.category_slug ?? categorySlug,
+    product.slug,
+    4,
+  ).catch(() => [])
 
   const images: string[] = [
     ...(product.main_image_url ? [product.main_image_url] : []),
@@ -245,6 +255,28 @@ export default async function ProductPage({ params }: Props) {
               </div>
             )}
 
+            {/* Delivery / payment / guarantee trust block. Static, no client JS —
+                reassures the buyer before they commit (EVA/MAKEUP-style). */}
+            {product.lead_type !== 'metal' && (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
+                <div className="rounded-xl border border-honey-100 bg-honey-50/50 p-3">
+                  <div className="text-lg" aria-hidden="true">🚚</div>
+                  <div className="text-xs font-semibold text-bark mt-1">Доставка по Україні</div>
+                  <p className="text-[11px] text-bark/60 leading-snug mt-0.5">Нова Пошта та інші служби</p>
+                </div>
+                <div className="rounded-xl border border-honey-100 bg-honey-50/50 p-3">
+                  <div className="text-lg" aria-hidden="true">💳</div>
+                  <div className="text-xs font-semibold text-bark mt-1">Зручна оплата</div>
+                  <p className="text-[11px] text-bark/60 leading-snug mt-0.5">Після підтвердження замовлення</p>
+                </div>
+                <div className="rounded-xl border border-honey-100 bg-honey-50/50 p-3">
+                  <div className="text-lg" aria-hidden="true">✅</div>
+                  <div className="text-xs font-semibold text-bark mt-1">Підтвердження</div>
+                  <p className="text-[11px] text-bark/60 leading-snug mt-0.5">Менеджер зв&apos;яжеться з вами</p>
+                </div>
+              </div>
+            )}
+
             {product.description && (
               <div className="border-t border-gray-100 pt-6">
                 <h2 className="font-semibold text-bark mb-3 text-sm uppercase tracking-wide">Опис</h2>
@@ -255,6 +287,22 @@ export default async function ProductPage({ params }: Props) {
             )}
           </div>
         </div>
+
+        {/* Related / similar products from the same category */}
+        {related.length > 0 && (
+          <section className="mt-16 border-t border-gray-100 pt-10">
+            <h2 className="font-serif text-2xl font-bold text-bark mb-6">Схожі товари</h2>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-5">
+              {related.map((p) => (
+                <CatalogProductCard
+                  key={p.id}
+                  product={p}
+                  categorySlug={p.category_slug ?? categorySlug}
+                />
+              ))}
+            </div>
+          </section>
+        )}
       </div>
     </div>
   )

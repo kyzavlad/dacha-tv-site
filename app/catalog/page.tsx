@@ -7,10 +7,12 @@ import {
   getPublishedCategorySlugCounts,
   searchPublishedCatalogProducts,
   isUnusableCategoryName,
+  normalizeSort,
 } from '@/lib/supabase/catalog'
 import { CategoryCard } from '@/components/catalog/CategoryCard'
 import { CatalogProductCard } from '@/components/catalog/CatalogProductCard'
 import { CatalogSearchBar } from '@/components/catalog/CatalogSearchBar'
+import { CatalogSortSelect } from '@/components/catalog/CatalogSortSelect'
 
 export const metadata: Metadata = {
   title: 'Магазин',
@@ -42,15 +44,17 @@ const OTHER_CATEGORY: CatalogCategory = {
   updated_at: '',
 }
 
-export default async function CatalogPage({ searchParams }: { searchParams: Promise<{ q?: string; page?: string }> }) {
-  const { q, page: pageRaw } = await searchParams
+export default async function CatalogPage({ searchParams }: { searchParams: Promise<{ q?: string; page?: string; sort?: string }> }) {
+  const { q, page: pageRaw, sort: sortRaw } = await searchParams
   const query = (q ?? '').trim()
+  const sort = normalizeSort(sortRaw)
 
   // ── Search results (?q=) ──────────────────────────────────────────────────
   if (query) {
     const page = Math.max(1, Number(pageRaw) || 1)
-    const { products } = await searchPublishedCatalogProducts(query, page).catch(() => ({ products: [], total: 0 }))
+    const { products } = await searchPublishedCatalogProducts(query, page, sort).catch(() => ({ products: [], total: 0 }))
     const fullPage = products.length >= 24
+    const sortQs = sort === 'featured' ? '' : `&sort=${sort}`
     return (
       <div className="bg-cream min-h-screen">
         <div className="bg-white border-b border-gray-100 py-10 md:py-12">
@@ -60,7 +64,10 @@ export default async function CatalogPage({ searchParams }: { searchParams: Prom
           </div>
         </div>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-          <p className="text-sm text-gray-500 mb-6">Результати за запитом «{query}»</p>
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+            <p className="text-sm text-gray-500">Результати за запитом «{query}»</p>
+            {(products.length > 1 || page > 1) && <CatalogSortSelect value={sort} />}
+          </div>
           {products.length > 0 ? (
             <>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
@@ -71,10 +78,10 @@ export default async function CatalogPage({ searchParams }: { searchParams: Prom
               {(page > 1 || fullPage) && (
                 <div className="flex justify-between items-center mt-10">
                   {page > 1 ? (
-                    <Link href={`/catalog?q=${encodeURIComponent(query)}&page=${page - 1}`} className="text-honey-700 font-semibold hover:underline">← Попередня</Link>
+                    <Link href={`/catalog?q=${encodeURIComponent(query)}&page=${page - 1}${sortQs}`} className="text-honey-700 font-semibold hover:underline">← Попередня</Link>
                   ) : <span />}
                   {fullPage && (
-                    <Link href={`/catalog?q=${encodeURIComponent(query)}&page=${page + 1}`} className="text-honey-700 font-semibold hover:underline">Наступна →</Link>
+                    <Link href={`/catalog?q=${encodeURIComponent(query)}&page=${page + 1}${sortQs}`} className="text-honey-700 font-semibold hover:underline">Наступна →</Link>
                   )}
                 </div>
               )}
