@@ -103,6 +103,7 @@ export interface ExtractImagesResult {
   ok: boolean
   applied: boolean
   limit: number
+  effectiveLimit: number
   selected: number
   total: number
   missing: number
@@ -1426,21 +1427,52 @@ export async function recoverOrphanedProducts(opts: { apply?: boolean } = {}): P
 // Never overwrites an existing main_image_url. Dry-run by default.
 const IMAGES_ZONE_PREFIX = 'https://images.zone/'
 
+const IMAGE_EXT_RE = /\.(jpe?g|png|webp|gif|avif)$/i
+
+// Validate a candidate supplier image URL. Returns the normalized URL only when
+// it is a real images.zone file: correct host, a non-empty filename, and a
+// supported image extension. Rejects junk like `https://images.zone/images/.jpg`
+// (empty filename) or paths with no real extension.
+function validImageZoneUrl(raw: unknown): string | null {
+  if (!raw) return null
+  const url = String(raw).trim()
+  if (!url.startsWith(IMAGES_ZONE_PREFIX)) return null
+
+  let pathname: string
+  try {
+    pathname = new URL(url).pathname
+  } catch {
+    return null
+  }
+  // strip query/hash already removed by URL.pathname; get the last path segment
+  const filename = pathname.split('/').filter(Boolean).pop() ?? ''
+  if (!filename) return null
+  // must have a supported extension
+  const ext = IMAGE_EXT_RE.exec(filename)
+  if (!ext) return null
+  // the part before the extension must be a real name, not empty (".jpg")
+  const stem = filename.slice(0, filename.length - ext[0].length)
+  if (!stem.trim()) return null
+
+  return url
+}
+
 function extractImageFromRawData(rawData: unknown): string | null {
   if (!rawData || typeof rawData !== 'object') return null
   const p = rawData as Record<string, unknown>
 
   const scalar: unknown[] = [p.mainimage, p.main_image, p.image, p.photo, p.picture, p.thumbnail, p.img]
   for (const v of scalar) {
-    if (!v) continue
-    const url = String(v).trim()
-    if (url.startsWith(IMAGES_ZONE_PREFIX)) return url
+    const url = validImageZoneUrl(v)
+    if (url) return url
   }
 
   for (const field of ['images', 'pictures', 'photos']) {
-    if (Array.isArray(p[field]) && (p[field] as unknown[]).length > 0) {
-      const url = String((p[field] as unknown[])[0]).trim()
-      if (url.startsWith(IMAGES_ZONE_PREFIX)) return url
+    if (Array.isArray(p[field])) {
+      for (const item of p[field] as unknown[]) {
+        const url = validImageZoneUrl(item)
+        if (url) return url
+      }
     }
   }
 
@@ -1448,7 +1480,11 @@ function extractImageFromRawData(rawData: unknown): string | null {
 }
 
 const SUPPLIER_IMAGES_DEFAULT_LIMIT = 1000
-const SUPPLIER_IMAGES_MAX_LIMIT = 5000
+// PostgREST silently caps a single SELECT at 1000 rows. Rather than pretend a
+// larger limit is honored (it returned selected:1000 for limit:5000), we clamp
+// the effective batch to 1000 and report effectiveLimit so the response is
+// honest. A bigger batch needs repeated calls, not a bigger limit.
+const SUPPLIER_IMAGES_MAX_LIMIT = 1000
 const SUPPLIER_IMAGES_CHUNK = 100
 const SUPPLIER_IMAGES_DRY_SAMPLE = 500
 
@@ -1456,9 +1492,10 @@ export async function extractSupplierImages(opts: { apply?: boolean; limit?: num
   const apply = opts.apply === true
   const rawLimit = opts.limit && opts.limit > 0 ? opts.limit : SUPPLIER_IMAGES_DEFAULT_LIMIT
   const limit = Math.min(rawLimit, SUPPLIER_IMAGES_MAX_LIMIT)
+  const effectiveLimit = limit
   const client = getAdminClient()
 
-  console.log(`[supplier-images] start — apply=${apply} limit=${limit}`)
+  console.log(`[supplier-images] start — apply=${apply} limit=${limit} effectiveLimit=${effectiveLimit}`)
 
   const { count: total } = await client
     .from('supplier_products')
@@ -1498,7 +1535,7 @@ export async function extractSupplierImages(opts: { apply?: boolean; limit?: num
 
     return {
       ok: true, applied: false,
-      limit, selected: sampleCandidates.length,
+      limit, effectiveLimit, selected: sampleCandidates.length,
       total: total ?? 0, missing,
       extractable: sampleExtractable,
       remainingMissing: missing,
@@ -1556,7 +1593,7 @@ export async function extractSupplierImages(opts: { apply?: boolean; limit?: num
 
   return {
     ok: errors === 0, applied: true,
-    limit, selected: candidates.length,
+    limit, effectiveLimit, selected: candidates.length,
     total: total ?? 0, missing,
     extractable: extractable.length,
     remainingMissing,

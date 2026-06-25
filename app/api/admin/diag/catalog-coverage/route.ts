@@ -13,6 +13,7 @@ async function getCoverage() {
     spApprovedRes,
     spImportableRes,
     spWithImageRes,
+    spMissingImageRes,
     spWithPriceRes,
     cpTotalRes,
     cpPublishedRes,
@@ -26,6 +27,9 @@ async function getCoverage() {
     // importable = not yet approved AND has name AND price > 0
     client.from('supplier_products').select('id', { count: 'exact', head: true }).eq('is_approved', false).not('name', 'is', null).gt('price_uah', 0),
     client.from('supplier_products').select('id', { count: 'exact', head: true }).not('main_image_url', 'is', null),
+    // IS NULL counterpart — used to derive with_image if the NOT NULL exact count
+    // times out on the large table and returns null (which previously showed as 0).
+    client.from('supplier_products').select('id', { count: 'exact', head: true }).is('main_image_url', null),
     client.from('supplier_products').select('id', { count: 'exact', head: true }).gt('price_uah', 0),
     client.from('catalog_products').select('id', { count: 'exact', head: true }),
     client.from('catalog_products').select('id', { count: 'exact', head: true }).eq('status', 'published'),
@@ -38,7 +42,11 @@ async function getCoverage() {
   const spTotal = spTotalRes.count ?? 0
   const spApproved = spApprovedRes.count ?? 0
   const spImportable = spImportableRes.count ?? 0
-  const spWithImage = spWithImageRes.count ?? 0
+  // Prefer the direct NOT NULL count; if it failed/timed out (null), derive from
+  // total − missing so a real backfill never shows as with_image=0.
+  const spMissingImage = spMissingImageRes.count
+  const spWithImage = spWithImageRes.count
+    ?? (spMissingImage != null ? Math.max(0, spTotal - spMissingImage) : 0)
   const spWithPrice = spWithPriceRes.count ?? 0
   const cpTotal = cpTotalRes.count ?? 0
   const cpPublished = cpPublishedRes.count ?? 0
@@ -147,6 +155,7 @@ async function getCoverage() {
       importable: spImportable,
       with_price: spWithPrice,
       with_image: spWithImage,
+      without_image: spMissingImage ?? Math.max(0, spTotal - spWithImage),
     },
     catalog_products: {
       total: cpTotal,

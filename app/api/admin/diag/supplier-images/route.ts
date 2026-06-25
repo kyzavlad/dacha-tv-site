@@ -6,10 +6,14 @@ import { extractSupplierImages } from '@/lib/catalog/pipeline'
 // GET  /api/admin/diag/supplier-images
 //   — Dry-run (no params): counts supplier_products rows missing main_image_url
 //     whose raw_data contains an https://images.zone/ URL. Reports rate estimate.
-//   ?apply=true&limit=N — backfills at most N rows (default 1000, max 5000).
+//   ?apply=true&limit=N — backfills at most N rows. PostgREST caps a single
+//     SELECT at 1000 rows, so the effective batch is clamped to 1000 and the
+//     response reports effectiveLimit. Run repeatedly to drain the backlog.
 //     Never overwrites existing main_image_url.
 //
 // Protected by CRON_SECRET.
+const APPLY_MAX_LIMIT = 1000
+
 export async function GET(req: Request) {
   if (!verifyCronAuth(req)) return cronUnauthorized()
   try {
@@ -21,8 +25,8 @@ export async function GET(req: Request) {
       const limitRaw = url.searchParams.get('limit')
       const parsed = limitRaw ? parseInt(limitRaw, 10) : NaN
       limit = Number.isFinite(parsed) && parsed > 0
-        ? Math.min(parsed, 5000)
-        : 1000
+        ? Math.min(parsed, APPLY_MAX_LIMIT)
+        : APPLY_MAX_LIMIT
     }
 
     const result = await extractSupplierImages({ apply, limit })
