@@ -29,6 +29,10 @@ const FILLER_CLAUSES = [
   'Зручні способи оплати.',
   'Оплата при отриманні.',
   'Замовляйте онлайн.',
+  'Широкий вибір у каталозі.',
+  'Уточнюйте наявність у менеджера.',
+  'Доставка Новою Поштою.',
+  'Відправляємо по всій Україні.',
 ]
 
 // Collapse whitespace, strip any HTML, and trim. Supplier descriptions can carry
@@ -41,15 +45,29 @@ function clean(s: string | null | undefined): string {
     .trim()
 }
 
+// Returns true when the string contains Ukrainian-specific letters (і, ї, є, ґ).
+// Used to reject Russian lead text from supplier sheets before it reaches meta copy.
+function isLikelyUkrainian(s: string): boolean {
+  return /[іїєґІЇЄҐ]/.test(s)
+}
+
 // Trim to maxLen on a word boundary (never mid-word) and drop trailing
-// punctuation/whitespace so the result reads cleanly.
+// punctuation/whitespace so the result reads cleanly. Prefers cutting before a
+// parenthetical '(' when one falls in the back half of the allowed range —
+// "Насос центробіжний (для свердловин) Grundfos" → "Насос центробіжний Grundfos"
+// is a cleaner title than "Насос центробіжний (для свердловин".
 export function trimToWord(s: string, maxLen: number): string {
   const c = clean(s)
   if (c.length <= maxLen) return c
+  // Cut before parenthetical if it lands in the usable back half of the window
+  const parenPos = c.indexOf('(')
+  if (parenPos > maxLen * 0.5 && parenPos < maxLen) {
+    return c.slice(0, parenPos).replace(/[\s,;:.\-–—«»"']+$/, '').trim()
+  }
   const slice = c.slice(0, maxLen)
   const lastSpace = slice.lastIndexOf(' ')
   const cut = lastSpace > maxLen * 0.6 ? slice.slice(0, lastSpace) : slice
-  return cut.replace(/[\s,;:.\-–—«»"']+$/, '').trim()
+  return cut.replace(/[\s,;:.\-–—«»"'(]+$/, '').trim()
 }
 
 // Returns the cleaned name if it looks like a real human-readable label, or
@@ -104,7 +122,7 @@ export function buildMetaDescription(opts: {
   const lead = clean(opts.lead)
 
   let base: string
-  if (lead && lead.length >= 40) {
+  if (lead && lead.length >= 40 && isLikelyUkrainian(lead)) {
     base = trimToWord(lead, DESC_MAX).replace(/[.!?]+$/, '') + '.'
   } else {
     let opener: string

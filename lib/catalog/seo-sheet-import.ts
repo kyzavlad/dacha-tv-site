@@ -31,6 +31,8 @@ export interface SheetImportResult {
   rows: number               // data rows in the sheet (excl. header)
   matched: number            // sheet rows matched to a catalog row
   eligible: number           // matched rows that would get ≥1 field written
+  fullEligible: number       // eligible rows where both meta_title AND meta_description pass
+  partialEligible: number    // eligible rows where meta_title passes but meta_description fails
   updated: number            // rows actually written (0 on dry run)
   skippedLocked: number      // matched but seo_manual_lock=true
   skippedExistingSeo: number // matched but seo_status ai/manual (and not force)
@@ -54,7 +56,8 @@ export interface SheetImportResult {
 
 function emptyResult(apply: boolean): SheetImportResult {
   return {
-    ok: false, apply, message: '', rows: 0, matched: 0, eligible: 0, updated: 0,
+    ok: false, apply, message: '', rows: 0, matched: 0, eligible: 0,
+    fullEligible: 0, partialEligible: 0, updated: 0,
     skippedLocked: 0, skippedExistingSeo: 0, skippedNoChange: 0, unmatched: 0,
     validationErrors: 0, errors: 0, unmatchedSample: [], errorGroups: {}, samples: [],
   }
@@ -79,6 +82,8 @@ function summarise(kind: 'товарів' | 'категорій', r: SheetImport
     `рядків: ${r.rows}`,
     `збіг: ${r.matched}`,
     `придатні: ${r.eligible}`,
+    r.fullEligible ? `повних: ${r.fullEligible}` : null,
+    r.partialEligible ? `часткових (без desc): ${r.partialEligible}` : null,
     r.apply ? `записано: ${r.updated}` : null,
     r.skippedLocked ? `замок: ${r.skippedLocked}` : null,
     r.skippedExistingSeo ? `AI/manual: ${r.skippedExistingSeo}` : null,
@@ -286,6 +291,8 @@ export async function importProductSeoFromSheet(
     if (Object.keys(payload).length === 0) { r.skippedNoChange++; continue }
 
     r.eligible++
+    if (payload.meta_title && payload.meta_description) r.fullEligible++
+    else if (payload.meta_title) r.partialEligible++
     if (r.samples.length < 12) {
       r.samples.push({
         key: sku,
@@ -487,6 +494,8 @@ export async function importCategorySeoFromSheet(
     if (Object.keys(payload).length === 0) { r.skippedNoChange++; continue }
 
     r.eligible++
+    if (payload.meta_title && payload.meta_description) r.fullEligible++
+    else if (payload.meta_title) r.partialEligible++
     if (r.samples.length < 12) {
       r.samples.push({
         key: nameRaw,
