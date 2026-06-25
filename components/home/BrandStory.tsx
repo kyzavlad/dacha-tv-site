@@ -34,7 +34,7 @@ export function BrandStory() {
           {/* Apiary photo — only shown when image file exists */}
           {hasImage && (
             <div className="relative order-2 lg:order-1">
-              <div className="aspect-[4/3] rounded-3xl overflow-hidden">
+              <div className="relative aspect-[4/3] rounded-3xl overflow-hidden">
                 <Image
                   src={BRAND_STORY_IMAGE}
                   alt="Пасіка Дача TV — Коротич, Харківська область"

@@ -5,7 +5,6 @@ import { BrandStory } from '@/components/home/BrandStory'
 import { YouTubeSection } from '@/components/home/YouTubeSection'
 import { HowToOrder } from '@/components/home/HowToOrder'
 import { Reviews } from '@/components/home/Reviews'
-import { BeekeeperTeaser } from '@/components/home/BeekeeperTeaser'
 import { DeliveryTeaser } from '@/components/home/DeliveryTeaser'
 import { StructuredData } from '@/components/shared/StructuredData'
 import { ApiaryTrustStrip } from '@/components/home/ApiaryTrustStrip'
@@ -77,8 +76,6 @@ export default async function HomePage() {
       <Reviews reviews={reviews} />
 
       <ApiaryTrustStrip />
-
-      <BeekeeperTeaser />
 
       <DeliveryTeaser />
     </>

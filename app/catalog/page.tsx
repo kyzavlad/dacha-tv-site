@@ -24,8 +24,18 @@ export const metadata: Metadata = {
   },
 }
 
-function isNumericName(name: string | null | undefined): boolean {
-  return !name || /^\d+$/.test(name.trim())
+// Returns true for category names that are technical/slug-like and should not be
+// shown to users. Catches: purely numeric ("185"), auto-generated supplier IDs
+// ("cat-185", "cat-38853"), and other slug patterns that are clearly not human
+// display names. Products under these categories flow into the "Інші товари" bucket.
+function isUnusableCategoryName(name: string | null | undefined): boolean {
+  if (!name) return true
+  const n = name.trim()
+  if (!n) return true
+  if (/^\d+$/.test(n)) return true          // "185", "38853"
+  if (/^cat-\d+$/i.test(n)) return true     // "cat-185", "cat-38853"
+  if (/^[a-z]+[_-]\d+$/i.test(n)) return true  // "sup-4308", "id_73855"
+  return false
 }
 
 // Synthetic catch-all card for products that have no usable category (null,
@@ -102,7 +112,7 @@ export default async function CatalogPage({ searchParams }: { searchParams: Prom
 
   // Eligible cards: published, human-readable (non-numeric) categories that
   // have at least one published product mapped to their slug.
-  const usableCategories = allCategories.filter((cat) => !isNumericName(cat.name_ua))
+  const usableCategories = allCategories.filter((cat) => !isUnusableCategoryName(cat.name_ua))
   const usableSlugs = new Set(usableCategories.map((c) => c.slug))
 
   const visibleCategories = usableCategories

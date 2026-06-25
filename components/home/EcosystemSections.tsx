@@ -52,6 +52,13 @@ const SECTIONS = [
     text: 'Профнастил, металочерепиця, штахетник, комплектуючі та саморізи під розмір.',
     accent: 'from-slate-50 to-slate-100 border-slate-200',
   },
+  {
+    href: '/beekeeper',
+    emoji: '🐝',
+    title: 'Для пасічників',
+    text: 'Бджолопакети Buckfast, Карніка, Українська степова, бджолосім\'ї та вулики.',
+    accent: 'from-orange-50 to-amber-50 border-orange-200',
+  },
 ]
 
 export function EcosystemSections() {
@@ -71,7 +78,7 @@ export function EcosystemSections() {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
           {SECTIONS.map(({ href, emoji, title, text, accent }) => (
             <Link
               key={href}
