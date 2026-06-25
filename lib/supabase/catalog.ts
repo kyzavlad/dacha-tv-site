@@ -67,6 +67,29 @@ export function formatCatalogPrice(product: CatalogProduct): string | null {
   return `${prefix}${amount} ${unit}`
 }
 
+// ─── Category display-name normalization ─────────────────────────────────────
+// Some supplier categories arrive with technical, slug-like names (auto-generated
+// IDs) that must never reach users: pure numbers ("185"), supplier IDs
+// ("cat-185", "cat-38853"), or other prefix-number patterns ("sup-4308").
+// `isUnusableCategoryName` flags these; `categoryDisplayName` returns a safe
+// human-readable fallback so /catalog, /catalog/[slug], breadcrumbs and metadata
+// never render a raw cat-* name.
+export const FALLBACK_CATEGORY_NAME = 'Товари для дому та господарства'
+
+export function isUnusableCategoryName(name: string | null | undefined): boolean {
+  if (!name) return true
+  const n = name.trim()
+  if (!n) return true
+  if (/^\d+$/.test(n)) return true            // "185", "38853"
+  if (/^cat-\d+$/i.test(n)) return true       // "cat-185", "cat-38853"
+  if (/^[a-z]+[_-]\d+$/i.test(n)) return true // "sup-4308", "id_73855"
+  return false
+}
+
+export function categoryDisplayName(name: string | null | undefined): string {
+  return isUnusableCategoryName(name) ? FALLBACK_CATEGORY_NAME : (name as string).trim()
+}
+
 export async function getPublishedCategories(): Promise<CatalogCategory[]> {
   const client = getClient()
   if (!client) return []

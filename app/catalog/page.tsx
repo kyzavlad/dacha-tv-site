@@ -6,6 +6,7 @@ import {
   getPublishedCategories,
   getPublishedCategorySlugCounts,
   searchPublishedCatalogProducts,
+  isUnusableCategoryName,
 } from '@/lib/supabase/catalog'
 import { CategoryCard } from '@/components/catalog/CategoryCard'
 import { CatalogProductCard } from '@/components/catalog/CatalogProductCard'
@@ -22,20 +23,6 @@ export const metadata: Metadata = {
     type: 'website',
     images: [{ url: '/images/dacha-tv/logo-square.png', width: 1200, height: 1200, alt: 'Дача TV: магазин товарів' }],
   },
-}
-
-// Returns true for category names that are technical/slug-like and should not be
-// shown to users. Catches: purely numeric ("185"), auto-generated supplier IDs
-// ("cat-185", "cat-38853"), and other slug patterns that are clearly not human
-// display names. Products under these categories flow into the "Інші товари" bucket.
-function isUnusableCategoryName(name: string | null | undefined): boolean {
-  if (!name) return true
-  const n = name.trim()
-  if (!n) return true
-  if (/^\d+$/.test(n)) return true          // "185", "38853"
-  if (/^cat-\d+$/i.test(n)) return true     // "cat-185", "cat-38853"
-  if (/^[a-z]+[_-]\d+$/i.test(n)) return true  // "sup-4308", "id_73855"
-  return false
 }
 
 // Synthetic catch-all card for products that have no usable category (null,

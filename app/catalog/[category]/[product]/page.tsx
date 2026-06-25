@@ -9,6 +9,7 @@ import {
   hasDisplayablePrice,
   canAddToCart,
   formatCatalogPrice,
+  categoryDisplayName,
 } from '@/lib/supabase/catalog'
 import { buildSocialMetadata, stripBrand } from '@/lib/seo'
 import { Breadcrumb } from '@/components/catalog/Breadcrumb'
@@ -97,7 +98,7 @@ export default async function ProductPage({ params }: Props) {
         <Breadcrumb crumbs={[
           { label: 'Головна', href: '/' },
           { label: 'Каталог', href: '/catalog' },
-          { label: cat?.name_ua ?? categorySlug, href: `/catalog/${categorySlug}` },
+          { label: cat ? categoryDisplayName(cat.name_ua) : 'Категорія', href: `/catalog/${categorySlug}` },
           { label: product.name_ua },
         ]} />
 

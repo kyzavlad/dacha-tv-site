@@ -1218,43 +1218,61 @@ export async function normalizeAndFinalizeCategories(): Promise<NormalizeFinaliz
 export interface BackfillImagesResult {
   ok: boolean
   applied: boolean
+  limit: number
   catalogTotal: number
-  catalogMissingImage: number
-  eligible: number              // missing-image catalog rows whose supplier has an image
+  catalogMissingImage: number   // catalog rows with no image (HEAD count, whole table)
+  eligible: number              // selected rows whose supplier has an image
+  selected: number              // rows loaded this run (≤ limit)
   updated: number               // rows actually written (0 on dry run)
   errors: number
+  remainingMissing: number      // catalog rows still missing an image after this run
   samples: { sku: string; supplier_image: string }[]
   message: string
 }
+
+const BACKFILL_IMAGES_DEFAULT_LIMIT = 1000
+const BACKFILL_IMAGES_MAX_LIMIT = 1000
+const BACKFILL_IMAGES_SUPPLIER_CHUNK = 300
+const BACKFILL_IMAGES_UPDATE_CHUNK = 100
 
 export async function backfillCatalogImages(
   opts: { apply?: boolean; limit?: number } = {},
 ): Promise<BackfillImagesResult> {
   const apply = opts.apply === true
-  const limit = opts.limit && opts.limit > 0 ? opts.limit : 100000
+  const rawLimit = opts.limit && opts.limit > 0 ? opts.limit : BACKFILL_IMAGES_DEFAULT_LIMIT
+  const limit = Math.min(rawLimit, BACKFILL_IMAGES_MAX_LIMIT)
   const client = getAdminClient()
+
+  console.log(`[backfill-images] start — apply=${apply} limit=${limit}`)
 
   const { count: catalogTotal } = await client
     .from('catalog_products')
     .select('id', { count: 'exact', head: true })
 
-  // Catalog rows missing a primary image — candidates for backfill.
-  const missing = await selectAllRows<{ id: string; supplier_sku: string }>(
-    (from, to) =>
-      client
-        .from('catalog_products')
-        .select('id, supplier_sku')
-        .is('main_image_url', null)
-        .not('supplier_sku', 'is', null)
-        .order('supplier_sku', { ascending: true })
-        .range(from, to),
-  )
-  const candidates = missing.slice(0, limit)
+  // Whole-table HEAD count of catalog rows missing an image (eligible universe).
+  const { count: missingCountRaw } = await client
+    .from('catalog_products')
+    .select('id', { count: 'exact', head: true })
+    .is('main_image_url', null)
+    .not('supplier_sku', 'is', null)
+  const catalogMissingImage = missingCountRaw ?? 0
+
+  // Load only `limit` candidate rows for this batch (no full-table scan).
+  const { data: candidateRows } = await client
+    .from('catalog_products')
+    .select('id, supplier_sku')
+    .is('main_image_url', null)
+    .not('supplier_sku', 'is', null)
+    .order('supplier_sku', { ascending: true })
+    .limit(limit)
+  const candidates = candidateRows ?? []
+  console.log(`[backfill-images] loaded ${candidates.length} candidates (missing total=${catalogMissingImage})`)
 
   if (candidates.length === 0) {
     return {
-      ok: true, applied: apply, catalogTotal: catalogTotal ?? 0,
-      catalogMissingImage: 0, eligible: 0, updated: 0, errors: 0, samples: [],
+      ok: true, applied: apply, limit, catalogTotal: catalogTotal ?? 0,
+      catalogMissingImage, eligible: 0, selected: 0, updated: 0, errors: 0,
+      remainingMissing: catalogMissingImage, samples: [],
       message: 'Усі товари каталогу вже мають зображення (або немає кандидатів).',
     }
   }
@@ -1263,11 +1281,11 @@ export async function backfillCatalogImages(
   // the supplier actually has a main_image_url.
   const supplierImg = new Map<string, { main: string; images: unknown }>()
   const skus = candidates.map((c) => c.supplier_sku)
-  for (let i = 0; i < skus.length; i += 300) {
+  for (let i = 0; i < skus.length; i += BACKFILL_IMAGES_SUPPLIER_CHUNK) {
     const { data } = await client
       .from('supplier_products')
       .select('supplier_sku, main_image_url, images')
-      .in('supplier_sku', skus.slice(i, i + 300))
+      .in('supplier_sku', skus.slice(i, i + BACKFILL_IMAGES_SUPPLIER_CHUNK))
       .not('main_image_url', 'is', null)
     for (const r of data ?? []) {
       const sku = r.supplier_sku as string
@@ -1281,35 +1299,50 @@ export async function backfillCatalogImages(
     sku: c.supplier_sku,
     supplier_image: supplierImg.get(c.supplier_sku)!.main,
   }))
+  console.log(`[backfill-images] ${eligible.length} eligible of ${candidates.length} selected`)
 
   if (!apply) {
     return {
-      ok: true, applied: false, catalogTotal: catalogTotal ?? 0,
-      catalogMissingImage: missing.length, eligible: eligible.length,
-      updated: 0, errors: 0, samples,
-      message: `DRY RUN — ${eligible.length} з ${missing.length} товарів без зображення можна заповнити з supplier_products. Запустіть з apply=true, щоб застосувати.`,
+      ok: true, applied: false, limit, catalogTotal: catalogTotal ?? 0,
+      catalogMissingImage, eligible: eligible.length, selected: candidates.length,
+      updated: 0, errors: 0, remainingMissing: catalogMissingImage, samples,
+      message: `DRY RUN — у вибірці ${candidates.length}: ${eligible.length} можна заповнити з supplier_products. Усього без зображення: ${catalogMissingImage}. Запустіть POST (apply) з limit ≤ ${BACKFILL_IMAGES_MAX_LIMIT}.`,
     }
   }
 
-  // APPLY — write image columns only, one SKU at a time so a single bad row
-  // never aborts the whole backfill.
+  // APPLY — write image columns only, in small chunks so a single bad row never
+  // aborts the whole backfill and the request never times out.
   let updated = 0, errors = 0
-  for (const c of eligible) {
-    const img = supplierImg.get(c.supplier_sku)!
-    const { error } = await client
-      .from('catalog_products')
-      .update({ main_image_url: img.main, images: img.images, updated_at: new Date().toISOString() })
-      .eq('id', c.id)
-      .is('main_image_url', null) // never overwrite an image already set
-    if (error) errors++
-    else updated++
+  for (let i = 0; i < eligible.length; i += BACKFILL_IMAGES_UPDATE_CHUNK) {
+    const chunk = eligible.slice(i, i + BACKFILL_IMAGES_UPDATE_CHUNK)
+    for (const c of chunk) {
+      const img = supplierImg.get(c.supplier_sku)!
+      const { error } = await client
+        .from('catalog_products')
+        .update({ main_image_url: img.main, images: img.images, updated_at: new Date().toISOString() })
+        .eq('id', c.id)
+        .is('main_image_url', null) // never overwrite an image already set
+      if (error) errors++
+      else updated++
+    }
+    console.log(`[backfill-images] progress: ${Math.min(i + BACKFILL_IMAGES_UPDATE_CHUNK, eligible.length)}/${eligible.length}, updated=${updated} errors=${errors}`)
   }
 
+  // HEAD count to report remaining after this run.
+  const { count: remainingRaw } = await client
+    .from('catalog_products')
+    .select('id', { count: 'exact', head: true })
+    .is('main_image_url', null)
+    .not('supplier_sku', 'is', null)
+  const remainingMissing = remainingRaw ?? Math.max(0, catalogMissingImage - updated)
+
+  console.log(`[backfill-images] done: updated=${updated} errors=${errors} remainingMissing=${remainingMissing}`)
+
   return {
-    ok: errors === 0, applied: true, catalogTotal: catalogTotal ?? 0,
-    catalogMissingImage: missing.length, eligible: eligible.length,
-    updated, errors, samples,
-    message: `Заповнено зображення для ${updated} товарів${errors > 0 ? `, помилок: ${errors}` : ''}.`,
+    ok: errors === 0, applied: true, limit, catalogTotal: catalogTotal ?? 0,
+    catalogMissingImage, eligible: eligible.length, selected: candidates.length,
+    updated, errors, remainingMissing, samples,
+    message: `Заповнено зображення для ${updated} товарів. Залишилось без зображення: ${remainingMissing}${errors > 0 ? `. Помилок: ${errors}` : ''}.`,
   }
 }
 

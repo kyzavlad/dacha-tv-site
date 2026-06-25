@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic'
 import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
-import { getCategoryBySlug, getPublishedProductsByCategory, CATALOG_PAGE_SIZE } from '@/lib/supabase/catalog'
+import { getCategoryBySlug, getPublishedProductsByCategory, CATALOG_PAGE_SIZE, categoryDisplayName } from '@/lib/supabase/catalog'
 import { CatalogProductCard } from '@/components/catalog/CatalogProductCard'
 import { Breadcrumb } from '@/components/catalog/Breadcrumb'
 import { Pagination } from '@/components/catalog/Pagination'
@@ -17,15 +17,16 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const cat = await getCategoryBySlug(slug).catch(() => null)
   if (!cat) return { title: 'Категорія не знайдена' }
 
-  const bareTitle = stripBrand(cat.meta_title) || cat.name_ua
-  const description = cat.meta_description || cat.description || `Каталог товарів категорії «${cat.name_ua}». Замовляйте з доставкою по Україні.`
+  const displayName = categoryDisplayName(cat.name_ua)
+  const bareTitle = stripBrand(cat.meta_title) || displayName
+  const description = cat.meta_description || cat.description || `Каталог товарів категорії «${displayName}». Замовляйте з доставкою по Україні.`
 
   return buildSocialMetadata({
     bareTitle,
     description,
     canonical: `/catalog/${slug}`,
     image: cat.image_url,
-    imageAlt: cat.name_ua,
+    imageAlt: displayName,
   })
 }
 
@@ -41,6 +42,7 @@ export default async function CategoryPage({ params, searchParams }: Props) {
 
   if (!cat) notFound()
 
+  const displayName = categoryDisplayName(cat.name_ua)
   const totalPages = Math.ceil(total / CATALOG_PAGE_SIZE)
 
   return (
@@ -50,10 +52,10 @@ export default async function CategoryPage({ params, searchParams }: Props) {
           <Breadcrumb crumbs={[
             { label: 'Головна', href: '/' },
             { label: 'Каталог', href: '/catalog' },
-            { label: cat.name_ua },
+            { label: displayName },
           ]} />
           <h1 className="font-serif text-3xl md:text-4xl font-bold text-bark mt-4 mb-2">
-            {cat.name_ua}
+            {displayName}
           </h1>
           {cat.description && (
             <p className="text-gray-500 text-base max-w-2xl">{cat.description}</p>

@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import Image from 'next/image'
 import type { CatalogCategory } from '@/types'
+import { categoryDisplayName } from '@/lib/supabase/catalog'
 
 interface CategoryCardProps {
   category: CatalogCategory
@@ -25,6 +26,7 @@ function categoryIcon(slug: string): string {
 }
 
 export function CategoryCard({ category, productCount }: CategoryCardProps) {
+  const displayName = categoryDisplayName(category.name_ua)
   return (
     <Link
       href={`/catalog/${category.slug}`}
@@ -34,7 +36,7 @@ export function CategoryCard({ category, productCount }: CategoryCardProps) {
         {category.image_url ? (
           <Image
             src={category.image_url}
-            alt={category.name_ua}
+            alt={displayName}
             fill
             className="object-cover group-hover:scale-105 transition-transform duration-300"
             sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
@@ -49,7 +51,7 @@ export function CategoryCard({ category, productCount }: CategoryCardProps) {
       </div>
       <div className="p-4">
         <h2 className="font-serif font-semibold text-bark text-base leading-tight mb-1 group-hover:text-honey-700 transition-colors">
-          {category.name_ua}
+          {displayName}
         </h2>
         {productCount != null && productCount > 0 && (
           <p className="text-xs text-gray-400">{productCount} товарів</p>
