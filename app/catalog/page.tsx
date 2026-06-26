@@ -143,11 +143,14 @@ export default async function CatalogPage({ searchParams }: { searchParams: Prom
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         {cards.length > 0 ? (
           /* ── Category-first grid, derived from real published products ── */
+          <>
+          <h2 className="font-serif text-2xl font-semibold text-bark mb-6">Популярні категорії</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             {cards.map(({ cat, count }) => (
               <CategoryCard key={cat.id} category={cat} productCount={count} />
             ))}
           </div>
+          </>
         ) : total > 0 ? (
           /* ── Products exist but none are presentable yet → browse-all path ── */
           <div className="max-w-xl mx-auto text-center py-16">

@@ -10,19 +10,19 @@ const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://www.dachatv.com'
 
 export const metadata: Metadata = {
   title: 'Послуги',
-  description: 'Фотосесія на лавандовому полі, оренда альтанки на воді та послуги пасічника на садибі Дача TV на Харківщині.',
+  description: 'Послуги садиби Дача TV на Харківщині: фотосесія у лаванді, оренда альтанки на воді, відпочинок на природі та консультації пасічника.',
   alternates: { canonical: `${siteUrl}/services` },
   openGraph: {
-    title: 'Послуги',
-    description: 'Фотосесія на лавандовому полі, оренда альтанки та консультації пасічника.',
+    title: 'Послуги садиби',
+    description: 'Фотосесії у лаванді, відпочинок над ставком, оренда альтанки та консультації пасічника — усе на одній садибі під Харковом.',
     siteName: 'Дача TV',
     images: [{ url: `${siteUrl}/images/dacha-tv/logo-square.png`, width: 1200, height: 630, alt: 'Дача TV' }],
     type: 'website',
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Послуги',
-    description: 'Фотосесія на лавандовому полі, оренда альтанки та консультації пасічника.',
+    title: 'Послуги садиби',
+    description: 'Фотосесії у лаванді, відпочинок над ставком, оренда альтанки та консультації пасічника — Дача TV, Харківщина.',
     images: [`${siteUrl}/images/dacha-tv/logo-square.png`],
   },
 }

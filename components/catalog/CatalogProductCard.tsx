@@ -35,11 +35,16 @@ export function CatalogProductCard({ product, categorySlug }: CatalogProductCard
             blurDataURL={BLUR_URL}
           />
         ) : (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-honey-50 to-forest-50 gap-2">
-            <span className="text-4xl opacity-25" aria-hidden="true">📦</span>
-            <span className="text-forest-700/50 font-serif text-xs text-center px-3 leading-tight line-clamp-2">
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-honey-50 to-forest-50 gap-3 px-4">
+            <span className="text-5xl opacity-40" aria-hidden="true">🌿</span>
+            <span className="text-forest-800/70 font-serif text-sm text-center leading-snug line-clamp-3">
               {product.name_ua}
             </span>
+            {product.supplier_sku && (
+              <span className="text-xs text-bark/40 font-mono tracking-wide">
+                {product.supplier_sku}
+              </span>
+            )}
           </div>
         )}
         {product.is_featured && (
@@ -56,10 +61,16 @@ export function CatalogProductCard({ product, categorySlug }: CatalogProductCard
 
       <div className="p-4 flex flex-col flex-1">
         <Link href={href}>
-          <h3 className="font-serif text-base font-semibold text-bark mb-2 leading-tight line-clamp-2 hover:text-honey-700 transition-colors">
+          <h3 className="font-serif text-base font-semibold text-bark mb-1 leading-tight line-clamp-2 hover:text-honey-700 transition-colors">
             {product.name_ua}
           </h3>
         </Link>
+
+        {product.supplier_sku && (
+          <p className="text-[10px] text-bark/35 font-mono mb-2 truncate" title={`Артикул: ${product.supplier_sku}`}>
+            {product.supplier_sku}
+          </p>
+        )}
 
         {product.short_description && (
           <p className="text-xs text-bark/60 line-clamp-2 mb-3">{product.short_description}</p>
