@@ -51,23 +51,48 @@ function isLikelyUkrainian(s: string): boolean {
   return /[іїєґІЇЄҐ]/.test(s)
 }
 
-// Trim to maxLen on a word boundary (never mid-word) and drop trailing
-// punctuation/whitespace so the result reads cleanly. Prefers cutting before a
-// parenthetical '(' when one falls in the back half of the allowed range —
-// "Насос центробіжний (для свердловин) Grundfos" → "Насос центробіжний Grundfos"
-// is a cleaner title than "Насос центробіжний (для свердловин".
+// Strip trailing whitespace + dangling punctuation / opening brackets so a title
+// never ends on a comma, dash, slash, colon, semicolon, period, or an opening
+// bracket. A closing ')' is intentionally KEPT — a balanced parenthetical is a
+// legitimate, clean ending.
+function stripTrailingJunk(s: string): string {
+  return s.replace(/[\s,;:.\-–—\/\\|«»"'(\[{]+$/, '').trim()
+}
+
+// Remove any unfinished "(…" parenthetical. When a trim cuts off the closing
+// ')', the dangling open bracket (and everything after the last unmatched '(')
+// is dropped so the title never carries an unclosed parenthesis. Handles names
+// with several parentheses by repeatedly closing the imbalance from the right.
+function dropUnclosedParen(s: string): string {
+  let out = s
+  let guard = 0
+  while (
+    (out.match(/\(/g)?.length ?? 0) > (out.match(/\)/g)?.length ?? 0) &&
+    guard++ < 50
+  ) {
+    const idx = out.lastIndexOf('(')
+    if (idx === -1) break
+    out = out.slice(0, idx)
+  }
+  return out
+}
+
+// Clean a title fragment: drop a dangling unclosed parenthetical, then strip any
+// trailing junk. Used both for the full (untrimmed) name and the trimmed result.
+function sanitizeTitlePart(s: string): string {
+  return stripTrailingJunk(dropUnclosedParen(s))
+}
+
+// Trim to maxLen on a word boundary (never mid-word). If the cut lands inside a
+// parenthetical, the whole unfinished "(…" part is removed (never a stray '('),
+// and the result never ends on trailing punctuation or an opening bracket.
 export function trimToWord(s: string, maxLen: number): string {
   const c = clean(s)
-  if (c.length <= maxLen) return c
-  // Cut before parenthetical if it lands in the usable back half of the window
-  const parenPos = c.indexOf('(')
-  if (parenPos > maxLen * 0.5 && parenPos < maxLen) {
-    return c.slice(0, parenPos).replace(/[\s,;:.\-–—«»"']+$/, '').trim()
-  }
+  if (c.length <= maxLen) return sanitizeTitlePart(c)
   const slice = c.slice(0, maxLen)
   const lastSpace = slice.lastIndexOf(' ')
   const cut = lastSpace > maxLen * 0.6 ? slice.slice(0, lastSpace) : slice
-  return cut.replace(/[\s,;:.\-–—«»"'(]+$/, '').trim()
+  return sanitizeTitlePart(cut)
 }
 
 // Returns the cleaned name if it looks like a real human-readable label, or
@@ -88,8 +113,14 @@ function resolveHumanCatName(raw: string | null | undefined): string | null {
 // meta_title: "{name} — {category} | Дача TV", trimmed to ~60 chars. Drops the
 // category, then trims the name, to keep the brand suffix intact.
 export function buildMetaTitle(name: string, category: string | null): string {
-  const n = clean(name)
-  const cat = clean(category)
+  // Sanitize the full name/category up front so a source-level unclosed
+  // parenthesis or trailing punctuation can never leak into the untrimmed paths.
+  let n = sanitizeTitlePart(clean(name))
+  // Pathological: the whole name was an unclosed parenthetical (sanitize emptied
+  // it). Recover a real label by stripping brackets rather than emitting a title
+  // that is just the brand with a leading space.
+  if (!n) n = clean(name).replace(/[()[\]{}]/g, ' ').replace(/\s+/g, ' ').trim()
+  const cat = sanitizeTitlePart(clean(category))
   const suffix = ` | ${BRAND}`
 
   if (cat) {
@@ -100,7 +131,13 @@ export function buildMetaTitle(name: string, category: string | null): string {
   if (nameBrand.length <= TITLE_MAX) return nameBrand
 
   const room = Math.max(12, TITLE_MAX - suffix.length)
-  return `${trimToWord(n, room)}${suffix}`
+  let head = trimToWord(n, room)
+  if (!head) {
+    // Pathological: the name was essentially one unclosed parenthetical. Fall
+    // back to a bracket-stripped truncation so we still emit a real title.
+    head = stripTrailingJunk(clean(name).replace(/[()[\]{}]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, room))
+  }
+  return `${head}${suffix}`
 }
 
 // meta_description: 140–160 chars, natural Ukrainian. Prefers a clean supplier
