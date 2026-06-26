@@ -30,9 +30,15 @@ function parseLimit(req: Request): number | undefined {
   return Number.isFinite(n) && n > 0 ? n : undefined
 }
 
+function parseStatusScope(req: Request): 'published' | 'draft' | 'all' {
+  const raw = new URL(req.url).searchParams.get('status')
+  if (raw === 'draft' || raw === 'all') return raw
+  return 'published'
+}
+
 export async function GET(req: Request) {
   if (!verifyCronAuth(req)) return cronUnauthorized()
-  const result = await generateProductSeoTemplate({ apply: false, limit: parseLimit(req) })
+  const result = await generateProductSeoTemplate({ apply: false, limit: parseLimit(req), statusScope: parseStatusScope(req) })
   return Response.json(result)
 }
 
@@ -47,7 +53,7 @@ export async function POST(req: Request) {
     .select('id').single()
 
   try {
-    const result = await generateProductSeoTemplate({ apply: true, limit: parseLimit(req) })
+    const result = await generateProductSeoTemplate({ apply: true, limit: parseLimit(req), statusScope: parseStatusScope(req) })
     await client.from('supplier_sync_log').update({
       status: result.ok ? 'completed' : 'failed',
       products_total: result.updated,

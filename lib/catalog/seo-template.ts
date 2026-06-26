@@ -222,6 +222,7 @@ export interface TemplateSeoSample {
 export interface TemplateSeoResult {
   ok: boolean
   apply: boolean
+  statusScope: 'published' | 'draft' | 'all'
   scanned: number     // rows examined
   eligible: number    // rows that need (and would get) a template field
   updated: number     // rows actually written (0 on dry run)
@@ -243,30 +244,36 @@ interface CandidateRow {
   seo_status: string | null
 }
 
-// Generate template SEO for published catalog products that still lack meta copy.
+// Generate template SEO for catalog products that still lack meta copy.
+// statusScope controls which rows are targeted (default: 'published').
+//   'published' — only published rows (original behaviour, unchanged)
+//   'draft'     — only draft rows (use before quality-publish so eligible drafts already have SEO)
+//   'all'       — both statuses
 // apply=false (default) is a pure dry run: it computes and samples nothing-written.
 export async function generateProductSeoTemplate(opts?: {
   apply?: boolean
   limit?: number
+  statusScope?: 'published' | 'draft' | 'all'
 }): Promise<TemplateSeoResult> {
   const apply = opts?.apply === true
   const limit = Math.min(Math.max(opts?.limit ?? 500, 1), 5000)
+  const scope = opts?.statusScope ?? 'published'
   const client = getAdminClient()
 
-  // Candidates: published, not manual-locked, not already AI/manual SEO, AND
-  // missing at least one meta field. The `.or(... is.null)` is the key to making
-  // repeated runs PROGRESS: without it the query returned rows that already had
-  // both meta fields filled (just because their seo_generated_at sorted first),
-  // the JS guard then dropped them all, and the limit window produced eligible=0
-  // forever. By excluding fully-filled rows at the DB level, every limited window
-  // is populated with rows that genuinely need work, so successive calls advance
-  // through the backlog. The JS non-empty guard below still protects against the
-  // rare empty-string (non-null) case and never overwrites a filled field.
+  // Candidates: scoped by status, not manual-locked, not already AI/manual SEO,
+  // AND missing at least one meta field. The `.or(... is.null)` is the key to
+  // making repeated runs PROGRESS: without it the query returned rows that already
+  // had both meta fields filled, the JS guard dropped them all, and the limit
+  // window produced eligible=0 forever. By excluding fully-filled rows at the DB
+  // level, every limited window is populated with rows that genuinely need work.
   // Oldest-generated first → runs rotate.
-  const { data, error } = await client
+  let q = client
     .from('catalog_products')
     .select('id, supplier_sku, name_ua, category_slug, price_uah, price_prefix, unit_label, meta_title, meta_description, seo_status')
-    .eq('status', 'published')
+
+  if (scope !== 'all') q = q.eq('status', scope)
+
+  q = q
     .neq('seo_manual_lock', true)
     .neq('seo_status', 'ai')
     .neq('seo_status', 'manual')
@@ -275,13 +282,16 @@ export async function generateProductSeoTemplate(opts?: {
     .order('seo_generated_at', { ascending: true, nullsFirst: true })
     .limit(limit)
 
+  const { data, error } = await q
+
   if (error) {
-    return { ok: false, apply, scanned: 0, eligible: 0, updated: 0, errors: 1, samples: [], message: `products: ${error.message}` }
+    return { ok: false, apply, statusScope: scope, scanned: 0, eligible: 0, updated: 0, errors: 1, samples: [], message: `products: ${error.message}` }
   }
 
   const rows = (data ?? []) as CandidateRow[]
   if (rows.length === 0) {
-    return { ok: true, apply, scanned: 0, eligible: 0, updated: 0, errors: 0, samples: [], message: 'Немає опублікованих товарів без SEO.' }
+    const scopeLabel = scope === 'draft' ? 'чернеток' : scope === 'all' ? 'товарів' : 'опублікованих товарів'
+    return { ok: true, apply, statusScope: scope, scanned: 0, eligible: 0, updated: 0, errors: 0, samples: [], message: `Немає ${scopeLabel} без SEO.` }
   }
 
   // Resolve category slug → human display name for titles/descriptions.
@@ -369,6 +379,7 @@ export async function generateProductSeoTemplate(opts?: {
     return {
       ok: true,
       apply,
+      statusScope: scope,
       scanned: rows.length,
       eligible,
       updated: 0,
@@ -408,6 +419,7 @@ export async function generateProductSeoTemplate(opts?: {
   return {
     ok: errors === 0,
     apply,
+    statusScope: scope,
     scanned: rows.length,
     eligible,
     updated,
