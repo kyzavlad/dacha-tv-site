@@ -1219,16 +1219,17 @@ export interface BackfillImagesResult {
   ok: boolean
   applied: boolean
   limit: number
-  catalogTotal: number
-  catalogMissingImage: number   // catalog rows with no image (derived, avoids IS NULL timeout)
-  eligible: number              // catalog rows matched to a supplier image this run
-  selected: number              // same as eligible (supplier-first: every found row is eligible)
-  updated: number               // rows actually written (0 on dry run)
+  catalogTotal: number              // all catalog rows
+  catalogMissingImage: number       // non-manual rows with no image (derived, avoids IS NULL timeout)
+  selected: number                  // non-manual missing-image catalog rows scanned this run
+  matchedSupplier: number           // selected rows that matched a supplier row (by sku or id)
+  eligible: number                  // matched rows whose supplier actually has an image
+  updated: number                   // rows written (0 on dry run)
   errors: number
-  remainingMissing: number      // catalog rows still missing an image after this run
-  supplierScanned: number       // supplier rows checked this run
-  samples: { sku: string; supplier_image: string }[]
-  blockedMissingSample: string[]  // catalog SKUs without images that have no supplier image
+  remainingMissing: number          // non-manual rows still missing an image after this run
+  noSupplierMatchSample: string[]   // catalog keys with NO supplier row at all
+  supplierWithoutImageSample: string[] // catalog keys matched a supplier row that has no image
+  eligibleSample: { sku: string; supplier_image: string }[]
   message: string
 }
 
@@ -1236,9 +1237,29 @@ const BACKFILL_IMAGES_DEFAULT_LIMIT = 1000
 const BACKFILL_IMAGES_MAX_LIMIT = 1000
 const BACKFILL_IMAGES_SUPPLIER_CHUNK = 300
 const BACKFILL_IMAGES_UPDATE_CHUNK = 100
-// Maximum supplier rows to scan per call (prevents runaway loops on large tables)
-const BACKFILL_IMAGES_MAX_SUPPLIER_SCAN = 6000
+const BACKFILL_IMAGES_SELECT_PAGE = 500
+// Cap catalog rows scanned per call. Lets us skip past a run of blocked rows
+// (supplier match without an image) within one request to still collect a full
+// `limit` batch of fillable rows, without risking a serverless timeout.
+const BACKFILL_IMAGES_MAX_CATALOG_SCAN = 5000
 
+// Non-manual filter: keep rows whose source is NULL or anything other than
+// 'manual'. We never touch manually-curated rows (their images are hand-set).
+const NON_MANUAL_OR = 'source.is.null,source.neq.manual'
+
+// Targeted, catalog-first image backfill. Selects catalog rows that are missing
+// an image (and are not manual), resolves their supplier rows by supplier_sku
+// AND supplier_product_id, and copies the supplier image across when present.
+//
+// This is the inverse of the earlier supplier-first traversal, which got stuck
+// scanning supplier rows that never matched the missing catalog rows
+// (eligible=0, supplierScanned=6000 on every run). Here we drive directly off
+// the rows that actually need an image, so every run makes progress and the
+// unfillable remainder (no supplier match / supplier has no image) is reported
+// explicitly instead of silently looking like "nothing to do".
+//
+// SAFETY: touches ONLY main_image_url + images (+ updated_at). Never overwrites
+// an existing catalog image. Read-only unless `apply` is true.
 export async function backfillCatalogImages(
   opts: { apply?: boolean; limit?: number } = {},
 ): Promise<BackfillImagesResult> {
@@ -1247,148 +1268,121 @@ export async function backfillCatalogImages(
   const limit = Math.min(rawLimit, BACKFILL_IMAGES_MAX_LIMIT)
   const client = getAdminClient()
 
-  console.log(`[backfill-images] start — apply=${apply} limit=${limit}`)
+  console.log(`[backfill-images-targeted] start — apply=${apply} limit=${limit}`)
 
-  // Three HEAD counts in parallel. Derive catalogMissingImage from NOT NULL counts
-  // to avoid IS NULL full-scan timeout (null ?? 0 would wrongly report 0 = "nothing to do").
+  // Counts. Derive catalogMissingImage from NOT NULL counts to avoid the IS NULL
+  // full-scan timeout (a timed-out HEAD count returns null → null ?? 0 = 0 would
+  // wrongly read as "nothing to backfill").
   const [
     { count: catalogTotalRaw },
-    { count: catalogWithSkuRaw },
-    { count: catalogWithSkuAndImageRaw },
+    { count: nonManualTotalRaw },
+    { count: nonManualWithImageRaw },
   ] = await Promise.all([
     client.from('catalog_products').select('id', { count: 'exact', head: true }),
-    client.from('catalog_products').select('id', { count: 'exact', head: true }).not('supplier_sku', 'is', null),
-    client.from('catalog_products').select('id', { count: 'exact', head: true }).not('supplier_sku', 'is', null).not('main_image_url', 'is', null),
+    client.from('catalog_products').select('id', { count: 'exact', head: true }).or(NON_MANUAL_OR),
+    client.from('catalog_products').select('id', { count: 'exact', head: true }).or(NON_MANUAL_OR).not('main_image_url', 'is', null),
   ])
   const catalogTotal = catalogTotalRaw ?? 0
-  const catalogWithSku = catalogWithSkuRaw ?? 0
-  const catalogMissingImage = Math.max(0, catalogWithSku - (catalogWithSkuAndImageRaw ?? 0))
+  const nonManualTotal = nonManualTotalRaw ?? 0
+  const catalogMissingImage = Math.max(0, nonManualTotal - (nonManualWithImageRaw ?? 0))
 
-  console.log(`[backfill-images] catalogTotal=${catalogTotal} withSku=${catalogWithSku} missingImage=${catalogMissingImage}`)
+  console.log(`[backfill-images-targeted] catalogTotal=${catalogTotal} nonManualTotal=${nonManualTotal} missingImage=${catalogMissingImage}`)
 
-  // ── Supplier-first traversal ──────────────────────────────────────────────────
-  // Iterate supplier rows that HAVE an image; for each chunk, find matching
-  // catalog rows that DON'T have one. This fixes the stuck-at-eligible=0 bug:
-  // the old catalog-first approach loaded the first N catalog rows sorted by
-  // supplier_sku. If those rows' SKUs had no supplier image yet, eligible stayed
-  // 0 forever on every repeated call.
+  // ── Catalog-first scan ────────────────────────────────────────────────────────
+  // Page through missing-image rows (ordered by id so .range paging is stable),
+  // resolving each page's supplier images, until we collect `limit` fillable rows
+  // or hit the scan cap. SELECT … IS NULL LIMIT short-circuits — no full scan.
   const eligibleMap = new Map<string, { sku: string; supplier_image: string; images: unknown }>()
-  let supplierOffset = 0
-  let supplierScanned = 0
+  const noSupplierMatchSample: string[] = []
+  const supplierWithoutImageSample: string[] = []
+  let selected = 0
+  let matchedSupplier = 0
+  let offset = 0
 
-  while (eligibleMap.size < limit && supplierOffset < BACKFILL_IMAGES_MAX_SUPPLIER_SCAN) {
-    const { data: chunk } = await client
-      .from('supplier_products')
-      .select('id, supplier_sku, main_image_url, images')
-      .not('main_image_url', 'is', null)
+  while (eligibleMap.size < limit && selected < BACKFILL_IMAGES_MAX_CATALOG_SCAN) {
+    const { data: page } = await client
+      .from('catalog_products')
+      .select('id, supplier_sku, supplier_product_id')
+      .is('main_image_url', null)
+      .or(NON_MANUAL_OR)
       .order('id', { ascending: true })
-      .range(supplierOffset, supplierOffset + BACKFILL_IMAGES_SUPPLIER_CHUNK - 1)
+      .range(offset, offset + BACKFILL_IMAGES_SELECT_PAGE - 1)
 
-    if (!chunk || chunk.length === 0) break
-    supplierScanned += chunk.length
-    supplierOffset += chunk.length
+    if (!page || page.length === 0) break
+    selected += page.length
+    offset += page.length
 
-    const bySkuMap = new Map<string, { main: string; images: unknown }>()
-    const byIdMap = new Map<string, { main: string; images: unknown; sku: string }>()
-    for (const r of chunk) {
-      const main = r.main_image_url as string | null
-      if (!main) continue
-      if (r.supplier_sku) bySkuMap.set(r.supplier_sku as string, { main, images: r.images })
-      byIdMap.set(r.id as string, { main, images: r.images, sku: (r.supplier_sku as string | null) ?? '' })
+    // Collect the keys to resolve against supplier_products.
+    const pageSkus = [...new Set(page.map((r) => r.supplier_sku as string | null).filter(Boolean))] as string[]
+    const pageIds = [...new Set(page.map((r) => r.supplier_product_id as string | null).filter(Boolean))] as string[]
+
+    // Resolve supplier rows (image MAY be null — we need to tell "no match" apart
+    // from "matched but supplier has no image").
+    const supBySku = new Map<string, { main: string | null; images: unknown }>()
+    for (let i = 0; i < pageSkus.length; i += BACKFILL_IMAGES_SUPPLIER_CHUNK) {
+      const { data } = await client
+        .from('supplier_products')
+        .select('supplier_sku, main_image_url, images')
+        .in('supplier_sku', pageSkus.slice(i, i + BACKFILL_IMAGES_SUPPLIER_CHUNK))
+      for (const s of data ?? []) {
+        const sku = s.supplier_sku as string | null
+        if (sku) supBySku.set(sku, { main: s.main_image_url as string | null, images: s.images })
+      }
     }
-
-    const remaining = limit - eligibleMap.size
-
-    // Match a) catalog.supplier_sku = supplier.supplier_sku
-    const chunkSkus = [...bySkuMap.keys()]
-    if (chunkSkus.length > 0) {
-      const { data: catBySku } = await client
-        .from('catalog_products')
-        .select('id, supplier_sku')
-        .is('main_image_url', null)
-        .in('supplier_sku', chunkSkus)
-        .limit(remaining)
-      for (const cat of catBySku ?? []) {
-        if (eligibleMap.size >= limit) break
-        const sku = cat.supplier_sku as string
-        const sup = bySkuMap.get(sku)
-        if (sup && !eligibleMap.has(cat.id as string)) {
-          eligibleMap.set(cat.id as string, { sku, supplier_image: sup.main, images: sup.images })
-        }
+    const supById = new Map<string, { main: string | null; images: unknown }>()
+    for (let i = 0; i < pageIds.length; i += BACKFILL_IMAGES_SUPPLIER_CHUNK) {
+      const { data } = await client
+        .from('supplier_products')
+        .select('id, main_image_url, images')
+        .in('id', pageIds.slice(i, i + BACKFILL_IMAGES_SUPPLIER_CHUNK))
+      for (const s of data ?? []) {
+        const id = s.id as string
+        if (id) supById.set(id, { main: s.main_image_url as string | null, images: s.images })
       }
     }
 
-    // Match b) catalog.supplier_product_id = supplier.id
-    const chunkIds = [...byIdMap.keys()]
-    if (chunkIds.length > 0 && eligibleMap.size < limit) {
-      const remaining2 = limit - eligibleMap.size
-      const { data: catById } = await client
-        .from('catalog_products')
-        .select('id, supplier_sku, supplier_product_id')
-        .is('main_image_url', null)
-        .in('supplier_product_id', chunkIds)
-        .limit(remaining2)
-      for (const cat of catById ?? []) {
-        if (eligibleMap.size >= limit) break
-        const spId = cat.supplier_product_id as string
-        const sup = byIdMap.get(spId)
-        if (sup && !eligibleMap.has(cat.id as string)) {
-          eligibleMap.set(cat.id as string, {
-            sku: (cat.supplier_sku as string | null) ?? sup.sku,
-            supplier_image: sup.main,
-            images: sup.images,
-          })
-        }
+    for (const row of page) {
+      const sku = row.supplier_sku as string | null
+      const spId = row.supplier_product_id as string | null
+      const key = sku || spId || (row.id as string)
+
+      // Prefer a supplier_sku match, fall back to supplier_product_id.
+      const sup = (sku ? supBySku.get(sku) : undefined) ?? (spId ? supById.get(spId) : undefined)
+
+      if (!sup) {
+        if (noSupplierMatchSample.length < 10) noSupplierMatchSample.push(key)
+        continue
+      }
+      matchedSupplier++
+
+      if (!sup.main) {
+        if (supplierWithoutImageSample.length < 10) supplierWithoutImageSample.push(key)
+        continue
+      }
+
+      if (eligibleMap.size < limit && !eligibleMap.has(row.id as string)) {
+        eligibleMap.set(row.id as string, { sku: sku ?? '', supplier_image: sup.main, images: sup.images })
       }
     }
 
-    console.log(`[backfill-images] scanned ${supplierScanned} supplier rows → ${eligibleMap.size} eligible`)
+    console.log(`[backfill-images-targeted] scanned ${selected} catalog rows → matched=${matchedSupplier} eligible=${eligibleMap.size}`)
   }
 
   const eligible = eligibleMap.size
   const entries = [...eligibleMap.entries()]
-  const samples = entries.slice(0, 10).map(([, v]) => ({ sku: v.sku, supplier_image: v.supplier_image }))
+  const eligibleSample = entries.slice(0, 10).map(([, v]) => ({ sku: v.sku, supplier_image: v.supplier_image }))
 
-  // ── Blocked sample (diagnostic: catalog SKUs stuck with no supplier image) ───
-  // IS NULL + LIMIT 50 is safe — PostgreSQL stops at 50 rows, no full-table scan.
-  let blockedMissingSample: string[] = []
-  {
-    const { data: blockedRows } = await client
-      .from('catalog_products')
-      .select('supplier_sku')
-      .is('main_image_url', null)
-      .not('supplier_sku', 'is', null)
-      .order('updated_at', { ascending: true, nullsFirst: true })
-      .limit(50)
-    const blockedSkuList = (blockedRows ?? []).map((r) => r.supplier_sku as string).filter(Boolean)
-    if (blockedSkuList.length > 0) {
-      const { data: supWithImgs } = await client
-        .from('supplier_products')
-        .select('supplier_sku')
-        .not('main_image_url', 'is', null)
-        .in('supplier_sku', blockedSkuList)
-      const skusWithImages = new Set((supWithImgs ?? []).map((r) => r.supplier_sku as string))
-      blockedMissingSample = blockedSkuList.filter((sku) => !skusWithImages.has(sku)).slice(0, 10)
-    }
-  }
-
-  if (eligible === 0) {
-    return {
-      ok: true, applied: apply, limit, catalogTotal, catalogMissingImage,
-      eligible: 0, selected: 0, updated: 0, errors: 0,
-      remainingMissing: catalogMissingImage, supplierScanned,
-      samples: [], blockedMissingSample,
-      message: `Не знайдено пар (scanned ${supplierScanned} supplier rows). ${blockedMissingSample.length} SKU без зображення постачальника. Усього без зображення: ${catalogMissingImage}.`,
-    }
-  }
+  const blockedNote =
+    `Зіставлено з постачальником: ${matchedSupplier}, з них без зображення: ${supplierWithoutImageSample.length >= 10 ? '10+' : supplierWithoutImageSample.length}. ` +
+    `Без збігу з постачальником: ${noSupplierMatchSample.length >= 10 ? '10+' : noSupplierMatchSample.length}.`
 
   if (!apply) {
     return {
       ok: true, applied: false, limit, catalogTotal, catalogMissingImage,
-      eligible, selected: eligible, updated: 0, errors: 0,
-      remainingMissing: catalogMissingImage, supplierScanned,
-      samples, blockedMissingSample,
-      message: `DRY RUN — знайдено ${eligible} пар (scanned ${supplierScanned} supplier rows). Усього без зображення: ${catalogMissingImage}. Запустіть POST (apply) для запису.`,
+      selected, matchedSupplier, eligible, updated: 0, errors: 0,
+      remainingMissing: catalogMissingImage,
+      noSupplierMatchSample, supplierWithoutImageSample, eligibleSample,
+      message: `DRY RUN — переглянуто ${selected} товарів без зображення, ${eligible} можна заповнити. ${blockedNote} Усього без зображення: ${catalogMissingImage}. Запустіть POST (apply) для запису.`,
     }
   }
 
@@ -1407,26 +1401,26 @@ export async function backfillCatalogImages(
       if (error) errors++
       else updated++
     }
-    console.log(`[backfill-images] progress: ${Math.min(i + BACKFILL_IMAGES_UPDATE_CHUNK, entries.length)}/${entries.length}, updated=${updated} errors=${errors}`)
+    console.log(`[backfill-images-targeted] progress: ${Math.min(i + BACKFILL_IMAGES_UPDATE_CHUNK, entries.length)}/${entries.length}, updated=${updated} errors=${errors}`)
   }
 
   // Derive remaining from NOT NULL count — same pattern as above to avoid IS NULL timeout.
   const { count: withImageAfterRaw } = await client
     .from('catalog_products')
     .select('id', { count: 'exact', head: true })
-    .not('supplier_sku', 'is', null)
+    .or(NON_MANUAL_OR)
     .not('main_image_url', 'is', null)
   const remainingMissing = withImageAfterRaw != null
-    ? Math.max(0, catalogWithSku - withImageAfterRaw)
+    ? Math.max(0, nonManualTotal - withImageAfterRaw)
     : Math.max(0, catalogMissingImage - updated)
 
-  console.log(`[backfill-images] done: updated=${updated} errors=${errors} remainingMissing=${remainingMissing}`)
+  console.log(`[backfill-images-targeted] done: updated=${updated} errors=${errors} remainingMissing=${remainingMissing}`)
 
   return {
     ok: errors === 0, applied: true, limit, catalogTotal, catalogMissingImage,
-    eligible, selected: eligible, updated, errors, remainingMissing,
-    supplierScanned, samples, blockedMissingSample,
-    message: `Заповнено зображення для ${updated} товарів. Залишилось без зображення: ${remainingMissing}. Supplier rows scanned: ${supplierScanned}${errors > 0 ? `. Помилок: ${errors}` : ''}.`,
+    selected, matchedSupplier, eligible, updated, errors, remainingMissing,
+    noSupplierMatchSample, supplierWithoutImageSample, eligibleSample,
+    message: `Заповнено зображення для ${updated} товарів. ${blockedNote} Залишилось без зображення: ${remainingMissing}${errors > 0 ? `. Помилок: ${errors}` : ''}.`,
   }
 }
 
