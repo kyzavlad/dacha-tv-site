@@ -139,6 +139,7 @@ export interface ManualPublishResult {
   ok: boolean
   applied: boolean
   draftTotal: number          // total draft catalog_products
+  eligibleQuality?: number    // quality=true only: drafts with image + meta_title + meta_description
   wouldPublish: number        // drafts that would be published this run (after limit)
   published: number           // rows actually flipped to published (0 on dry run)
   skipped: number             // drafts left unpublished because of the limit
@@ -860,11 +861,16 @@ export async function publishAllCatalogProducts(): Promise<PublishResult> {
 // is therefore always allowed; this function adds dry-run + batching + counts so a
 // bulk publish can be reviewed before it goes live.
 //
+// opts.quality=true: publish only rows that have main_image_url + meta_title +
+//   meta_description — skips low-quality rows rather than surfacing them publicly.
+//   eligibleQuality in the result tells how many pass the quality gate.
+//
 // SAFETY: touches ONLY status (+ updated_at). Never price, image, category, SEO.
 export async function publishDraftProducts(
-  opts: { dryRun?: boolean; limit?: number } = {},
+  opts: { dryRun?: boolean; limit?: number; quality?: boolean } = {},
 ): Promise<ManualPublishResult> {
   const dryRun = opts.dryRun === true
+  const quality = opts.quality === true
   const limit = opts.limit && opts.limit > 0 ? opts.limit : 100000
   const client = getAdminClient()
 
@@ -873,29 +879,46 @@ export async function publishDraftProducts(
     .select('id', { count: 'exact', head: true })
     .eq('status', 'draft')
 
-  // Load draft rows (paginated past the 1000-row cap), oldest first, then cap.
-  const draftRows = await selectAllRows<{ id: string; supplier_sku: string | null; name_ua: string | null }>(
-    (from, to) => client.from('catalog_products')
+  // Quality mode: restrict candidate pool to rows that have image + both meta fields.
+  // Standard mode: all draft rows (original behaviour, unchanged).
+  const buildQuery = (from: number, to: number) => {
+    const q = client.from('catalog_products')
       .select('id, supplier_sku, name_ua')
       .eq('status', 'draft')
       .order('created_at', { ascending: true })
-      .range(from, to),
-  )
+      .range(from, to)
+    if (quality) {
+      return q
+        .not('main_image_url', 'is', null)
+        .not('meta_title', 'is', null)
+        .not('meta_description', 'is', null)
+    }
+    return q
+  }
 
-  const candidates = draftRows.slice(0, limit)
-  const skipped = Math.max(0, draftRows.length - candidates.length)
+  // Load candidate rows (paginated past the 1000-row cap), oldest first, then cap.
+  const candidateRows = await selectAllRows<{ id: string; supplier_sku: string | null; name_ua: string | null }>(buildQuery)
+
+  const eligibleQuality = quality ? candidateRows.length : undefined
+  const candidates = candidateRows.slice(0, limit)
+  const skipped = Math.max(0, candidateRows.length - candidates.length)
   const samples = candidates.slice(0, 10).map((r) => ({
     sku: String(r.supplier_sku ?? ''),
     name: String(r.name_ua ?? ''),
   }))
 
+  const qualityNote = quality
+    ? ` (якість: зображення + meta_title + meta_description; eligible: ${eligibleQuality ?? 0})`
+    : ''
+
   if (dryRun) {
     return {
       ok: true, applied: false,
       draftTotal: draftTotal ?? 0,
+      ...(quality ? { eligibleQuality: eligibleQuality ?? 0 } : {}),
       wouldPublish: candidates.length,
       published: 0, skipped, errors: 0, samples,
-      message: `DRY RUN — буде опубліковано ${candidates.length} з ${draftTotal ?? 0} draft-товарів${skipped > 0 ? ` (${skipped} понад ліміт залишаться draft)` : ''}.`,
+      message: `DRY RUN — буде опубліковано ${candidates.length} з ${draftTotal ?? 0} draft-товарів${qualityNote}${skipped > 0 ? ` (${skipped} понад ліміт залишаться draft)` : ''}.`,
     }
   }
 
@@ -916,9 +939,10 @@ export async function publishDraftProducts(
   return {
     ok: errors === 0, applied: true,
     draftTotal: draftTotal ?? 0,
+    ...(quality ? { eligibleQuality: eligibleQuality ?? 0 } : {}),
     wouldPublish: candidates.length,
     published, skipped, errors, samples,
-    message: `Опубліковано ${published} товарів${skipped > 0 ? `, ${skipped} залишилось draft (ліміт)` : ''}${errors > 0 ? `, помилок: ${errors}` : ''}.`,
+    message: `Опубліковано ${published} товарів${qualityNote}${skipped > 0 ? `, ${skipped} залишилось draft (ліміт)` : ''}${errors > 0 ? `, помилок: ${errors}` : ''}.`,
   }
 }
 
