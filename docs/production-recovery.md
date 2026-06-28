@@ -24,6 +24,49 @@ for the **Production** environment:
 
 After changing any env var you must **redeploy** for it to take effect.
 
+## 0. Rebuilding on a NEW Supabase project
+
+Use this when the original Supabase project is lost/inaccessible (blocked
+account) and production shows `Invalid API key`. Goal: get lavender booking and
+`/admin/bookings` working again. Catalog data recovery is separate and can wait.
+
+### 0.1 Create the new Supabase project
+
+1. Go to <https://supabase.com/dashboard> → **New project**. Pick a strong DB
+   password and a region close to users (e.g. EU).
+2. Wait for it to finish provisioning.
+3. Open **Project Settings → API** and copy:
+   - **Project URL** → `NEXT_PUBLIC_SUPABASE_URL`
+   - **anon public** key → `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+   - **service_role** key → `SUPABASE_SERVICE_ROLE_KEY` (secret — keep safe)
+
+### 0.2 Run the rebuild migration
+
+In the new project: **SQL Editor → New query**, paste the entire contents of
+`supabase/migrations/20260628_rebuild_new_supabase.sql`, and **Run**. It is
+idempotent (safe to re-run) and creates all tables, indexes, RLS policies, and
+seeds the lavender + water-house services.
+
+Then paste and run `supabase/verify-rebuild.sql` to smoke-test: it checks counts,
+inserts one test booking, confirms it shows in admin shape and that availability
+detects the booked hours, then deletes the test row.
+
+```sql
+-- Quick manual check (also in verify-rebuild.sql)
+select count(*) from services;   -- expect >= 1 (lavender seeded)
+select count(*) from bookings;   -- expect 0 on a fresh project
+select slug, price_uah, slot_start_hour, slot_end_hour, status
+  from services where slug = 'orenda-lavandovoho-polia';
+```
+
+### 0.3 Set the Vercel env vars + redeploy
+
+In **Vercel → Settings → Environment Variables** (Production), set the four
+variables from the table above using the new project's values. Keep
+`CRON_SECRET` (generate a new random string if it was lost). Then **redeploy**.
+
+Proceed to section 1 (health) and section 3 (booking test) to confirm recovery.
+
 ## 1. Verify production health
 
 Health probe is read-only and never prints secret values (only presence
@@ -80,6 +123,18 @@ curl -sS -H "Authorization: Bearer $CRON_SECRET" \
   "$SITE/api/admin/backup/catalog-snapshot?limit=5000" -o catalog-snapshot.json
 ```
 
+### Local backup script (terminal, no HTTP)
+
+Exports `bookings`, `services`, `inquiries`, `site_settings` straight to
+`backups/dachatv-critical-YYYY-MM-DD-HH-mm.json` (gitignored). Uses the current
+production service-role credentials from your shell env:
+
+```sh
+NEXT_PUBLIC_SUPABASE_URL="https://<project>.supabase.co" \
+SUPABASE_SERVICE_ROLE_KEY="<service role key>" \
+  pnpm dlx tsx scripts/backup-critical.ts
+```
+
 ## 3. Test lavender booking after deploy
 
 ```sh
@@ -100,7 +155,31 @@ the visitor still sees a success message and an alert is sent flagged
 `lavender_booking_fallback` / `db_timeout_unstored` with a
 `FALLBACK-LAVENDER-<timestamp>` id — handle those manually.
 
-## 4. Operational rule
+## 4. Recover OLD data later (if old credentials return)
+
+If the original Supabase project becomes accessible again, copy its data into the
+new project with `scripts/migrate-from-old-supabase.ts`. It upserts (never
+deletes), so it is safe to re-run; bookings/services/inquiries/site_settings copy
+by default, catalog tables only with `--catalog`.
+
+```sh
+# 1) Dry run first — counts only, writes nothing
+OLD_SUPABASE_URL="https://<old>.supabase.co" \
+OLD_SUPABASE_SERVICE_ROLE_KEY="<old service role>" \
+NEW_SUPABASE_URL="https://<new>.supabase.co" \
+NEW_SUPABASE_SERVICE_ROLE_KEY="<new service role>" \
+  pnpm dlx tsx scripts/migrate-from-old-supabase.ts --dry
+
+# 2) Real copy of booking/operational tables
+#    (drop --dry; add --catalog to also copy catalog tables)
+OLD_SUPABASE_URL=... OLD_SUPABASE_SERVICE_ROLE_KEY=... \
+NEW_SUPABASE_URL=... NEW_SUPABASE_SERVICE_ROLE_KEY=... \
+  pnpm dlx tsx scripts/migrate-from-old-supabase.ts
+```
+
+Do **not** run this now — the old project is currently inaccessible.
+
+## 5. Operational rule
 
 > **Do not run catalog import / SEO / publish waves while booking health is
 > failing.** Those jobs put heavy load on Supabase. Run the health probe first
