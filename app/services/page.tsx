@@ -41,8 +41,23 @@ const serviceSchema = {
   },
 }
 
+// Bound the DB lookup so a slow/unavailable Supabase can never hang the render.
+// On timeout/error we fall back to an empty list — the page still shows the hero
+// and the general inquiry form, so visitors can always reach us.
+const SERVICES_TIMEOUT_MS = 3000
+
+function servicesWithTimeout() {
+  return Promise.race([
+    getAllServices(),
+    new Promise<never>((_, reject) => setTimeout(() => reject(new Error('services_timeout')), SERVICES_TIMEOUT_MS)),
+  ])
+}
+
 export default async function ServicesPage() {
-  const services = await getAllServices().catch(() => [])
+  const services = await servicesWithTimeout().catch((e) => {
+    console.error('[services] load failed/timed out:', e instanceof Error ? e.message : e)
+    return []
+  })
 
   return (
     <div className="bg-white min-h-screen">

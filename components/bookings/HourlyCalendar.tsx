@@ -65,6 +65,10 @@ export function HourlyCalendar({
   const [duration, setDuration] = useState(1)
   const [bookedHours, setBookedHours] = useState<number[]>([])
   const [loading, setLoading] = useState(false)
+  // Set when availability can't be fetched quickly or comes back degraded. The
+  // calendar stays fully usable — the user just sees a reassuring notice and we
+  // confirm the slot by phone.
+  const [availabilityWarning, setAvailabilityWarning] = useState(false)
 
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
@@ -82,12 +86,35 @@ export function HourlyCalendar({
     if (!selectedDate) return
     setLoading(true)
     setSelectedHour(null)
+    setAvailabilityWarning(false)
     const dateStr = toISODate(selectedDate)
-    fetch(`/api/bookings/availability?slug=${serviceSlug}&date=${dateStr}`)
+
+    // Client-side only, after render. Abort after 4s so a slow API never leaves
+    // the calendar stuck on "Завантаження…" — we fall back to "all free" and
+    // show a notice; the booking is confirmed by phone anyway.
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 4000)
+
+    fetch(`/api/bookings/availability?slug=${serviceSlug}&date=${dateStr}`, { signal: controller.signal })
       .then(r => r.json())
-      .then(d => setBookedHours(d.bookedHours ?? []))
-      .catch(() => setBookedHours([]))
-      .finally(() => setLoading(false))
+      .then(d => {
+        setBookedHours(Array.isArray(d.bookedHours) ? d.bookedHours : [])
+        if (d.degraded) setAvailabilityWarning(true)
+      })
+      .catch(() => {
+        // Timeout/abort or network error — don't block, just warn.
+        setBookedHours([])
+        setAvailabilityWarning(true)
+      })
+      .finally(() => {
+        clearTimeout(timer)
+        setLoading(false)
+      })
+
+    return () => {
+      clearTimeout(timer)
+      controller.abort()
+    }
   }, [selectedDate, serviceSlug])
 
   const daysInMonth = new Date(viewMonth.getFullYear(), viewMonth.getMonth() + 1, 0).getDate()
@@ -251,6 +278,11 @@ export function HourlyCalendar({
           <p className="text-sm font-semibold text-gray-700 mb-3">
             Початок · {formatDateUA(selectedDate)}
           </p>
+          {!loading && availabilityWarning && (
+            <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              Не вдалося швидко перевірити зайнятість. Залиште заявку — підтвердимо час дзвінком.
+            </div>
+          )}
           {loading ? (
             <p className="text-xs text-gray-400">Завантаження…</p>
           ) : (

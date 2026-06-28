@@ -1,11 +1,38 @@
-export const dynamic = 'force-dynamic'
+// Ads point here, so the page MUST render fast even when Supabase/API is slow.
+// It is fully static: no server-side DB/API call blocks the render. The booking
+// calendar fetches availability client-side after load, with its own timeout
+// and a graceful fallback. Lavender service config is fixed business data, so we
+// use the shared constants instead of a per-request DB lookup.
+export const dynamic = 'force-static'
+export const revalidate = 3600
 
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { getSupabaseClient } from '@/lib/supabase/client'
 import { HourlyCalendar } from '@/components/bookings/HourlyCalendar'
 import { YouTubeFacade } from '@/components/shared/YouTubeFacade'
 import { LAVENDER_INSTAGRAM_URL, LAVENDER_INSTAGRAM_HANDLE } from '@/lib/launch-defaults'
+import {
+  LAVENDER_SLUG,
+  LAVENDER_DAY_PRICE_UAH,
+  LAVENDER_EVENING_PRICE_UAH,
+  LAVENDER_EVENING_FROM_HOUR,
+  LAVENDER_INCLUDED_GUESTS,
+  LAVENDER_EXTRA_GUEST_PRICE_UAH,
+  LAVENDER_MAX_EXTRA_GUESTS,
+  LAVENDER_BOUQUET_PRICE_UAH,
+  LAVENDER_MAX_DURATION_HOURS,
+} from '@/lib/bookings/pricing'
+
+// Fixed lavender field service config — mirrors the `services` row but needs no
+// DB round-trip so the page can be statically rendered.
+const LAVENDER = {
+  slug: LAVENDER_SLUG,
+  name: 'Лавандове поле',
+  capacity: LAVENDER_INCLUDED_GUESTS,
+  extraGuestPrice: LAVENDER_EXTRA_GUEST_PRICE_UAH,
+  slotStartHour: 6,
+  slotEndHour: 21,
+} as const
 
 export const metadata: Metadata = {
   title: 'Лавандове поле',
@@ -33,19 +60,8 @@ const INSTAGRAM_CARDS = [
   { gradient: 'from-[#2d1f5e] via-[#4a2d7a] to-[#6b4fa0]', accent: 'from-indigo-300/20 to-transparent', emoji: '🌿', caption: 'Сезон лаванди', tag: '#lavanda' },
 ]
 
-async function getLavenderService() {
-  const client = getSupabaseClient()
-  if (!client) return null
-  const { data } = await client
-    .from('services')
-    .select('id, slug, name, price_uah, capacity, extra_guest_price_uah, slot_start_hour, slot_end_hour, booking_type, short_description, description')
-    .eq('slug', 'orenda-lavandovoho-polia')
-    .single()
-  return data
-}
-
-export default async function LavenderPage() {
-  const service = await getLavenderService().catch(() => null)
+export default function LavenderPage() {
+  const service = LAVENDER
   const maxDateISO = `${new Date().getFullYear()}-07-20`
 
   return (
@@ -92,8 +108,7 @@ export default async function LavenderPage() {
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12 md:py-16 space-y-16 md:space-y-20">
 
         {/* Lavender field rental */}
-        {service && (
-          <section id="orenda" className="scroll-mt-20">
+        <section id="orenda" className="scroll-mt-20">
             <div className="mb-8">
               <span className="text-xs font-semibold text-purple-500 uppercase tracking-widest mb-2 block">Оренда локації</span>
               <h2 className="font-serif text-2xl md:text-3xl font-bold text-gray-900">Лавандове поле</h2>
@@ -130,19 +145,19 @@ export default async function LavenderPage() {
                     <span className="text-sm text-gray-500 flex items-center gap-2">
                       <span aria-hidden="true">👥</span> Включено гостей
                     </span>
-                    <span className="text-sm font-semibold text-gray-800">до {service.capacity ?? 5} осіб</span>
+                    <span className="text-sm font-semibold text-gray-800">до {service.capacity} осіб</span>
                   </div>
                   <div className="flex items-center justify-between px-4 py-3">
                     <span className="text-sm text-gray-500 flex items-center gap-2">
                       <span aria-hidden="true">➕</span> Додатковий гість
                     </span>
-                    <span className="text-sm font-semibold text-gray-800">+{service.extra_guest_price_uah ?? 200} ₴/особа</span>
+                    <span className="text-sm font-semibold text-gray-800">+{service.extraGuestPrice} ₴/особа</span>
                   </div>
                   <div className="flex items-center justify-between px-4 py-3">
                     <span className="text-sm text-gray-500 flex items-center gap-2">
                       <span aria-hidden="true">🕐</span> Час роботи
                     </span>
-                    <span className="text-sm font-semibold text-gray-800">{String(service.slot_start_hour ?? 6).padStart(2, '0')}:00–{String(service.slot_end_hour ?? 21).padStart(2, '0')}:00</span>
+                    <span className="text-sm font-semibold text-gray-800">{String(service.slotStartHour).padStart(2, '0')}:00–{String(service.slotEndHour).padStart(2, '0')}:00</span>
                   </div>
                   <div className="flex items-center justify-between px-4 py-3">
                     <span className="text-sm text-gray-500 flex items-center gap-2">
@@ -183,34 +198,26 @@ export default async function LavenderPage() {
                 <HourlyCalendar
                   serviceSlug={service.slug}
                   serviceName={service.name}
-                  pricePerHour={service.price_uah ?? 1000}
-                  capacity={service.capacity ?? 5}
-                  extraGuestPrice={service.extra_guest_price_uah ?? 200}
-                  slotStartHour={service.slot_start_hour ?? 6}
-                  slotEndHour={service.slot_end_hour ?? 21}
+                  pricePerHour={LAVENDER_DAY_PRICE_UAH}
+                  capacity={service.capacity}
+                  extraGuestPrice={service.extraGuestPrice}
+                  slotStartHour={service.slotStartHour}
+                  slotEndHour={service.slotEndHour}
                   source="/lavender"
                   maxDateISO={maxDateISO}
-                  includedGuests={5}
-                  maxGuests={25}
-                  maxDurationHours={12}
+                  includedGuests={LAVENDER_INCLUDED_GUESTS}
+                  maxGuests={LAVENDER_INCLUDED_GUESTS + LAVENDER_MAX_EXTRA_GUESTS}
+                  maxDurationHours={LAVENDER_MAX_DURATION_HOURS}
                   enableBouquets
-                  bouquetPrice={100}
+                  bouquetPrice={LAVENDER_BOUQUET_PRICE_UAH}
                   requireRules
                   rulesLabel="З правилами відвідування лавандового поля ознайомлений(а)"
-                  eveningStartHour={15}
-                  eveningPriceUah={1200}
+                  eveningStartHour={LAVENDER_EVENING_FROM_HOUR}
+                  eveningPriceUah={LAVENDER_EVENING_PRICE_UAH}
                 />
               </div>
             </div>
           </section>
-        )}
-
-        {/* No-service fallback */}
-        {!service && (
-          <div className="text-center py-16 text-gray-400">
-            <p>Інформацію оновлюємо. Зв&apos;яжіться з нами для деталей.</p>
-          </div>
-        )}
 
         {/* ── How to get here: video + map ────────────────────────────── */}
         <section id="route" className="scroll-mt-20">
