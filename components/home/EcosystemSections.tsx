@@ -63,7 +63,7 @@ const SECTIONS = [
 
 export function EcosystemSections() {
   return (
-    <section className="py-20 md:py-28 bg-white" aria-labelledby="ecosystem-heading">
+    <section id="ecosystem" className="scroll-mt-20 py-20 md:py-28 bg-white" aria-labelledby="ecosystem-heading">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="max-w-2xl mb-12">
           <span className="text-xs font-semibold text-honey-700 uppercase tracking-widest mb-3 block">
