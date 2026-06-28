@@ -26,6 +26,23 @@ const ukrainianPhone = /^(\+380|0)\d{9}$/
 const BOUQUET_PRICE_UAH = LAVENDER_BOUQUET_PRICE_UAH
 const lavenderMaxDate = () => `${new Date().getFullYear()}-07-20`
 
+// Hard cap for any single Supabase round-trip in the booking path. After a heavy
+// catalog import Supabase can be slow/overloaded; this guarantees the submit
+// action can never hang on the DB — it either completes or falls back fast.
+const DB_TIMEOUT_MS = 4500
+
+// Reject after `ms` so a slow/hanging Supabase call can't block a booking
+// submit. The caller catches the rejection and degrades (fallback for lavender).
+function withTimeout<T>(p: PromiseLike<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(`db_timeout:${label}`)), ms)
+    Promise.resolve(p).then(
+      (v) => { clearTimeout(t); resolve(v) },
+      (e) => { clearTimeout(t); reject(e) },
+    )
+  })
+}
+
 // Build the hourly pricing config for a service. Lavender uses the two-tier
 // (day/evening) rate; every other hourly service uses its flat price.
 function pricingConfig(slug: string, flatPricePerHour: number): HourlyPricingConfig {
@@ -87,7 +104,9 @@ const dailyBookingSchema = z.object({
   _honeypot: z.string().max(0, 'Відмовлено'),
 })
 
-type ActionResult = { success: true } | { success: false; error: string; fieldErrors?: Record<string, string[]> }
+type ActionResult =
+  | { success: true; message?: string }
+  | { success: false; error: string; fieldErrors?: Record<string, string[]> }
 
 function fieldErrors(err: z.ZodError): Record<string, string[]> {
   const flat = err.flatten().fieldErrors as Record<string, string[] | undefined>
@@ -123,6 +142,10 @@ async function notifyBooking({
 }): Promise<void> {
   const tasks: Promise<void>[] = []
 
+  // Bound each external call so a slow Telegram/n8n endpoint can't hang the
+  // action (the booking path must stay fast even when everything is degraded).
+  const NOTIFY_TIMEOUT_MS = 5000
+
   const token = process.env.TELEGRAM_BOT_TOKEN
   const chatId = process.env.TELEGRAM_CHAT_ID_FLOWERS || process.env.TELEGRAM_CHAT_ID
   if (token && chatId) {
@@ -131,6 +154,7 @@ async function notifyBooking({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ chat_id: chatId, text: message }),
+        signal: AbortSignal.timeout(NOTIFY_TIMEOUT_MS),
       })
         .then((r) => { console.log(`[lavender-booking ${trace}] direct telegram sent ok=${r.ok} status=${r.status}`) })
         .catch((e) => { console.error(`[lavender-booking ${trace}] direct telegram failed:`, String(e)) })
@@ -146,6 +170,7 @@ async function notifyBooking({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(NOTIFY_TIMEOUT_MS),
       })
         .then((r) => { console.log(`[lavender-booking ${trace}] webhook sent ok=${r.ok} status=${r.status}`) })
         .catch((e) => { console.error(`[lavender-booking ${trace}] webhook failed:`, String(e)) })
@@ -212,122 +237,143 @@ export async function submitHourlyBooking(formData: FormData): Promise<ActionRes
     }
   }
 
+  // ── DB-backed save, every round-trip hard-bounded so an overloaded Supabase
+  //    can never hang the submit ────────────────────────────────────────────
+  const client = getAdminClient()
+
+  // services config — bounded and tolerant. Lavender has full constant
+  // fallbacks; other services fall back to their defaults below. A timeout here
+  // never fails the booking, it just uses defaults.
+  let svc: {
+    id?: string
+    price_uah?: number | null
+    capacity?: number | null
+    extra_guest_price_uah?: number | null
+    slot_start_hour?: number | null
+    slot_end_hour?: number | null
+  } | null = null
   try {
-    const client = getAdminClient()
-    const { data: svc } = await client
-      .from('services')
-      .select('id, price_uah, capacity, extra_guest_price_uah, slot_start_hour, slot_end_hour')
-      .eq('slug', d.serviceSlug)
-      .single()
+    const r = await withTimeout(
+      client
+        .from('services')
+        .select('id, price_uah, capacity, extra_guest_price_uah, slot_start_hour, slot_end_hour')
+        .eq('slug', d.serviceSlug)
+        .single(),
+      DB_TIMEOUT_MS,
+      'services',
+    )
+    svc = r.data ?? null
+  } catch (e) {
+    console.error(`[booking ${trace}] services lookup failed/timeout:`, e instanceof Error ? e.message : e)
+  }
 
-    // Lavender always includes 5 guests by business rule (do NOT trust the DB
-    // capacity column, which can be 0 and caused "Гості: 0 осіб").
-    const includedGuests = isLavender ? LAVENDER_INCLUDED_GUESTS : (svc?.capacity ?? 1)
-    const extraRate = svc?.extra_guest_price_uah ?? LAVENDER_EXTRA_GUEST_PRICE_UAH
-    const slotEnd = svc?.slot_end_hour ?? 21
+  // Lavender always includes 5 guests by business rule (do NOT trust the DB
+  // capacity column, which can be 0 and caused "Гості: 0 осіб").
+  const includedGuests = isLavender ? LAVENDER_INCLUDED_GUESTS : (svc?.capacity ?? 1)
+  const extraRate = svc?.extra_guest_price_uah ?? LAVENDER_EXTRA_GUEST_PRICE_UAH
+  const slotEnd = svc?.slot_end_hour ?? 21
 
-    // Clamp duration so it never runs past the service's closing hour.
-    const maxDuration = Math.max(1, Math.min(LAVENDER_MAX_DURATION_HOURS, slotEnd - d.bookingHour))
-    const durationHours = Math.min(Math.max(1, d.durationHours ?? 1), maxDuration)
-    const guestCount = Math.max(1, d.guestCount)
-    const extraGuests = Math.max(0, guestCount - includedGuests)
-    const bouquetQty = d.bouquetQty && d.bouquetQty > 0 ? d.bouquetQty : 0
+  // Clamp duration so it never runs past the service's closing hour.
+  const maxDuration = Math.max(1, Math.min(LAVENDER_MAX_DURATION_HOURS, slotEnd - d.bookingHour))
+  const durationHours = Math.min(Math.max(1, d.durationHours ?? 1), maxDuration)
+  const guestCount = Math.max(1, d.guestCount)
+  const extraGuests = Math.max(0, guestCount - includedGuests)
+  const bouquetQty = d.bouquetQty && d.bouquetQty > 0 ? d.bouquetQty : 0
 
+  // Server-authoritative price (never trust any client-sent total). Base sums
+  // each hourly slot's tariff (1000 day / 1200 evening) across the duration.
+  const price = computeBookingPrice({
+    startHour: d.bookingHour,
+    durationHours,
+    extraGuests,
+    extraGuestPrice: extraRate,
+    bouquetQty,
+    bouquetPrice: isLavender ? BOUQUET_PRICE_UAH : 0,
+    cfg: pricingConfig(d.serviceSlug, svc?.price_uah ?? 1000),
+  })
+  const total = price.total
+
+  // Notification data — all derived without the DB, so a fallback alert can be
+  // sent even when every DB call is unavailable.
+  const pageLink = publicUrl(d.source || '/lavender')
+  const pad = (h: number) => `${String(h).padStart(2, '0')}:00`
+  const time = pad(d.bookingHour)
+  const timeEnd = pad(d.bookingHour + durationHours)
+  const timingText = `${d.bookingDate} · ${time}–${timeEnd} · ${durationHours} год.`
+  const guestWord = (n: number) => (n === 1 ? 'особа' : n >= 2 && n <= 4 ? 'особи' : 'осіб')
+  const guestsText = extraGuests > 0
+    ? `${guestCount} ${guestWord(guestCount)} (включено ${includedGuests}, додатково +${extraGuests})`
+    : `${guestCount} ${guestWord(guestCount)}`
+  const bouquetLine = bouquetQty > 0
+    ? `Букети лаванди: ${bouquetQty} шт × ${BOUQUET_PRICE_UAH} ₴ = ${price.bouquetTotal.toLocaleString('uk-UA')} ₴`
+    : ''
+
+  // Reusable normal-path lavender notification (sent only after a successful save).
+  const lavenderTgMessage = [
+    '🌿 НОВЕ БРОНЮВАННЯ ЛАВАНДИ',
+    `Ім'я: ${d.name}`,
+    `Телефон: ${d.phone}`,
+    `Дата: ${d.bookingDate}`,
+    `Час: ${time}–${timeEnd} (${durationHours} год.)`,
+    `Гостей: ${guestsText}`,
+    ...(bouquetLine ? [bouquetLine] : []),
+    `Вартість: ${total.toLocaleString('uk-UA')} ₴`,
+    ...(d.comment ? [`Коментар: ${d.comment}`] : []),
+    `Сторінка: ${pageLink}`,
+  ].join('\n')
+  const lavenderPayload: Record<string, unknown> = {
+    source: 'website',
+    type: 'lavender_booking',
+    booking_type: 'lavender',
+    name: d.name,
+    phone: d.phone,
+    date: d.bookingDate,
+    time,
+    time_end: timeEnd,
+    duration_hours: durationHours,
+    guests: guestCount,
+    guest_count: guestCount,
+    included_guests: includedGuests,
+    extra_guests: extraGuests,
+    extra_guests_total: price.extraTotal,
+    bouquet_quantity: bouquetQty,
+    bouquet_unit_price: BOUQUET_PRICE_UAH,
+    bouquet_total: price.bouquetTotal,
+    base_total: price.base,
+    total_price: total,
+    timing: timingText,
+    timing_text: timingText,
+    guests_text: guestsText,
+    bouquet_line: bouquetLine,
+    product: d.serviceName,
+    service_name: d.serviceName,
+    slug: d.serviceSlug,
+    page_url: pageLink,
+    message: d.comment ?? null,
+    comment: d.comment ?? null,
+    created_at: new Date().toISOString(),
+  }
+
+  // ── Bounded DB write: conflict check + insert ──────────────────────────────
+  // For lavender, a timeout/availability failure here must NOT lose the lead:
+  // we send a fallback notification (clearly flagged as UNSTORED) and still tell
+  // the visitor we received the request. A genuine slot conflict is a normal
+  // business rejection, not a fallback.
+  try {
     // Reject immediately if any hour in the requested range overlaps an active
     // (non-cancelled) booking — the slot is taken the moment a request is sent.
-    const conflict = await findActiveHourConflict(d.serviceSlug, d.bookingDate, d.bookingHour, durationHours)
+    const conflict = await withTimeout(
+      findActiveHourConflict(d.serviceSlug, d.bookingDate, d.bookingHour, durationHours),
+      DB_TIMEOUT_MS,
+      'conflict',
+    )
     if (conflict.conflict) {
       return { success: false, error: 'Цей час вже зайнятий. Будь ласка, оберіть інший час.', fieldErrors: { bookingHour: ['Час уже зайнятий'] } }
     }
 
-    // Server-authoritative price (never trust any client-sent total). Base sums
-    // each hourly slot's tariff (1000 day / 1200 evening) across the duration.
-    const price = computeBookingPrice({
-      startHour: d.bookingHour,
-      durationHours,
-      extraGuests,
-      extraGuestPrice: extraRate,
-      bouquetQty,
-      bouquetPrice: isLavender ? BOUQUET_PRICE_UAH : 0,
-      cfg: pricingConfig(d.serviceSlug, svc?.price_uah ?? 1000),
-    })
-    const total = price.total
-
-    // Build notification data before the DB write. All variables are available
-    // after price computation, so we can notify even when the insert fails.
-    const pageLink = publicUrl(d.source || '/lavender')
-    const pad = (h: number) => `${String(h).padStart(2, '0')}:00`
-    const time = pad(d.bookingHour)
-    const timeEnd = pad(d.bookingHour + durationHours)
-    const timingText = `${d.bookingDate} · ${time}–${timeEnd} · ${durationHours} год.`
-    const guestWord = (n: number) => (n === 1 ? 'особа' : n >= 2 && n <= 4 ? 'особи' : 'осіб')
-    const guestsText = extraGuests > 0
-      ? `${guestCount} ${guestWord(guestCount)} (включено ${includedGuests}, додатково +${extraGuests})`
-      : `${guestCount} ${guestWord(guestCount)}`
-    const bouquetLine = bouquetQty > 0
-      ? `Букети лаванди: ${bouquetQty} шт × ${BOUQUET_PRICE_UAH} ₴ = ${price.bouquetTotal.toLocaleString('uk-UA')} ₴`
-      : ''
-
-    // PRIMARY NOTIFICATION — fires before DB insert so no DB failure can
-    // silently swallow a booking. For lavender we use the fail-safe notifyBooking
-    // helper (plain-text Telegram + n8n webhook, Promise.allSettled, trace logs).
-    if (isLavender) {
-      console.log(`[lavender-booking ${trace}] primary notification queued`)
-      const tgMessage = [
-        '🌿 НОВЕ БРОНЮВАННЯ ЛАВАНДИ',
-        `Ім'я: ${d.name}`,
-        `Телефон: ${d.phone}`,
-        `Дата: ${d.bookingDate}`,
-        `Час: ${time}–${timeEnd} (${durationHours} год.)`,
-        `Гостей: ${guestsText}`,
-        ...(bouquetLine ? [bouquetLine] : []),
-        `Вартість: ${total.toLocaleString('uk-UA')} ₴`,
-        ...(d.comment ? [`Коментар: ${d.comment}`] : []),
-        `Сторінка: ${pageLink}`,
-      ].join('\n')
-      await notifyBooking({
-        trace,
-        message: tgMessage,
-        payload: {
-          source: 'website',
-          type: 'lavender_booking',
-          booking_type: 'lavender',
-          name: d.name,
-          phone: d.phone,
-          date: d.bookingDate,
-          time,
-          time_end: timeEnd,
-          duration_hours: durationHours,
-          guests: guestCount,
-          guest_count: guestCount,
-          included_guests: includedGuests,
-          extra_guests: extraGuests,
-          extra_guests_total: price.extraTotal,
-          bouquet_quantity: bouquetQty,
-          bouquet_unit_price: BOUQUET_PRICE_UAH,
-          bouquet_total: price.bouquetTotal,
-          base_total: price.base,
-          total_price: total,
-          timing: timingText,
-          timing_text: timingText,
-          guests_text: guestsText,
-          bouquet_line: bouquetLine,
-          product: d.serviceName,
-          service_name: d.serviceName,
-          slug: d.serviceSlug,
-          page_url: pageLink,
-          message: d.comment ?? null,
-          comment: d.comment ?? null,
-          created_at: new Date().toISOString(),
-        },
-      })
-    }
-
     // Store the time range redundantly in check_in/check_out (which exist on
     // every schema) so availability still works even if the duration_hours
-    // column is missing in production. On timestamp columns this preserves the
-    // hours; on date columns it harmlessly truncates and we fall back to
-    // duration_hours / 1 hour.
+    // column is missing in production.
     const hh = (h: number) => String(h).padStart(2, '0')
     const checkInTs = `${d.bookingDate}T${hh(d.bookingHour)}:00:00Z`
     const checkOutTs = `${d.bookingDate}T${hh(d.bookingHour + durationHours)}:00:00Z`
@@ -359,34 +405,92 @@ export async function submitHourlyBooking(formData: FormData): Promise<ActionRes
       status: 'new',
     }
 
-    // Drop any column the DB hasn't migrated yet (058/056) and retry, so the
-    // booking always saves even on an older schema. Clear server log either way.
-    let error = (await client.from('bookings').insert(bookingRow)).error
+    // Drop any column the DB hasn't migrated yet (058/056) and retry; each
+    // insert attempt is itself bounded so a hang can never escape this block.
+    let error = (await withTimeout(client.from('bookings').insert(bookingRow), DB_TIMEOUT_MS, 'insert')).error
     for (const col of ['duration_hours', 'extra_guests_count', 'bouquet_qty']) {
       if (error && isMissingColumn(error, col)) {
         console.error(`[booking] bookings.${col} missing — apply migrations 056/058. Saving without it for now.`)
         delete bookingRow[col]
-        error = (await client.from('bookings').insert(bookingRow)).error
+        error = (await withTimeout(client.from('bookings').insert(bookingRow), DB_TIMEOUT_MS, 'insert-retry')).error
       }
     }
+    if (error) throw new Error(`insert_failed:${error.message}`)
 
-    if (error) {
-      if (isLavender) {
-        console.error(`[lavender-booking ${trace}] db insert failed:`, error.message)
-      } else {
-        console.error('[booking] failed to save hourly booking:', error)
-      }
+    // Stored OK → insert, then send the normal notification, then success.
+    if (isLavender) {
+      await notifyBooking({ trace, message: lavenderTgMessage, payload: lavenderPayload })
+      console.log(`[lavender-booking ${trace}] db insert ok + notified — completed`)
+    }
+    return { success: true }
+  } catch (e) {
+    const reason = e instanceof Error ? e.message : String(e)
+
+    // Non-lavender hourly services: preserve previous behaviour — ask the
+    // visitor to retry (no fallback channel is wired for them).
+    if (!isLavender) {
+      console.error(`[booking ${trace}] failed to save hourly booking:`, reason)
       return { success: false, error: 'Не вдалося зберегти бронювання. Спробуйте ще раз.' }
     }
 
-    if (isLavender) console.log(`[lavender-booking ${trace}] db insert ok`)
-  } catch (e) {
-    console.error('[booking] unexpected error saving hourly booking:', e)
-    return { success: false, error: 'Не вдалося зберегти бронювання. Спробуйте ще раз.' }
-  }
+    // Lavender FALLBACK — the lead must not be lost. Supabase is unavailable, so
+    // the row is NOT stored and the slot is NOT auto-blocked; we send a flagged
+    // alert (Telegram + n8n) for manual handling and give the visitor a calm
+    // success message. Never surface a technical error to the visitor.
+    const temporaryId = `FALLBACK-LAVENDER-${Date.now()}`
+    console.error(`[lavender-booking ${trace}] DB unavailable (${reason}) → FALLBACK unstored temporary_id=${temporaryId}`)
 
-  if (isLavender) console.log(`[lavender-booking ${trace}] completed`)
-  return { success: true }
+    const fallbackWarning = 'Увага: заявка не записана в БД через timeout, перевірити вручну.'
+    const fallbackTgMessage = [
+      '🌿⚠️ БРОНЮВАННЯ ЛАВАНДИ — РЕЗЕРВНИЙ КАНАЛ',
+      `Тимчасовий ID: ${temporaryId}`,
+      `Ім'я: ${d.name}`,
+      `Телефон: ${d.phone}`,
+      `Дата: ${d.bookingDate}`,
+      `Час: ${time}–${timeEnd} (${durationHours} год.)`,
+      `Гостей: ${guestsText}`,
+      ...(bouquetLine ? [bouquetLine] : []),
+      `Вартість: ${total.toLocaleString('uk-UA')} ₴`,
+      ...(d.comment ? [`Коментар: ${d.comment}`] : []),
+      `Сторінка: ${pageLink}`,
+      '',
+      fallbackWarning,
+    ].join('\n')
+
+    await notifyBooking({
+      trace,
+      message: fallbackTgMessage,
+      payload: {
+        source: 'website',
+        type: 'lavender_booking_fallback',
+        status: 'db_timeout_unstored',
+        temporary_id: temporaryId,
+        booking_type: 'lavender',
+        name: d.name,
+        phone: d.phone,
+        date: d.bookingDate,
+        time,
+        time_end: timeEnd,
+        duration: durationHours,
+        duration_hours: durationHours,
+        guests: guestCount,
+        guest_count: guestCount,
+        bouquet: bouquetQty,
+        bouquet_quantity: bouquetQty,
+        total_price: total,
+        source_page: pageLink,
+        page_url: pageLink,
+        timing_text: timingText,
+        guests_text: guestsText,
+        warning: fallbackWarning,
+        reason,
+        created_at: new Date().toISOString(),
+      },
+    })
+    console.log(`[lavender-booking ${trace}] fallback notification dispatched temporary_id=${temporaryId}`)
+
+    return { success: true, message: 'Заявку отримано. Ми підтвердимо час дзвінком.' }
+  }
 }
 
 export async function submitDailyBooking(formData: FormData): Promise<ActionResult> {

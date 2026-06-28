@@ -80,6 +80,8 @@ export function HourlyCalendar({
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({})
   const [serverError, setServerError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
+  // Optional server-provided success text (e.g. the DB-timeout fallback notice).
+  const [successMessage, setSuccessMessage] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
 
   useEffect(() => {
@@ -202,6 +204,7 @@ export function HourlyCalendar({
     startTransition(async () => {
       const result = await submitHourlyBooking(fd)
       if (result.success) {
+        setSuccessMessage(result.message ?? null)
         setSuccess(true)
       } else {
         if ('fieldErrors' in result) setFieldErrors(result.fieldErrors ?? {})
@@ -216,10 +219,10 @@ export function HourlyCalendar({
         <div className="text-2xl mb-2">💜</div>
         <h3 className="font-serif text-lg font-bold text-purple-900 mb-1">Заявку відправлено!</h3>
         <p className="text-purple-700 text-sm">
-          Заявку на бронювання відправлено. Ми звʼяжемося з вами для підтвердження та реквізитів передплати.
+          {successMessage ?? 'Заявку на бронювання відправлено. Ми звʼяжемося з вами для підтвердження та реквізитів передплати.'}
         </p>
         <button
-          onClick={() => { setSuccess(false); setSelectedDate(null); setSelectedHour(null); setDuration(1); setName(''); setPhone(''); setComment(''); setGuestCount(1); setBouquetWanted(false); setBouquetQty(1); setRulesAccepted(false) }}
+          onClick={() => { setSuccess(false); setSuccessMessage(null); setSelectedDate(null); setSelectedHour(null); setDuration(1); setName(''); setPhone(''); setComment(''); setGuestCount(1); setBouquetWanted(false); setBouquetQty(1); setRulesAccepted(false) }}
           className="mt-4 text-xs text-purple-600 underline"
         >
           Забронювати ще
