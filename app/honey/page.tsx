@@ -66,6 +66,14 @@ export default async function HoneyPage() {
               </p>
             </div>
           </div>
+
+          {/* Shipping insurance note */}
+          <div className="mt-6 bg-white rounded-xl p-5 border border-honey-200 flex gap-3">
+            <span className="text-xl flex-shrink-0" aria-hidden="true">🛡️</span>
+            <p className="text-bark/70 text-sm leading-relaxed">
+              Мед відправляємо з надійним пакуванням. Посилки страхуємо, тому якщо банка пошкодиться або мед розіллється під час доставки, не забирайте посилку на пошті — зв&apos;яжіться з нами, і ми допоможемо вирішити ситуацію.
+            </p>
+          </div>
         </div>
       </div>
 
