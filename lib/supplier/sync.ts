@@ -259,6 +259,13 @@ export interface SyncResult {
   alreadyRunning?: boolean
   priceSample?: Array<{ sku: string; rawFields: Record<string, unknown>; computedUah: number | null }>
   priceWarning?: string
+  // ── full-sync windowing (set by syncSupplierProducts) ──
+  totalInFeed?: number    // products in the whole feed response
+  processed?: number      // rows processed in THIS invocation
+  inserted?: number       // brand-new SKUs upserted this invocation
+  updated?: number        // existing SKUs re-upserted this invocation
+  nextOffset?: number | null // pass back as ?offset= to continue; null when done
+  done?: boolean          // true when offset reached the end of the feed
 }
 
 function safeStock(raw: unknown): number {
@@ -612,10 +619,204 @@ export async function syncSupplierCategories(): Promise<SyncResult> {
 
 // ─── Products sync ────────────────────────────────────────────────────────────
 
+// Build a supplier_products row from one raw feed record. Pure — no I/O.
+// Returns null when the record has no usable SKU.
+function buildSupplierRow(
+  p: Record<string, unknown>,
+  rootCurrency: number | null,
+): { sku: string; row: Record<string, unknown>; priceUah: number | null; priceUsd: number | null; effectiveRate: number | null; winField: string; stockRaw: unknown } | null {
+  const sku = String(p.vendor_code ?? p.sku ?? p.article ?? p.supplier_sku ?? p.id ?? '').trim()
+  if (!sku) return null
+
+  let images: string[] = []
+  if (Array.isArray(p.images)) {
+    images = (p.images as unknown[]).map(String).filter(Boolean)
+  } else if (typeof p.images === 'string' && p.images) {
+    images = p.images.split(',').map((s) => s.trim()).filter(Boolean)
+  } else if (Array.isArray(p.pictures)) {
+    images = (p.pictures as unknown[]).map(String).filter(Boolean)
+  } else if (typeof p.pictures === 'string' && p.pictures) {
+    images = p.pictures.split(',').map((s) => s.trim()).filter(Boolean)
+  } else if (Array.isArray(p.photos)) {
+    images = (p.photos as unknown[]).map(String).filter(Boolean)
+  } else if (typeof p.photos === 'string' && p.photos) {
+    images = p.photos.split(',').map((s) => s.trim()).filter(Boolean)
+  } else if (p.mainimage) {
+    images = [String(p.mainimage)]
+  } else if (p.image) {
+    images = [String(p.image)]
+  } else if (p.photo) {
+    images = [String(p.photo)]
+  } else if (p.picture) {
+    images = [String(p.picture)]
+  } else if (p.thumbnail) {
+    images = [String(p.thumbnail)]
+  } else if (p.img) {
+    images = [String(p.img)]
+  }
+
+  const { priceUah, priceUsd, effectiveRate, winField } = resolvePriceUah(p, rootCurrency)
+  const stockRaw = p.quantity ?? p.count ?? p.stock ?? p.stock_quantity ?? p.qty
+
+  const supplierCurrency =
+    winField === 'price_uah' || winField === 'retail_price' ? 'UAH' :
+    winField.includes('*rate') ? 'USD' :
+    null
+
+  const row: Record<string, unknown> = {
+    supplier_sku: sku,
+    supplier_category_id: p.category_id != null ? String(p.category_id) : (p.cat_id != null ? String(p.cat_id) : null),
+    name: String(p.name ?? p.title ?? ''),
+    name_ua: p.name_ua ? String(p.name_ua) : null,
+    slug: p.slug ? String(p.slug) : autoSlug(String(p.name ?? p.title ?? sku)),
+    description: p.description ? String(p.description) : null,
+    description_ua: p.description_ua ? String(p.description_ua) : null,
+    short_description_ua: p.short_description_ua ? String(p.short_description_ua) : null,
+    supplier_price_usd: priceUsd,
+    supplier_price_rate: effectiveRate,
+    price_win_field: winField,
+    supplier_price_currency: supplierCurrency,
+    last_price_synced_at: new Date().toISOString(),
+    stock_quantity: safeStock(stockRaw),
+    is_in_stock: safeStock(stockRaw) > 0,
+    main_image_url: images[0] ?? null,
+    images: images.length > 0 ? images : null,
+    attributes: p.attributes && typeof p.attributes === 'object' ? p.attributes as Record<string, unknown> : null,
+    weight_kg: p.weight != null ? Number(p.weight) : null,
+    raw_data: p,
+    last_synced_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    is_approved: false,
+  }
+
+  return { sku, row, priceUah, priceUsd, effectiveRate, winField, stockRaw }
+}
+
+interface WindowResult {
+  upserted: number   // rows successfully written
+  inserted: number   // brand-new SKUs (were not in DB before)
+  errors: number
+  noPrice: number
+  rateMissing: number
+}
+
+// Process + upsert ONE bounded window of the feed. Self-contained so the caller
+// can loop over windows with a wall-clock budget. Existing-SKU detection is
+// chunked (.in() is capped at 1000 rows by PostgREST, so a plain select would
+// mislabel rows as new).
+async function upsertSupplierWindow(
+  client: ReturnType<typeof getAdminClient>,
+  window: unknown[],
+  rootCurrency: number | null,
+  priceSamples: NonNullable<SyncResult['priceSample']>,
+): Promise<WindowResult> {
+  let errors = 0
+  let noPrice = 0
+  let rateMissing = 0
+
+  const skuOf = (p: Record<string, unknown>) =>
+    String(p.vendor_code ?? p.sku ?? p.article ?? p.supplier_sku ?? p.id ?? '').trim()
+  const batchSkus = [...new Set(window.map((p) => skuOf(p as Record<string, unknown>)).filter(Boolean))]
+  const existingSkus = new Set<string>()
+  for (let i = 0; i < batchSkus.length; i += 500) {
+    const { data: existingRows } = await client
+      .from('supplier_products')
+      .select('supplier_sku')
+      .in('supplier_sku', batchSkus.slice(i, i + 500))
+    for (const r of existingRows ?? []) existingSkus.add(r.supplier_sku as string)
+  }
+
+  // Two buckets: rows with a computed UAH price vs rows without (rate missing).
+  // Rows without a computed price omit price_uah so the existing DB value is preserved.
+  const rowsWithPrice: Record<string, unknown>[] = []
+  const rowsWithoutPrice: Record<string, unknown>[] = []
+  const newSkusInBatch = new Set<string>()
+  // Dedupe by SKU WITHIN the window — the feed can repeat a SKU; without this the
+  // upsert collapses them to one DB row but the counts would double-count (a
+  // phantom "update"). First occurrence wins.
+  const seenSku = new Set<string>()
+
+  for (const prod of window) {
+    const built = buildSupplierRow(prod as Record<string, unknown>, rootCurrency)
+    if (!built) { errors++; continue }
+    const { sku, row, priceUah, priceUsd, effectiveRate, winField, stockRaw } = built
+    if (seenSku.has(sku)) continue
+    seenSku.add(sku)
+
+    if (winField === 'rate_missing') rateMissing++
+    if (priceUah == null) noPrice++
+    if (!existingSkus.has(sku)) newSkusInBatch.add(sku)
+
+    if (priceSamples.length < 5) {
+      priceSamples.push({
+        sku,
+        rawFields: {
+          price: (prod as Record<string, unknown>).price,
+          retail_price: (prod as Record<string, unknown>).retail_price,
+          price_uah: (prod as Record<string, unknown>).price_uah,
+          price_usd: priceUsd, rate: effectiveRate, rootCurrency, winField, stockSrc: stockRaw,
+        },
+        computedUah: priceUah,
+      })
+    }
+
+    if (priceUah !== null) rowsWithPrice.push({ ...row, price_uah: priceUah })
+    else rowsWithoutPrice.push(row)
+  }
+
+  // Count inserted/updated only from slices that were ACTUALLY written, so a
+  // partial chunk failure can't over-report new rows. newInSlice resolves the
+  // SKU straight off the built row's supplier_sku.
+  const newInSlice = (slice: Record<string, unknown>[]) =>
+    slice.reduce((n, r) => n + (newSkusInBatch.has(String(r.supplier_sku)) ? 1 : 0), 0)
+
+  let upserted = 0
+  let inserted = 0
+  const CHUNK = 200
+  for (const batch of [rowsWithPrice, rowsWithoutPrice]) {
+    for (let i = 0; i < batch.length; i += CHUNK) {
+      const slice = batch.slice(i, i + CHUNK)
+      const { error } = await client.from('supplier_products').upsert(slice, { onConflict: 'supplier_sku' })
+      if (error) {
+        const missingCol = error.message?.includes('price_win_field') ||
+          error.message?.includes('supplier_price_currency') ||
+          (error as { code?: string }).code === '42703'
+        if (missingCol) {
+          const fallback = slice.map(({ price_win_field: _a, supplier_price_currency: _b, ...rest }) => rest)
+          const { error: e2 } = await client.from('supplier_products').upsert(fallback, { onConflict: 'supplier_sku' })
+          if (e2) { errors += slice.length } else { upserted += slice.length; inserted += newInSlice(slice) }
+        } else {
+          errors += slice.length
+        }
+      } else {
+        upserted += slice.length
+        inserted += newInSlice(slice)
+      }
+    }
+  }
+
+  return { upserted, inserted, errors, noPrice, rateMissing }
+}
+
+// Full supplier-products sync with BOUNDED, RESUMABLE windowing.
+//
+// The personal.cab get_products endpoint returns the ENTIRE feed (~112k rows) in
+// one HTTP response with no server-side limit/offset, so the bug was: processing
+// was capped to the first `pageSize` rows from offset 0 on EVERY run, so the
+// table never grew past that cap. This version downloads the feed once, then
+// processes a window [offset, offset+limit) — and may process several windows per
+// invocation until a wall-clock budget (maxMillis) or maxPages is hit, returning
+// `nextOffset`/`done` so a terminal loop can resume exactly where it stopped.
+//
+// Defaults preserve the old safe behaviour (one window of `limit`/`pageSize`).
 export async function syncSupplierProducts(options?: {
   categoryId?: string
-  page?: number
-  pageSize?: number
+  page?: number       // supplier-side page param (forwarded only; feed ignores it)
+  pageSize?: number   // legacy alias for `limit` (window size)
+  offset?: number     // window start into the downloaded feed (resume point)
+  limit?: number      // rows processed per window
+  maxPages?: number   // max windows processed in THIS invocation (timeout safety)
+  maxMillis?: number  // wall-clock budget for THIS invocation (timeout safety)
 }): Promise<SyncResult> {
   const client = getAdminClient()
 
@@ -631,9 +832,7 @@ export async function syncSupplierProducts(options?: {
     .select('id')
     .single()
 
-  let synced = 0
-  let isNew = 0
-  let errors = 0
+  const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, Math.floor(n)))
 
   try {
     const extra: Record<string, string> = {}
@@ -642,210 +841,85 @@ export async function syncSupplierProducts(options?: {
 
     const { raw, safeUrl, httpStatus, topLevelKeys } = await apiFetch('get_products', extra)
     const allProducts = extractProducts(raw)
-
-    // Extract root-level currency rate (some APIs return {"currency": 41.5, "products": [...]})
     const rootCurrency = extractRootCurrency(raw)
+    const totalInFeed = allProducts.length
 
-    // Honor pageSize as a hard processing cap. The supplier feed can return
-    // hundreds of thousands of rows; building + upserting them all in one
-    // serverless invocation exhausts memory/time and crashes the function
-    // (surfacing as a 500 in the admin "API sync" card and ERR_CONNECTION_REFUSED
-    // on the cold restart). Capping bounds the work per run; remaining rows are
-    // picked up on the next scheduled/manual run.
-    //
-    // NOTE ON PAGINATION: personal.cab's get_products endpoint returns the WHOLE
-    // feed in one response and does not support a documented server-side
-    // limit/offset. We therefore bound PROCESSING (this cap) and the downstream
-    // import/publish steps (batched), rather than the HTTP download. The `page`
-    // option is forwarded if the supplier ever honors it. If/when a real limit
-    // param is confirmed, add it to `extra` here to also bound the download.
-    const cap = options?.pageSize && options.pageSize > 0 ? options.pageSize : allProducts.length
-    const products = allProducts.length > cap ? allProducts.slice(0, cap) : allProducts
+    if (totalInFeed === 0) {
+      await client.from('supplier_sync_log').update({
+        status: 'completed',
+        products_total: 0,
+        error_details: {
+          safe_url: safeUrl, http_status: httpStatus, response_top_keys: topLevelKeys,
+          response_count: 0, warning: 'API returned 0 products — check URL, key, and method',
+          duration_ms: Date.now() - startedAt,
+        },
+        completed_at: new Date().toISOString(),
+      }).eq('id', log?.id)
+      return {
+        ok: false, synced: 0, errors: 0,
+        message: `API повернуло 0 продуктів. Ключі у відповіді: ${topLevelKeys.join(', ') || 'none'}`,
+        totalInFeed: 0, processed: 0, inserted: 0, updated: 0, nextOffset: null, done: true,
+      }
+    }
+
+    const limit = clamp(options?.limit ?? options?.pageSize ?? 1000, 1, 5000)
+    const maxPages = clamp(options?.maxPages ?? 1, 1, 1000)
+    // Ceiling stays UNDER the route's maxDuration (60s) with headroom for the
+    // final supplier_sync_log write — otherwise the platform kills the function
+    // mid-loop, the log row is stranded in 'running', and the caller gets no
+    // nextOffset. Do NOT raise this above the function's configured maxDuration.
+    const maxMillis = clamp(options?.maxMillis ?? 45000, 5000, 55000)
+    const startOffset = clamp(options?.offset ?? 0, 0, totalInFeed)
+    let offset = startOffset
+
+    const priceSamples: NonNullable<SyncResult['priceSample']> = []
+    let processed = 0
+    let upserted = 0
+    let inserted = 0
+    let errors = 0
+    let noPriceCount = 0
+    let rateMissingCount = 0
+    let pages = 0
+
+    while (offset < totalInFeed && pages < maxPages && (Date.now() - startedAt) < maxMillis) {
+      const window = allProducts.slice(offset, offset + limit)
+      if (window.length === 0) break
+      const r = await upsertSupplierWindow(client, window, rootCurrency, priceSamples)
+      processed += window.length
+      upserted += r.upserted
+      inserted += r.inserted
+      errors += r.errors
+      noPriceCount += r.noPrice
+      rateMissingCount += r.rateMissing
+      offset += window.length
+      pages++
+    }
+
+    const done = offset >= totalInFeed
+    const nextOffset = done ? null : offset
+    const updated = Math.max(0, upserted - inserted)
 
     const debugInfo = {
       safe_url: safeUrl,
       http_status: httpStatus,
       response_top_keys: topLevelKeys,
-      response_count: allProducts.length,
-      processed_count: products.length,
-      sample_records: summarise(products),
-    }
-
-    if (products.length === 0) {
-      await client.from('supplier_sync_log').update({
-        status: 'completed',
-        products_total: 0,
-        error_details: { ...debugInfo, warning: 'API returned 0 products — check URL, key, and method', duration_ms: Date.now() - startedAt },
-        completed_at: new Date().toISOString(),
-      }).eq('id', log?.id)
-      return { ok: false, synced: 0, errors: 0, message: `API повернуло 0 продуктів. Ключі у відповіді: ${topLevelKeys.join(', ') || 'none'}` }
-    }
-
-    // New/update tracking — query ONLY the SKUs in this bounded batch (chunked
-    // .in()) instead of loading the whole ~190k-row supplier_products table. A
-    // plain `.select('supplier_sku')` is silently capped at 1000 rows by
-    // PostgREST, which made nearly every existing SKU look "new". Manual-catalog
-    // rows (supplier_sku NULL) are never matched here.
-    const skuOf = (p: Record<string, unknown>) =>
-      String(p.vendor_code ?? p.sku ?? p.article ?? p.supplier_sku ?? p.id ?? '').trim()
-    const batchSkus = [...new Set(products.map((p) => skuOf(p as Record<string, unknown>)).filter(Boolean))]
-    const existingSkus = new Set<string>()
-    for (let i = 0; i < batchSkus.length; i += 500) {
-      const { data: existingRows } = await client
-        .from('supplier_products')
-        .select('supplier_sku')
-        .in('supplier_sku', batchSkus.slice(i, i + 500))
-      for (const r of existingRows ?? []) existingSkus.add(r.supplier_sku as string)
-    }
-
-    const priceSamples: SyncResult['priceSample'] = []
-    let noPriceCount = 0
-    let rateMissingCount = 0
-
-    // Two buckets: rows where we have a computed UAH price vs rows where rate was missing.
-    // Rows without a computed price are upserted WITHOUT the price_uah column so the existing
-    // DB price is preserved rather than overwritten with null.
-    const rowsWithPrice: Record<string, unknown>[] = []
-    const rowsWithoutPrice: Record<string, unknown>[] = []
-
-    for (const prod of products) {
-      const p = prod as Record<string, unknown>
-
-      const sku = String(
-        p.vendor_code ?? p.sku ?? p.article ?? p.supplier_sku ?? p.id ?? ''
-      ).trim()
-      if (!sku) { errors++; continue }
-
-      let images: string[] = []
-      if (Array.isArray(p.images)) {
-        images = (p.images as unknown[]).map(String).filter(Boolean)
-      } else if (typeof p.images === 'string' && p.images) {
-        images = p.images.split(',').map((s) => s.trim()).filter(Boolean)
-      } else if (Array.isArray(p.pictures)) {
-        images = (p.pictures as unknown[]).map(String).filter(Boolean)
-      } else if (typeof p.pictures === 'string' && p.pictures) {
-        images = p.pictures.split(',').map((s) => s.trim()).filter(Boolean)
-      } else if (Array.isArray(p.photos)) {
-        images = (p.photos as unknown[]).map(String).filter(Boolean)
-      } else if (typeof p.photos === 'string' && p.photos) {
-        images = p.photos.split(',').map((s) => s.trim()).filter(Boolean)
-      } else if (p.mainimage) {
-        // Personal.cab single main image field (e.g. mainimage: https://images.zone/...)
-        images = [String(p.mainimage)]
-      } else if (p.image) {
-        images = [String(p.image)]
-      } else if (p.photo) {
-        images = [String(p.photo)]
-      } else if (p.picture) {
-        images = [String(p.picture)]
-      } else if (p.thumbnail) {
-        images = [String(p.thumbnail)]
-      } else if (p.img) {
-        images = [String(p.img)]
-      }
-
-      // ── Price resolution (shared helper — never store raw USD without conversion) ──
-      const { priceUah, priceUsd, effectiveRate, winField } = resolvePriceUah(p, rootCurrency)
-      if (winField === 'rate_missing') rateMissingCount++
-
-      const stockRaw = p.quantity ?? p.count ?? p.stock ?? p.stock_quantity ?? p.qty
-
-      if (priceSamples.length < 5) {
-        priceSamples.push({
-          sku,
-          rawFields: {
-            price: p.price, retail_price: p.retail_price, price_uah: p.price_uah,
-            price_usd: priceUsd, rate: effectiveRate, rootCurrency,
-            winField, stockSrc: stockRaw,
-          },
-          computedUah: priceUah,
-        })
-      }
-      if (priceUah == null) noPriceCount++
-
-      if (!existingSkus.has(sku)) isNew++
-
-      const supplierCurrency =
-        winField === 'price_uah' || winField === 'retail_price' ? 'UAH' :
-        winField.includes('*rate') ? 'USD' :
-        null
-
-      const baseRow = {
-        supplier_sku: sku,
-        supplier_category_id: p.category_id != null ? String(p.category_id) : (p.cat_id != null ? String(p.cat_id) : null),
-        name: String(p.name ?? p.title ?? ''),
-        name_ua: p.name_ua ? String(p.name_ua) : null,
-        slug: p.slug ? String(p.slug) : autoSlug(String(p.name ?? p.title ?? sku)),
-        description: p.description ? String(p.description) : null,
-        description_ua: p.description_ua ? String(p.description_ua) : null,
-        short_description_ua: p.short_description_ua ? String(p.short_description_ua) : null,
-        supplier_price_usd: priceUsd,
-        supplier_price_rate: effectiveRate,
-        price_win_field: winField,
-        supplier_price_currency: supplierCurrency,
-        last_price_synced_at: new Date().toISOString(),
-        stock_quantity: safeStock(stockRaw),
-        is_in_stock: safeStock(stockRaw) > 0,
-        main_image_url: images[0] ?? null,
-        images: images.length > 0 ? images : null,
-        attributes: p.attributes && typeof p.attributes === 'object'
-          ? p.attributes as Record<string, unknown>
-          : null,
-        weight_kg: p.weight != null ? Number(p.weight) : null,
-        raw_data: p,
-        last_synced_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        is_approved: false,
-      }
-
-      if (priceUah !== null) {
-        // Include price_uah in upsert — overwrite with fresh computed value
-        rowsWithPrice.push({ ...baseRow, price_uah: priceUah })
-      } else {
-        // No valid UAH price computed — omit price_uah so the existing DB value is preserved
-        rowsWithoutPrice.push(baseRow)
-      }
-    }
-
-    // Batch upsert — two separate batches to avoid clobbering existing prices with null.
-    // Defensive fallback: if the upsert fails because price_win_field / supplier_price_currency
-    // columns don't exist yet (migration pending), retry without those fields so the rest of
-    // the sync still works. Once migration 049 runs, the full path is used automatically.
-    const CHUNK = 200
-    for (const batch of [rowsWithPrice, rowsWithoutPrice]) {
-      for (let i = 0; i < batch.length; i += CHUNK) {
-        const slice = batch.slice(i, i + CHUNK)
-        const { error } = await client.from('supplier_products').upsert(slice, { onConflict: 'supplier_sku' })
-        if (error) {
-          const missingCol = error.message?.includes('price_win_field') ||
-            error.message?.includes('supplier_price_currency') ||
-            (error as { code?: string }).code === '42703'
-          if (missingCol) {
-            // Column not yet created — strip the new fields and retry
-            const fallback = slice.map(({ price_win_field: _a, supplier_price_currency: _b, ...row }) => row)
-            const { error: e2 } = await client.from('supplier_products').upsert(fallback, { onConflict: 'supplier_sku' })
-            if (e2) errors += Math.min(CHUNK, batch.length - i)
-            else synced += Math.min(CHUNK, batch.length - i)
-          } else {
-            errors += Math.min(CHUNK, batch.length - i)
-          }
-        } else {
-          synced += Math.min(CHUNK, batch.length - i)
-        }
-      }
+      response_count: totalInFeed,
+      processed_count: processed,
+      // Only need 3 samples — slice a tiny range, never copy the whole ~112k feed.
+      sample_records: summarise(allProducts.slice(startOffset, startOffset + 3)),
     }
 
     await client.from('supplier_sync_log').update({
       status: 'completed',
-      products_total: synced,
-      products_new: isNew,
-      products_updated: synced - isNew,
+      products_total: upserted,
+      products_new: inserted,
+      products_updated: updated,
       products_errors: errors,
       error_details: {
         ...debugInfo,
-        synced, errors, new: isNew,
-        no_price: noPriceCount,
-        rate_missing: rateMissingCount,
+        synced: upserted, errors, new: inserted,
+        no_price: noPriceCount, rate_missing: rateMissingCount,
+        total_in_feed: totalInFeed, processed, pages, next_offset: nextOffset, done,
         duration_ms: Date.now() - startedAt,
       },
       completed_at: new Date().toISOString(),
@@ -855,13 +929,17 @@ export async function syncSupplierProducts(options?: {
     if (noPriceCount > 0) warnings.push(`${noPriceCount} без ціни`)
     if (rateMissingCount > 0) warnings.push(`${rateMissingCount} rate_missing (ціна збережена з попереднього синку)`)
 
+    const tail = done
+      ? 'весь фід оброблено'
+      : `далі: offset=${nextOffset}`
     return {
-      ok: synced > 0,
-      synced,
+      ok: upserted > 0,
+      synced: upserted,
       errors,
-      message: `Збережено ${synced} продуктів (нових: ${isNew}, оброблено: ${products.length} з ${allProducts.length} у відповіді)${errors > 0 ? `, помилок: ${errors}` : ''}`,
+      message: `Збережено ${upserted} (нових: ${inserted}, оброблено: ${processed} з ${totalInFeed}; ${tail})${errors > 0 ? `, помилок: ${errors}` : ''}`,
       priceSample: priceSamples,
       priceWarning: warnings.length > 0 ? warnings.join('; ') : undefined,
+      totalInFeed, processed, inserted, updated, nextOffset, done,
     }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)

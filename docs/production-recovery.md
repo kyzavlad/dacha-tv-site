@@ -179,7 +179,69 @@ NEW_SUPABASE_URL=... NEW_SUPABASE_SERVICE_ROLE_KEY=... \
 
 Do **not** run this now — the old project is currently inaccessible.
 
-## 5. Operational rule
+## 5. Full supplier product sync (all ~112k products)
+
+The personal.cab feed returns the entire catalog in one response with no
+server-side paging, so the sync downloads it once and processes a window
+`[offset, offset+limit)` per call, returning `nextOffset`/`done` to resume. A
+plain call (no params) stays at one safe 1000-row window; `mode=full` processes
+as many windows as fit in the per-call time budget (capped under the 60s function
+limit). Loop it from a terminal until `done`:
+
+```sh
+SITE="https://www.dachatv.com"; CRON_SECRET="<your CRON_SECRET>"
+off=0
+while :; do
+  r=$(curl -s -H "Authorization: Bearer $CRON_SECRET" \
+    "$SITE/api/admin/cron/sync-products?mode=full&offset=$off")
+  echo "$r" | jq '{totalInFeed,processed,inserted,updated,nextOffset,done,errors}'
+  done=$(echo "$r" | jq -r '.done'); off=$(echo "$r" | jq -r '.nextOffset')
+  [ "$done" = "true" ] && break
+  [ -z "$off" ] || [ "$off" = "null" ] && { echo "no nextOffset (possible timeout) — aborting"; break; }
+done
+```
+
+Verify the table grew past 1000:
+
+```sql
+select count(*) from supplier_products;
+```
+
+> This only fills `supplier_products` (the raw supplier layer). Promoting items
+> into the public `catalog_products` storefront is a separate import/publish step
+> — run it only when booking health is green (section 6).
+
+## 6. Recover OLD manual content from old Vercel deployments
+
+The old manual content (honey, products, flowers, beekeeper, services) lived in
+the lost DB but is still served by old Vercel deployments. Recover it in three
+steps (outputs land in `backups/`, which is gitignored):
+
+```sh
+# Needs Vercel creds: ~/.vercel/auth.json + .vercel/project.json (run `vercel link`)
+pnpm dlx tsx scripts/recover-old-public-content.ts   # crawl deployments → recovered-public-content.json
+pnpm dlx tsx scripts/scrape-old-public-items.ts      # scrape each item   → recovered-old-items.json
+pnpm dlx tsx scripts/generate-restore-sql-from-recovered-items.ts  # → restore-old-manual-content.sql + recovered-items-review.md
+```
+
+Inspect before importing:
+
+```sh
+jq '{deploymentsScanned,totalItems}' backups/recovered-public-content.json
+jq '{totalItems,bySection}'          backups/recovered-old-items.json
+sed -n '1,40p'                       backups/recovered-items-review.md
+```
+
+The legacy content tables (`honey_products`, `flower_products`,
+`beekeeper_products`, `apiary_products`) are created by
+`supabase/migrations/20260629_manual_content_tables.sql` — apply it on the new
+project first (the generated restore SQL also self-creates them defensively).
+Then **review** `backups/restore-old-manual-content.sql`, spot-check a few rows,
+and run it in the Supabase SQL Editor. Items it could not map confidently
+(products/catalog) are listed in `recovered-items-review.md` for manual mapping
+into `catalog_products(source='manual')`.
+
+## 7. Operational rule
 
 > **Do not run catalog import / SEO / publish waves while booking health is
 > failing.** Those jobs put heavy load on Supabase. Run the health probe first
