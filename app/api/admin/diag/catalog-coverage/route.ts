@@ -50,7 +50,11 @@ async function getCoverage() {
   const spWithPrice = spWithPriceRes.count ?? 0
   const cpTotal = cpTotalRes.count ?? 0
   const cpPublished = cpPublishedRes.count ?? 0
-  const cpDraft = cpDraftRes.count ?? 0
+  // Keep the raw (possibly-null) draft count: a timed-out HEAD count returns
+  // null, and `null ?? 0` would falsely read as "no drafts" and pass the READY
+  // gate mid-import. cpDraft is the display value; cpDraftRaw gates readiness.
+  const cpDraftRaw = cpDraftRes.count
+  const cpDraft = cpDraftRaw ?? 0
   const cpArchived = cpArchivedRes.count ?? 0
   const cpWithSpid = cpWithSpidRes.count ?? 0
   const cpWithImage = cpWithImageRes.count ?? 0
@@ -131,11 +135,47 @@ async function getCoverage() {
 
   // ── Next recommended action ──────────────────────────────────────────────
   // Deterministic guidance based on the current counts. Ordered by priority:
-  // images first (cheap, no publish risk) → import backlog → publish drafts →
-  // SEO last (only meaningful once rows exist in catalog and are published).
-  const seoNotInCatalog = (seoSheetCheck.summary as { not_in_catalog?: number } | undefined)?.not_in_catalog ?? 0
+  // catalog-already-covered (don't re-import!) → images → import backlog →
+  // publish drafts → SEO last.
+  const seoSummary = seoSheetCheck.summary as
+    | { checked?: number; in_catalog?: number; published?: number; not_in_catalog?: number }
+    | undefined
+  const seoConfigured = seoSheetCheck.configured === true && seoSummary != null
+  const seoNotInCatalog = seoSummary?.not_in_catalog ?? 0
+
+  // The catalog "ready" signal must NOT be fooled by supplier approval flags,
+  // which a resync can reset (making spImportable look like a huge backlog even
+  // though every product is already imported AND published). Trust the catalog
+  // itself: nothing in draft, every row has an image, (almost) every row is
+  // linked to a supplier product, and — when the SEO sheet is configured — its
+  // first sampled rows are present in the catalog and published.
+  // BLOCK readiness only on a concrete negative SEO signal: a sampled row that
+  // IS in supplier but missing from the catalog (not_in_catalog > 0), or sampled
+  // rows present-but-not-all-published. A pure key-format mismatch where the
+  // coverage probe matches nothing (in_catalog == 0 AND not_in_catalog == 0)
+  // is advisory only — this route matches by exact supplier_sku and does not do
+  // the prefix-strip/supplier bridge the real importer uses, so "no match" must
+  // not be read as "catalog incomplete".
+  const seoFirstRowsPublished = !seoConfigured
+    ? true
+    : (seoSummary!.not_in_catalog ?? 0) === 0 &&
+      ((seoSummary!.in_catalog ?? 0) === 0 ||
+        (seoSummary!.published ?? 0) >= (seoSummary!.in_catalog ?? 0))
+  const catalogReady =
+    cpTotal > 0 &&
+    cpDraftRaw === 0 &&                       // real zero, not a timed-out null
+    cpWithImage >= cpTotal &&
+    cpWithSpid >= Math.floor(cpTotal * 0.98) &&
+    seoFirstRowsPublished
+
   let nextAction: string
-  if (spWithImage === 0 && spTotal > 0) {
+  if (catalogReady) {
+    nextAction =
+      `READY: catalog is fully imported and published — ${cpPublished.toLocaleString('en-US')} published, 0 drafts, ` +
+      `all with images, ${cpWithSpid.toLocaleString('en-US')}/${cpTotal.toLocaleString('en-US')} linked to supplier products. ` +
+      `Do NOT run import: the ${spImportable.toLocaleString('en-US')} "unapproved" supplier rows are leftovers from a resync (is_approved reset), not a real backlog — those products are already in the live catalog. ` +
+      `Optional only: run product-seo-template to fill any remaining published rows missing meta.`
+  } else if (spWithImage === 0 && spTotal > 0) {
     nextAction = 'IMAGES: supplier_products.with_image=0 — run supplier-images dry-run, then apply, then catalog backfill-images. Do this before publishing so live products have photos.'
   } else if (seoNotInCatalog > 0) {
     nextAction = `IMPORT (SEO-first): ${seoNotInCatalog}/20 SEO-sheet SKUs are in supplier but not catalog — run import-seo-priority (apply) so the SEO sheet can match, OR continue the general backlog import below.`
@@ -175,6 +215,7 @@ async function getCoverage() {
       cap_note: 'AUTOMATION_MAX_PUBLISHED gates the daily auto-IMPORT only. Manual import (?limit=) and manual publish are not capped.',
       note: capActive ? `Ліміт ${AUTOMATION_MAX_PUBLISHED} опублікованих досягнуто — авто-імпорт призупинено` : null,
     },
+    catalog_ready: catalogReady,
     next_recommended_action: nextAction,
     seo_sheet_check: seoSheetCheck,
   }

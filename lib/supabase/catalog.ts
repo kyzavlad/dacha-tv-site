@@ -117,6 +117,45 @@ export async function getPublishedCategories(): Promise<CatalogCategory[]> {
   })
 }
 
+// Bounded category list for the /catalog LANDING grid. Deliberately cheap:
+//   • ONE query, only the columns the card renders (no faq_json/meta/SEO blobs)
+//   • capped row count at the DB level — never reads the whole categories table
+//   • NO product scan and NO per-category COUNT(*) (those are what made the old
+//     landing time out at 105k products)
+// We over-fetch a little so slug-like names can be dropped in JS and the grid
+// still fills, then pin manual categories first and slice to `limit`.
+export async function getLandingCategories(limit = 80): Promise<CatalogCategory[]> {
+  const client = getClient()
+  if (!client) return []
+  const fetchCount = Math.min(Math.max(limit * 4, limit + 60), 600)
+  const { data } = await client
+    .from('catalog_categories')
+    // sort_order FIRST so curated manual categories (metal: sort_order 1) are
+    // guaranteed inside the bounded fetch window before the JS pin runs.
+    // Supplier categories default to sort_order 100 and display_order 0, so
+    // ordering by display_order alone would push the manual card past the limit.
+    .select('id, slug, name_ua, image_url, description, display_order, sort_order, source, is_published')
+    .eq('is_published', true)
+    .order('sort_order', { ascending: true })
+    .order('display_order', { ascending: true })
+    .order('name_ua', { ascending: true })
+    .limit(fetchCount)
+  const rows = (data ?? []) as CatalogCategory[]
+  // Drop technical/slug-like names, then pin manual categories (metal, natural,
+  // oils) first — same order intent as getPublishedCategories — and cap.
+  const usable = rows.filter((c) => !isUnusableCategoryName(c.name_ua))
+  usable.sort((a, b) => {
+    const am = a.source === 'manual' ? 0 : 1
+    const bm = b.source === 'manual' ? 0 : 1
+    if (am !== bm) return am - bm
+    const aso = a.sort_order ?? 100
+    const bso = b.sort_order ?? 100
+    if (aso !== bso) return aso - bso
+    return (a.name_ua ?? '').localeCompare(b.name_ua ?? '', 'uk')
+  })
+  return usable.slice(0, limit)
+}
+
 export async function getCategoryBySlug(slug: string): Promise<CatalogCategory | null> {
   const client = getClient()
   if (!client) return null

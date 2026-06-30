@@ -3,10 +3,8 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import type { CatalogCategory } from '@/types'
 import {
-  getPublishedCategories,
-  getPublishedCategorySlugCounts,
+  getLandingCategories,
   searchPublishedCatalogProducts,
-  isUnusableCategoryName,
   normalizeSort,
 } from '@/lib/supabase/catalog'
 import { CategoryCard } from '@/components/catalog/CategoryCard'
@@ -27,14 +25,17 @@ export const metadata: Metadata = {
   },
 }
 
-// Synthetic catch-all card for products that have no usable category (null,
-// numeric, or pointing at an unpublished category). slug 'all' → /catalog/all.
-const OTHER_CATEGORY: CatalogCategory = {
-  id: '__other__',
+// How many category cards the landing shows. The full assortment is always one
+// click away via /catalog/all, so this stays bounded and fast at 100k+ products.
+const LANDING_CATEGORY_LIMIT = 80
+
+// Synthetic "browse everything" card appended to the grid. slug 'all' → /catalog/all.
+const ALL_PRODUCTS_CARD: CatalogCategory = {
+  id: '__all__',
   supplier_category_id: null,
   slug: 'all',
-  name_ua: 'Інші товари',
-  description: null,
+  name_ua: 'Усі товари',
+  description: 'Перегляньте весь асортимент магазину одним списком.',
   meta_title: null,
   meta_description: null,
   image_url: null,
@@ -97,31 +98,11 @@ export default async function CatalogPage({ searchParams }: { searchParams: Prom
     )
   }
 
-  // Categories are derived from the products that are actually published, so the
-  // grid renders regardless of whether the category_slug backfill/cron has run.
-  const [allCategories, { bySlug, nullCount, total }] = await Promise.all([
-    getPublishedCategories().catch(() => []),
-    getPublishedCategorySlugCounts().catch(() => ({ bySlug: new Map<string, number>(), nullCount: 0, total: 0 })),
-  ])
-
-  // Eligible cards: published, human-readable (non-numeric) categories that
-  // have at least one published product mapped to their slug.
-  const usableCategories = allCategories.filter((cat) => !isUnusableCategoryName(cat.name_ua))
-  const usableSlugs = new Set(usableCategories.map((c) => c.slug))
-
-  const visibleCategories = usableCategories
-    .map((cat) => ({ cat, count: bySlug.get(cat.slug) ?? 0 }))
-    .filter(({ count }) => count > 0)
-
-  // Everything that doesn't land in a visible category → "Інші товари" bucket:
-  // null slugs + slugs pointing at numeric / unpublished / missing categories.
-  let otherCount = nullCount
-  for (const [slug, n] of bySlug) {
-    if (!usableSlugs.has(slug)) otherCount += n
-  }
-
-  const cards: Array<{ cat: CatalogCategory; count: number }> = [...visibleCategories]
-  if (otherCount > 0) cards.push({ cat: OTHER_CATEGORY, count: otherCount })
+  // Bounded, single cheap query — no full-catalog product scan, no per-category
+  // counts. This is the fix for the /catalog timeout at 105k products.
+  const categories = await getLandingCategories(LANDING_CATEGORY_LIMIT).catch(() => [])
+  // Always offer the full list; append the "Усі товари" card at the end.
+  const cards: CatalogCategory[] = [...categories, ALL_PRODUCTS_CARD]
 
   return (
     <div className="bg-cream min-h-screen">
@@ -141,23 +122,39 @@ export default async function CatalogPage({ searchParams }: { searchParams: Prom
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        {cards.length > 0 ? (
-          /* ── Category-first grid, derived from real published products ── */
-          <>
-          <h2 className="font-serif text-2xl font-semibold text-bark mb-6">Популярні категорії</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {cards.map(({ cat, count }) => (
-              <CategoryCard key={cat.id} category={cat} productCount={count} />
-            ))}
+        {/* Browse-all CTA — always available, the full assortment in one list */}
+        <div className="mb-10 rounded-2xl border border-honey-200 bg-gradient-to-br from-honey-50 to-amber-50 p-6 sm:p-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h2 className="font-serif text-xl sm:text-2xl font-bold text-bark mb-1">Весь асортимент</h2>
+            <p className="text-bark/60 text-sm max-w-xl">
+              Перегляньте всі товари одним списком — з пошуком, сортуванням і фільтрами.
+            </p>
           </div>
+          <Link
+            href="/catalog/all"
+            className="flex-shrink-0 inline-flex items-center justify-center gap-2 px-6 py-3 bg-honey-700 hover:bg-honey-800 text-white font-semibold rounded-xl transition-colors"
+          >
+            Усі товари →
+          </Link>
+        </div>
+
+        {categories.length > 0 ? (
+          /* ── Category-first grid (bounded, no per-category counts) ── */
+          <>
+            <h2 className="font-serif text-2xl font-semibold text-bark mb-6">Категорії товарів</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+              {cards.map((cat) => (
+                <CategoryCard key={cat.id} category={cat} />
+              ))}
+            </div>
           </>
-        ) : total > 0 ? (
-          /* ── Products exist but none are presentable yet → browse-all path ── */
-          <div className="max-w-xl mx-auto text-center py-16">
+        ) : (
+          /* ── No presentable categories → still let users browse everything ── */
+          <div className="max-w-xl mx-auto text-center py-12">
             <span className="text-5xl opacity-30 block mb-4" aria-hidden="true">🗂️</span>
             <p className="text-2xl font-serif text-bark mb-2">Усі товари</p>
             <p className="text-gray-500 text-sm mb-8">
-              Перегляньте весь асортимент одним списком.
+              Перегляньте весь асортимент одним списком або скористайтеся пошуком вище.
             </p>
             <Link
               href="/catalog/all"
@@ -165,18 +162,6 @@ export default async function CatalogPage({ searchParams }: { searchParams: Prom
             >
               Переглянути всі товари →
             </Link>
-          </div>
-        ) : (
-          /* ── True empty state ── */
-          <div className="text-center py-20">
-            <p className="text-2xl font-serif text-bark/40 mb-2">Незабаром</p>
-            <p className="text-gray-400 text-sm">
-              Каталог товарів готується. Заходьте пізніше або{' '}
-              <Link href="/contact" className="text-honey-700 hover:underline">
-                зв&apos;яжіться з нами
-              </Link>
-              .
-            </p>
           </div>
         )}
       </div>
