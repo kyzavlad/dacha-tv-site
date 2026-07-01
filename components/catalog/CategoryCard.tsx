@@ -1,6 +1,6 @@
 import Link from 'next/link'
-import Image from 'next/image'
 import type { CatalogCategory } from '@/types'
+import { SafeImage } from '@/components/shared/SafeImage'
 import { categoryDisplayName } from '@/lib/supabase/catalog'
 
 interface CategoryCardProps {
@@ -33,21 +33,18 @@ export function CategoryCard({ category, productCount }: CategoryCardProps) {
       className="group block bg-white rounded-2xl overflow-hidden border border-honey-100 shadow-sm hover:shadow-md transition-all"
     >
       <div className="relative aspect-[4/3] bg-honey-50 overflow-hidden">
-        {category.image_url ? (
-          <Image
-            src={category.image_url}
-            alt={displayName}
-            fill
-            className="object-cover group-hover:scale-105 transition-transform duration-300"
-            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
-          />
-        ) : (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-honey-50 to-forest-50 gap-2">
-            <span className="text-4xl opacity-40 group-hover:opacity-60 transition-opacity" aria-hidden="true">
-              {categoryIcon(category.slug)}
-            </span>
-          </div>
-        )}
+        <SafeImage
+          src={category.image_url}
+          alt={displayName}
+          className="absolute inset-0 h-full w-full object-cover group-hover:scale-105 transition-transform duration-300"
+          fallback={
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-honey-50 to-forest-50 gap-2">
+              <span className="text-4xl opacity-40 group-hover:opacity-60 transition-opacity" aria-hidden="true">
+                {categoryIcon(category.slug)}
+              </span>
+            </div>
+          }
+        />
       </div>
       <div className="p-4">
         <h2 className="font-serif font-semibold text-bark text-base leading-tight mb-1 group-hover:text-honey-700 transition-colors">

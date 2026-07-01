@@ -1,6 +1,5 @@
 export const dynamic = 'force-dynamic'
 import { notFound } from 'next/navigation'
-import Image from 'next/image'
 import type { Metadata } from 'next'
 import {
   getPublishedProductBySlug,
@@ -14,6 +13,7 @@ import {
 } from '@/lib/supabase/catalog'
 import { buildSocialMetadata, stripBrand } from '@/lib/seo'
 import { Breadcrumb } from '@/components/catalog/Breadcrumb'
+import { SafeImage } from '@/components/shared/SafeImage'
 import { CatalogProductCard } from '@/components/catalog/CatalogProductCard'
 import { AddToCartButton } from '@/components/cart/AddToCartButton'
 import { BuyNowButton } from '@/components/cart/BuyNowButton'
@@ -116,29 +116,30 @@ export default async function ProductPage({ params }: Props) {
           {/* Image */}
           <div>
             <div className="relative aspect-square bg-white rounded-2xl overflow-hidden shadow-sm border border-honey-100">
-              {images[0] ? (
-                <Image
-                  src={images[0]}
-                  alt={product.name_ua}
-                  fill
-                  className="object-contain p-4"
-                  sizes="(max-width: 1024px) 100vw, 50vw"
-                  priority
-                />
-              ) : (
-                <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-honey-50 to-forest-50 gap-3">
-                  <span className="text-5xl opacity-30">📦</span>
-                  <span className="text-forest-700 font-serif font-semibold text-base text-center px-8 leading-snug opacity-60">
-                    {product.name_ua}
-                  </span>
-                </div>
-              )}
+              <SafeImage
+                src={images[0] ?? null}
+                alt={product.name_ua}
+                className="absolute inset-0 h-full w-full object-contain p-4"
+                fallback={
+                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-honey-50 to-forest-50 gap-3">
+                    <span className="text-5xl opacity-30">📦</span>
+                    <span className="text-forest-700 font-serif font-semibold text-base text-center px-8 leading-snug opacity-60">
+                      {product.name_ua}
+                    </span>
+                  </div>
+                }
+              />
             </div>
             {images.length > 1 && (
               <div className="flex gap-2 mt-3 overflow-x-auto">
                 {images.slice(1, 6).map((url, i) => (
                   <div key={url} className="relative w-16 h-16 flex-shrink-0 rounded-xl overflow-hidden bg-white border border-honey-100">
-                    <Image src={url} alt={`${product.name_ua} фото ${i + 2}`} fill className="object-contain p-1" />
+                    <SafeImage
+                      src={url}
+                      alt={`${product.name_ua} фото ${i + 2}`}
+                      className="absolute inset-0 h-full w-full object-contain p-1"
+                      fallback={<div className="absolute inset-0 flex items-center justify-center text-lg opacity-30">📦</div>}
+                    />
                   </div>
                 ))}
               </div>

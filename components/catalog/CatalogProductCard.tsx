@@ -1,11 +1,8 @@
 import Link from 'next/link'
-import Image from 'next/image'
 import type { CatalogProduct } from '@/types'
 import { AddToCartButton } from '@/components/cart/AddToCartButton'
+import { SafeImage } from '@/components/shared/SafeImage'
 import { canAddToCart, formatCatalogPrice, hasDisplayablePrice } from '@/lib/supabase/catalog'
-
-const BLUR_URL =
-  'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjQwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZjVmMGU4Ii8+PC9zdmc+'
 
 interface CatalogProductCardProps {
   product: CatalogProduct
@@ -24,29 +21,24 @@ export function CatalogProductCard({ product, categorySlug }: CatalogProductCard
   return (
     <article className="group bg-white rounded-2xl overflow-hidden border border-honey-100 shadow-sm hover:shadow-md transition-all flex flex-col">
       <Link href={href} className="relative block aspect-square bg-honey-50 overflow-hidden">
-        {hasImage ? (
-          <Image
-            src={product.main_image_url!}
-            alt={product.name_ua}
-            fill
-            className="object-cover group-hover:scale-105 transition-transform duration-300"
-            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
-            placeholder="blur"
-            blurDataURL={BLUR_URL}
-          />
-        ) : (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-honey-50 to-forest-50 gap-3 px-4">
-            <span className="text-5xl opacity-40" aria-hidden="true">🌿</span>
-            <span className="text-forest-800/70 font-serif text-sm text-center leading-snug line-clamp-3">
-              {product.name_ua}
-            </span>
-            {product.supplier_sku && (
-              <span className="text-xs text-bark/40 font-mono tracking-wide">
-                {product.supplier_sku}
+        <SafeImage
+          src={hasImage ? product.main_image_url : null}
+          alt={product.name_ua}
+          className="absolute inset-0 h-full w-full object-cover group-hover:scale-105 transition-transform duration-300"
+          fallback={
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-honey-50 to-forest-50 gap-3 px-4">
+              <span className="text-5xl opacity-40" aria-hidden="true">🌿</span>
+              <span className="text-forest-800/70 font-serif text-sm text-center leading-snug line-clamp-3">
+                {product.name_ua}
               </span>
-            )}
-          </div>
-        )}
+              {product.supplier_sku && (
+                <span className="text-xs text-bark/40 font-mono tracking-wide">
+                  {product.supplier_sku}
+                </span>
+              )}
+            </div>
+          }
+        />
         {product.is_featured && (
           <span className="absolute top-2 left-2 text-xs font-semibold bg-honey-700 text-white px-2 py-0.5 rounded-full">
             Хіт

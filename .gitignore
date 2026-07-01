@@ -42,4 +42,5 @@ next-env.d.ts
 .claude/
 
 # local data backups (never commit exported business data)
-/backups/*.json
+/backups/*
+!/backups/README.md
