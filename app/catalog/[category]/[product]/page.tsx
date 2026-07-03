@@ -6,6 +6,8 @@ import {
   getPublishedProductBySlugOnly,
   getCategoryBySlug,
   getRelatedCatalogProducts,
+  getCatalogProductImages,
+  getCatalogProductImage,
   hasDisplayablePrice,
   canAddToCart,
   formatCatalogPrice,
@@ -39,7 +41,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     bareTitle,
     description,
     canonical: `/catalog/${category}/${productSlug}`,
-    image: product.main_image_url,
+    image: getCatalogProductImage(product),
     imageAlt: product.name_ua,
   })
 }
@@ -66,10 +68,9 @@ export default async function ProductPage({ params }: Props) {
     4,
   ).catch(() => [])
 
-  const images: string[] = [
-    ...(product.main_image_url ? [product.main_image_url] : []),
-    ...((product.images as string[] | null ?? []).filter((u) => u !== product.main_image_url)),
-  ]
+  // Resolve images from every known field (main_image_url may be null while the
+  // URL lives in images[]/raw_data), normalized + deduped, primary first.
+  const images: string[] = getCatalogProductImages(product)
 
   const priceOk = hasDisplayablePrice(product)
   const buyable = canAddToCart(product)
@@ -190,7 +191,7 @@ export default async function ProductPage({ params }: Props) {
                       productSlug: product.slug,
                       name: product.name_ua,
                       price: product.price_uah as number,
-                      imageUrl: product.main_image_url ?? undefined,
+                      imageUrl: images[0] ?? undefined,
                     }}
                   />
                   <BuyNowButton
@@ -200,7 +201,7 @@ export default async function ProductPage({ params }: Props) {
                       productSlug: product.slug,
                       name: product.name_ua,
                       price: product.price_uah as number,
-                      imageUrl: product.main_image_url ?? undefined,
+                      imageUrl: images[0] ?? undefined,
                     }}
                   />
                 </>

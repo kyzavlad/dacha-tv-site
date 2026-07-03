@@ -2,7 +2,7 @@ import Link from 'next/link'
 import type { CatalogProduct } from '@/types'
 import { AddToCartButton } from '@/components/cart/AddToCartButton'
 import { SafeImage } from '@/components/shared/SafeImage'
-import { canAddToCart, formatCatalogPrice, hasDisplayablePrice } from '@/lib/supabase/catalog'
+import { canAddToCart, formatCatalogPrice, getCatalogProductImage, hasDisplayablePrice } from '@/lib/supabase/catalog'
 
 interface CatalogProductCardProps {
   product: CatalogProduct
@@ -11,7 +11,7 @@ interface CatalogProductCardProps {
 
 export function CatalogProductCard({ product, categorySlug }: CatalogProductCardProps) {
   const href = `/catalog/${categorySlug}/${product.slug}`
-  const hasImage = Boolean(product.main_image_url)
+  const imageUrl = getCatalogProductImage(product)
   const priceOk = hasDisplayablePrice(product)
   const buyable = canAddToCart(product)
   const priceLabel = formatCatalogPrice(product)
@@ -22,7 +22,7 @@ export function CatalogProductCard({ product, categorySlug }: CatalogProductCard
     <article className="group bg-white rounded-2xl overflow-hidden border border-honey-100 shadow-sm hover:shadow-md transition-all flex flex-col">
       <Link href={href} className="relative block aspect-square bg-honey-50 overflow-hidden">
         <SafeImage
-          src={hasImage ? product.main_image_url : null}
+          src={imageUrl}
           alt={product.name_ua}
           className="absolute inset-0 h-full w-full object-cover group-hover:scale-105 transition-transform duration-300"
           fallback={
@@ -90,7 +90,7 @@ export function CatalogProductCard({ product, categorySlug }: CatalogProductCard
                 productSlug: product.slug,
                 name: product.name_ua,
                 price: product.price_uah as number,
-                imageUrl: product.main_image_url ?? undefined,
+                imageUrl: imageUrl ?? undefined,
               }}
             />
           ) : product.status === 'published' ? (

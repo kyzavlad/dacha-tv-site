@@ -30,6 +30,94 @@ export function hasValidPrice(price: number | null | undefined): boolean {
   return typeof price === 'number' && isFinite(price) && price >= MIN_VALID_PRICE_UAH
 }
 
+// ─── Product image resolution ────────────────────────────────────────────────
+// Supplier image data is not always in main_image_url — after a resync some
+// catalog_products carry the https://images.zone/... URL only in the images[]
+// array (jsonb, sometimes serialized as a string) or inside a raw_data blob.
+// The card previously read main_image_url alone, so those products rendered the
+// placeholder and no <img> reached the HTML. This probes every known location in
+// priority order and normalizes the URL.
+
+// Turn a jsonb array / JSON-string / comma-list into a clean string[].
+function toImageArray(v: unknown): string[] {
+  if (Array.isArray(v)) return v.map((x) => String(x).trim()).filter(Boolean)
+  if (typeof v === 'string' && v.trim()) {
+    const s = v.trim()
+    if (s.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(s)
+        if (Array.isArray(parsed)) return parsed.map((x) => String(x).trim()).filter(Boolean)
+      } catch { /* not JSON — fall through */ }
+    }
+    return s.split(',').map((x) => x.trim()).filter(Boolean)
+  }
+  return []
+}
+
+// Normalize one candidate into a usable src, or null. Upgrades protocol-relative
+// and bare-host URLs to https (browsers block mixed-content http images anyway),
+// and keeps local "/..." paths as-is.
+export function normalizeImageUrl(v: unknown): string | null {
+  if (typeof v !== 'string') return null
+  const s = v.trim()
+  if (!s) return null
+  if (s.startsWith('https://')) return s
+  if (s.startsWith('http://')) return `https://${s.slice('http://'.length)}`
+  if (s.startsWith('//')) return `https:${s}`
+  if (s.startsWith('/')) return s // local/public asset
+  if (/^[a-z0-9.-]+\.[a-z]{2,}\/.+/i.test(s)) return `https://${s}` // bare host, e.g. images.zone/…
+  return null
+}
+
+// Minimal structural shape so both a full CatalogProduct and a looser raw row
+// can be passed (no index signature — CatalogProduct is structurally assignable).
+export interface ImageBearingProduct {
+  main_image_url?: string | null
+  images?: unknown
+  image_url?: string | null
+  imageUrl?: string | null
+  raw_data?: unknown
+}
+
+// Best external image URL for a catalog product, checking all known fields in
+// priority order: main_image_url → image_url/imageUrl → images[0] →
+// raw_data.mainimage/image/images[0]. Returns null when nothing usable is found.
+export function getCatalogProductImage(product: ImageBearingProduct | null | undefined): string | null {
+  if (!product) return null
+  const candidates: unknown[] = [product.main_image_url, product.image_url, product.imageUrl]
+
+  const imgs = toImageArray(product.images)
+  if (imgs.length) candidates.push(imgs[0])
+
+  const raw = product.raw_data
+  if (raw && typeof raw === 'object') {
+    const r = raw as Record<string, unknown>
+    candidates.push(r.mainimage, r.main_image_url, r.image, r.photo, r.picture)
+    const rawImgs = toImageArray(r.images ?? r.pictures ?? r.photos)
+    if (rawImgs.length) candidates.push(rawImgs[0])
+  }
+
+  for (const c of candidates) {
+    const url = normalizeImageUrl(c)
+    if (url) return url
+  }
+  return null
+}
+
+// All usable image URLs for a product (for a detail-page gallery), primary first,
+// deduplicated and normalized.
+export function getCatalogProductImages(product: ImageBearingProduct | null | undefined): string[] {
+  if (!product) return []
+  const primary = getCatalogProductImage(product)
+  const rest = toImageArray(product.images).map(normalizeImageUrl).filter((u): u is string => u != null)
+  const raw = product.raw_data
+  const rawRest = raw && typeof raw === 'object'
+    ? toImageArray((raw as Record<string, unknown>).images).map(normalizeImageUrl).filter((u): u is string => u != null)
+    : []
+  const ordered = [primary, ...rest, ...rawRest].filter((u): u is string => u != null)
+  return [...new Set(ordered)]
+}
+
 // ─── Manual / supplier unified price + CTA logic ─────────────────────────────
 // A product shows a real price only when it has a valid, non-suspicious price.
 export function hasDisplayablePrice(product: CatalogProduct): boolean {
