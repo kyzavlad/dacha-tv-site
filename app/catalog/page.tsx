@@ -6,11 +6,15 @@ import {
   getLandingCategories,
   searchPublishedCatalogProducts,
   normalizeSort,
+  CATALOG_PAGE_SIZE,
 } from '@/lib/supabase/catalog'
 import { CategoryCard } from '@/components/catalog/CategoryCard'
+import { CategoryChips } from '@/components/catalog/CategoryChips'
 import { CatalogProductCard } from '@/components/catalog/CatalogProductCard'
 import { CatalogSearchBar } from '@/components/catalog/CatalogSearchBar'
 import { CatalogSortSelect } from '@/components/catalog/CatalogSortSelect'
+import { FaqBlock } from '@/components/shared/FaqBlock'
+import { CATALOG_FAQ } from '@/lib/catalog-faq'
 
 export const metadata: Metadata = {
   title: 'Магазин',
@@ -53,8 +57,11 @@ export default async function CatalogPage({ searchParams }: { searchParams: Prom
   // ── Search results (?q=) ──────────────────────────────────────────────────
   if (query) {
     const page = Math.max(1, Number(pageRaw) || 1)
-    const { products } = await searchPublishedCatalogProducts(query, page, sort).catch(() => ({ products: [], total: 0 }))
-    const fullPage = products.length >= 24
+    const [{ products }, chipCategories] = await Promise.all([
+      searchPublishedCatalogProducts(query, page, sort).catch(() => ({ products: [], total: 0 })),
+      getLandingCategories(14).catch(() => []),
+    ])
+    const fullPage = products.length >= CATALOG_PAGE_SIZE
     const sortQs = sort === 'featured' ? '' : `&sort=${sort}`
     return (
       <div className="bg-cream min-h-screen">
@@ -65,6 +72,7 @@ export default async function CatalogPage({ searchParams }: { searchParams: Prom
           </div>
         </div>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+          <CategoryChips categories={chipCategories} label="Категорії" />
           <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
             <p className="text-sm text-gray-500">Результати за запитом «{query}»</p>
             {(products.length > 1 || page > 1) && <CatalogSortSelect value={sort} />}
@@ -88,10 +96,14 @@ export default async function CatalogPage({ searchParams }: { searchParams: Prom
               )}
             </>
           ) : (
-            <p className="text-gray-500">
-              Нічого не знайдено. Спробуйте інший запит або{' '}
-              <Link href="/catalog" className="text-honey-700 hover:underline">перегляньте категорії</Link>.
-            </p>
+            <div className="max-w-xl">
+              <p className="text-bark font-medium mb-1">Нічого не знайдено за запитом «{query}».</p>
+              <p className="text-gray-500 text-sm mb-6">
+                Спробуйте коротший або інший запит, перевірте написання, або шукайте за артикулом.
+                Також перегляньте категорії вище чи{' '}
+                <Link href="/catalog/all" className="text-honey-700 hover:underline">усі товари</Link>.
+              </p>
+            </div>
           )}
         </div>
       </div>
@@ -164,6 +176,8 @@ export default async function CatalogPage({ searchParams }: { searchParams: Prom
             </Link>
           </div>
         )}
+
+        <FaqBlock items={CATALOG_FAQ} heading="Поширені запитання про магазин" />
       </div>
     </div>
   )

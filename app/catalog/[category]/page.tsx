@@ -6,6 +6,10 @@ import { CatalogProductCard } from '@/components/catalog/CatalogProductCard'
 import { Breadcrumb } from '@/components/catalog/Breadcrumb'
 import { Pagination } from '@/components/catalog/Pagination'
 import { CatalogSortSelect } from '@/components/catalog/CatalogSortSelect'
+import { StructuredData } from '@/components/shared/StructuredData'
+import { FaqBlock } from '@/components/shared/FaqBlock'
+import { breadcrumbSchema } from '@/lib/schema'
+import { categoryFaq } from '@/lib/catalog-faq'
 import { buildSocialMetadata, stripBrand } from '@/lib/seo'
 
 interface Props {
@@ -51,15 +55,18 @@ export default async function CategoryPage({ params, searchParams }: Props) {
   const intro = (cat.description ?? '').trim()
   const seoBody = (cat.description_ua ?? '').trim()
 
+  const crumbs = [
+    { label: 'Головна', href: '/' },
+    { label: 'Каталог', href: '/catalog' },
+    { label: displayName },
+  ]
+
   return (
     <div className="bg-cream min-h-screen">
+      <StructuredData data={breadcrumbSchema(crumbs)} />
       <div className="bg-white border-b border-gray-100 py-10 md:py-14">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <Breadcrumb crumbs={[
-            { label: 'Головна', href: '/' },
-            { label: 'Каталог', href: '/catalog' },
-            { label: displayName },
-          ]} />
+          <Breadcrumb crumbs={crumbs} />
           <h1 className="font-serif text-3xl md:text-4xl font-bold text-bark mt-4 mb-2">
             {displayName}
           </h1>
@@ -105,6 +112,8 @@ export default async function CategoryPage({ params, searchParams }: Props) {
             </div>
           </section>
         )}
+
+        <FaqBlock items={categoryFaq(displayName)} />
       </div>
     </div>
   )

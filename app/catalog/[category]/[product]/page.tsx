@@ -8,13 +8,16 @@ import {
   getRelatedCatalogProducts,
   getCatalogProductImages,
   getCatalogProductImage,
+  displayProductName,
   hasDisplayablePrice,
   canAddToCart,
   formatCatalogPrice,
   categoryDisplayName,
 } from '@/lib/supabase/catalog'
 import { buildSocialMetadata, stripBrand } from '@/lib/seo'
+import { breadcrumbSchema } from '@/lib/schema'
 import { Breadcrumb } from '@/components/catalog/Breadcrumb'
+import { StructuredData } from '@/components/shared/StructuredData'
 import { SafeImage } from '@/components/shared/SafeImage'
 import { CatalogProductCard } from '@/components/catalog/CatalogProductCard'
 import { AddToCartButton } from '@/components/cart/AddToCartButton'
@@ -32,17 +35,17 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const product = await getPublishedProductBySlug(category, productSlug).catch(() => null)
   if (!product) return { title: 'Товар не знайдено' }
 
-  const bareTitle = stripBrand(product.meta_title) || product.name_ua
+  const bareTitle = stripBrand(product.meta_title) || displayProductName(product)
   const priceStr = formatCatalogPrice(product)
   const priceLine = priceStr ? ` Ціна ${priceStr}.` : ''
-  const description = product.meta_description || product.short_description || `Купити ${product.name_ua} з доставкою по Україні.${priceLine}`
+  const description = product.meta_description || product.short_description || `Купити ${displayProductName(product)} з доставкою по Україні.${priceLine}`
 
   return buildSocialMetadata({
     bareTitle,
     description,
     canonical: `/catalog/${category}/${productSlug}`,
     image: getCatalogProductImage(product),
-    imageAlt: product.name_ua,
+    imageAlt: displayProductName(product),
   })
 }
 
@@ -82,7 +85,7 @@ export default async function ProductPage({ params }: Props) {
   const jsonLd = {
     '@context': 'https://schema.org',
     '@type': 'Product',
-    name: product.name_ua,
+    name: displayProductName(product),
     description: product.short_description ?? product.description ?? undefined,
     image: images[0] ?? undefined,
     ...(priceOk
@@ -98,20 +101,24 @@ export default async function ProductPage({ params }: Props) {
       : {}),
   }
 
+  const productTitle = displayProductName(product)
+  const crumbs = [
+    { label: 'Головна', href: '/' },
+    { label: 'Каталог', href: '/catalog' },
+    { label: cat ? categoryDisplayName(cat.name_ua) : 'Категорія', href: `/catalog/${categorySlug}` },
+    { label: productTitle },
+  ]
+
   return (
     <div className="bg-cream min-h-screen">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
+      <StructuredData data={breadcrumbSchema(crumbs)} />
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-12">
-        <Breadcrumb crumbs={[
-          { label: 'Головна', href: '/' },
-          { label: 'Каталог', href: '/catalog' },
-          { label: cat ? categoryDisplayName(cat.name_ua) : 'Категорія', href: `/catalog/${categorySlug}` },
-          { label: product.name_ua },
-        ]} />
+        <Breadcrumb crumbs={crumbs} />
 
         <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-10 lg:gap-16">
           {/* Image */}
@@ -119,13 +126,13 @@ export default async function ProductPage({ params }: Props) {
             <div className="relative aspect-square bg-white rounded-2xl overflow-hidden shadow-sm border border-honey-100">
               <SafeImage
                 src={images[0] ?? null}
-                alt={product.name_ua}
+                alt={displayProductName(product)}
                 className="absolute inset-0 h-full w-full object-contain p-4"
                 fallback={
                   <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-honey-50 to-forest-50 gap-3">
                     <span className="text-5xl opacity-30">📦</span>
                     <span className="text-forest-700 font-serif font-semibold text-base text-center px-8 leading-snug opacity-60">
-                      {product.name_ua}
+                      {displayProductName(product)}
                     </span>
                   </div>
                 }
@@ -137,7 +144,7 @@ export default async function ProductPage({ params }: Props) {
                   <div key={url} className="relative w-16 h-16 flex-shrink-0 rounded-xl overflow-hidden bg-white border border-honey-100">
                     <SafeImage
                       src={url}
-                      alt={`${product.name_ua} фото ${i + 2}`}
+                      alt={`${displayProductName(product)} фото ${i + 2}`}
                       className="absolute inset-0 h-full w-full object-contain p-1"
                       fallback={<div className="absolute inset-0 flex items-center justify-center text-lg opacity-30">📦</div>}
                     />
@@ -156,7 +163,7 @@ export default async function ProductPage({ params }: Props) {
             )}
 
             <h1 className="font-serif text-2xl md:text-3xl font-bold text-bark mb-4 leading-tight">
-              {product.name_ua}
+              {displayProductName(product)}
             </h1>
 
             <div className="flex items-baseline gap-3 mb-6">
@@ -189,7 +196,7 @@ export default async function ProductPage({ params }: Props) {
                       id: `catalog-${product.slug}`,
                       productType: 'catalog',
                       productSlug: product.slug,
-                      name: product.name_ua,
+                      name: displayProductName(product),
                       price: product.price_uah as number,
                       imageUrl: images[0] ?? undefined,
                     }}
@@ -199,7 +206,7 @@ export default async function ProductPage({ params }: Props) {
                       id: `catalog-${product.slug}`,
                       productType: 'catalog',
                       productSlug: product.slug,
-                      name: product.name_ua,
+                      name: displayProductName(product),
                       price: product.price_uah as number,
                       imageUrl: images[0] ?? undefined,
                     }}
@@ -211,7 +218,7 @@ export default async function ProductPage({ params }: Props) {
                 // fall back to the contact page.
                 (product.lead_type || product.inquiry_only) ? (
                   <ManualLeadForm
-                    productName={product.name_ua}
+                    productName={displayProductName(product)}
                     productSlug={product.slug}
                     leadType={(product.lead_type as ManualLeadType) ?? 'natural_products'}
                     category={categorySlug}

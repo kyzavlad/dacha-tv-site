@@ -2,7 +2,7 @@ import Link from 'next/link'
 import type { CatalogProduct } from '@/types'
 import { AddToCartButton } from '@/components/cart/AddToCartButton'
 import { SafeImage } from '@/components/shared/SafeImage'
-import { canAddToCart, formatCatalogPrice, getCatalogProductImage, hasDisplayablePrice } from '@/lib/supabase/catalog'
+import { canAddToCart, displayProductName, formatCatalogPrice, getCatalogProductImage, hasDisplayablePrice } from '@/lib/supabase/catalog'
 
 interface CatalogProductCardProps {
   product: CatalogProduct
@@ -12,6 +12,7 @@ interface CatalogProductCardProps {
 export function CatalogProductCard({ product, categorySlug }: CatalogProductCardProps) {
   const href = `/catalog/${categorySlug}/${product.slug}`
   const imageUrl = getCatalogProductImage(product)
+  const name = displayProductName(product)
   const priceOk = hasDisplayablePrice(product)
   const buyable = canAddToCart(product)
   const priceLabel = formatCatalogPrice(product)
@@ -23,13 +24,13 @@ export function CatalogProductCard({ product, categorySlug }: CatalogProductCard
       <Link href={href} className="relative block aspect-square bg-honey-50 overflow-hidden">
         <SafeImage
           src={imageUrl}
-          alt={product.name_ua}
+          alt={name}
           className="absolute inset-0 h-full w-full object-cover group-hover:scale-105 transition-transform duration-300"
           fallback={
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-honey-50 to-forest-50 gap-3 px-4">
               <span className="text-5xl opacity-40" aria-hidden="true">🌿</span>
               <span className="text-forest-800/70 font-serif text-sm text-center leading-snug line-clamp-3">
-                {product.name_ua}
+                {name}
               </span>
               {product.supplier_sku && (
                 <span className="text-xs text-bark/40 font-mono tracking-wide">
@@ -54,7 +55,7 @@ export function CatalogProductCard({ product, categorySlug }: CatalogProductCard
       <div className="p-4 flex flex-col flex-1">
         <Link href={href}>
           <h3 className="font-serif text-base font-semibold text-bark mb-1 leading-tight line-clamp-2 hover:text-honey-700 transition-colors">
-            {product.name_ua}
+            {name}
           </h3>
         </Link>
 
@@ -88,7 +89,7 @@ export function CatalogProductCard({ product, categorySlug }: CatalogProductCard
                 id: `catalog-${product.slug}`,
                 productType: 'catalog',
                 productSlug: product.slug,
-                name: product.name_ua,
+                name: name,
                 price: product.price_uah as number,
                 imageUrl: imageUrl ?? undefined,
               }}

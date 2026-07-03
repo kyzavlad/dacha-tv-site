@@ -10,6 +10,10 @@ function getClient() {
 
 export const CATALOG_PAGE_SIZE = 24
 
+// Product URLs per sitemap shard. Under Google's 50,000-URL hard limit, with
+// headroom. Shared by app/sitemap.ts and app/robots.ts so shard math matches.
+export const SITEMAP_PRODUCTS_PER_CHUNK = 45000
+
 // Manual food/natural categories that are NOT part of /catalog ("Магазин").
 // Their products are presented under /products ("Продукти пасіки") instead. We
 // exclude by category_slug (always present) so the public catalog never depends
@@ -164,18 +168,47 @@ export function formatCatalogPrice(product: CatalogProduct): string | null {
 // never render a raw cat-* name.
 export const FALLBACK_CATEGORY_NAME = 'Товари для дому та господарства'
 
+// Count real letters (Latin or Cyrillic) — a human name has several; a code /
+// punctuation blob ("<>", "N-1171", "—") has ~none.
+function letterCount(s: string): number {
+  return (s.match(/[a-zа-яіїєґ]/gi) ?? []).length
+}
+
 export function isUnusableCategoryName(name: string | null | undefined): boolean {
   if (!name) return true
   const n = name.trim()
   if (!n) return true
-  if (/^\d+$/.test(n)) return true            // "185", "38853"
-  if (/^cat-\d+$/i.test(n)) return true       // "cat-185", "cat-38853"
-  if (/^[a-z]+[_-]\d+$/i.test(n)) return true // "sup-4308", "id_73855"
+  if (/^\d+$/.test(n)) return true              // "185", "38853"
+  if (/^cat-\d+$/i.test(n)) return true         // "cat-185", "cat-38853"
+  if (/^[a-z]+[_-]?\d+$/i.test(n)) return true  // "sup-4308", "id_73855", "n1171"
+  if (letterCount(n) < 2) return true           // "<>", "—", "()", pure symbols/codes
+  if (!/[a-zа-яіїєґ]/i.test(n)) return true      // no letters at all
   return false
 }
 
 export function categoryDisplayName(name: string | null | undefined): string {
   return isUnusableCategoryName(name) ? FALLBACK_CATEGORY_NAME : (name as string).trim()
+}
+
+// A product name is "garbage" when it carries no real words — e.g. "<>", a bare
+// SKU/code, or pure punctuation. Such names must never show as a card title.
+export function isGarbageProductName(name: string | null | undefined): boolean {
+  if (!name) return true
+  const n = name.trim()
+  if (!n) return true
+  if (letterCount(n) < 2) return true               // "<>", "N-1171", "—", "12x"
+  if (/^[<>{}\[\]()._\-\s\/\\|]+$/.test(n)) return true // only punctuation
+  return false
+}
+
+// Clean, human-facing product title. Strips stray markup-ish chars; when the
+// stored name is garbage, falls back to the SKU (or a neutral label) so a card
+// never shows "<>" or an empty title. Display-only — never mutates the DB.
+export function displayProductName(product: Pick<CatalogProduct, 'name_ua' | 'supplier_sku'>): string {
+  const raw = (product.name_ua ?? '').replace(/\s+/g, ' ').trim()
+  if (!isGarbageProductName(raw)) return raw
+  const sku = (product.supplier_sku ?? '').trim()
+  return sku ? `Товар ${sku}` : 'Товар'
 }
 
 export async function getPublishedCategories(): Promise<CatalogCategory[]> {
@@ -367,6 +400,9 @@ export async function getPublishedProductBySlugOnly(productSlug: string): Promis
   return (data ?? null) as CatalogProduct | null
 }
 
+// DEPRECATED for the sitemap: this has no .range()/.limit(), so PostgREST caps
+// it at ~1000 rows — it would silently drop ~99% of a 105k catalog. Kept only
+// for any small/legacy caller. The sitemap uses getPublishedCatalogSlugsPage.
 export async function getPublishedCatalogSlugs(): Promise<{ category: string; product: string }[]> {
   const client = getClient()
   if (!client) return []
@@ -376,6 +412,26 @@ export async function getPublishedCatalogSlugs(): Promise<{ category: string; pr
     .eq('status', 'published')
     .not('category_slug', 'is', null)
     .not('category_slug', 'in', `(${NATURAL_CATEGORY_SLUGS.join(',')})`)
+    .limit(1000)
+  return (data ?? []).map((r) => ({ category: r.category_slug as string, product: r.slug as string }))
+}
+
+// One bounded, ordered page of published product slugs for the sharded sitemap.
+// Ordered by id so range() windows are stable across the whole 105k catalog.
+export async function getPublishedCatalogSlugsPage(
+  offset: number,
+  limit: number,
+): Promise<{ category: string; product: string }[]> {
+  const client = getClient()
+  if (!client) return []
+  const { data } = await client
+    .from('catalog_products')
+    .select('slug, category_slug')
+    .eq('status', 'published')
+    .not('category_slug', 'is', null)
+    .not('category_slug', 'in', `(${NATURAL_CATEGORY_SLUGS.join(',')})`)
+    .order('id', { ascending: true })
+    .range(offset, offset + limit - 1)
   return (data ?? []).map((r) => ({ category: r.category_slug as string, product: r.slug as string }))
 }
 
@@ -400,6 +456,17 @@ export async function getPublishedCatalogProducts(
 // Russian name. Searching the `name` (Russian supplier feed) column as well lets
 // customers find items before a Ukrainian translation is written. Natural food
 // products are excluded (they live under /products), metal stays included.
+// Escape PostgREST ilike wildcards / separators so user input can't broaden the
+// match, and split into up to 6 tokens for AND-combined matching.
+function searchTokens(term: string): string[] {
+  return term
+    .replace(/[%_,()]/g, ' ')
+    .split(/\s+/)
+    .map((t) => t.trim())
+    .filter(Boolean)
+    .slice(0, 6)
+}
+
 export async function searchPublishedCatalogProducts(
   q: string,
   page = 1,
@@ -408,23 +475,70 @@ export async function searchPublishedCatalogProducts(
   const client = getClient()
   const term = q.trim()
   if (!client || !term) return { products: [], total: 0 }
+  const tokens = searchTokens(term)
+  if (tokens.length === 0) return { products: [], total: 0 }
   const from = (page - 1) * CATALOG_PAGE_SIZE
   const to = from + CATALOG_PAGE_SIZE - 1
-  // Escape PostgREST ilike wildcards so user input can't broaden the match.
-  const escaped = term.replace(/[%_,()]/g, ' ').trim()
-  const pattern = `%${escaped}%`
-  // Match on the Ukrainian name_ua, the raw supplier name (Russian), or the
-  // supplier SKU — so customers can search by product code as well as name.
-  // Searching `name` avoids making the public UI bilingual while still letting
-  // Ukrainian customers find items by the Russian feed names.
-  const base = client
+
+  // Each token must appear (AND) in at least one of name_ua (Ukrainian), name
+  // (Russian supplier feed) or supplier_sku (product code) — so multi-word and
+  // reordered queries match, across both languages and by SKU. Multiple .or()
+  // calls AND together in PostgREST. NO count:'exact' — the caller paginates by
+  // page length, so a full COUNT over the match set would be pure wasted work.
+  // Requires the pg_trgm GIN indexes (migration 20260630) to stay fast at 105k.
+  let base = client
     .from('catalog_products')
-    .select('*', { count: 'exact' })
+    .select('*')
     .eq('status', 'published')
     .or(EXCLUDE_NATURAL_OR)
-    .or(`name_ua.ilike.${pattern},name.ilike.${pattern},supplier_sku.ilike.${pattern}`)
-  const { data, count } = await applyCatalogSort(base, sort).range(from, to)
-  return { products: (data ?? []) as CatalogProduct[], total: count ?? 0 }
+  for (const tok of tokens) {
+    base = base.or(`name_ua.ilike.%${tok}%,name.ilike.%${tok}%,supplier_sku.ilike.%${tok}%`)
+  }
+  const { data } = await applyCatalogSort(base, sort).range(from, to)
+  const products = (data ?? []) as CatalogProduct[]
+  // total is unknown without a count; report the page length so callers that
+  // only need "is there a full page → maybe a next page" keep working.
+  return { products, total: products.length }
+}
+
+export interface CatalogSuggestion {
+  slug: string
+  categorySlug: string | null
+  name: string
+  image: string | null
+  price: string | null
+  sku: string | null
+}
+
+// Lightweight typeahead for the search box. Bounded (limit), no count, minimal
+// columns — safe per keystroke ONLY with the pg_trgm indexes in place. A short
+// query is rejected to avoid matching a huge slice of the catalog.
+export async function suggestCatalogProducts(q: string, limit = 8): Promise<CatalogSuggestion[]> {
+  const client = getClient()
+  const term = q.trim()
+  if (!client || term.length < 2) return []
+  const tokens = searchTokens(term)
+  if (tokens.length === 0) return []
+  let base = client
+    .from('catalog_products')
+    .select('slug, category_slug, name_ua, main_image_url, images, price_uah, price_prefix, unit_label, is_price_suspicious, supplier_sku')
+    .eq('status', 'published')
+    .or(EXCLUDE_NATURAL_OR)
+  for (const tok of tokens) {
+    base = base.or(`name_ua.ilike.%${tok}%,name.ilike.%${tok}%,supplier_sku.ilike.%${tok}%`)
+  }
+  const { data } = await base
+    .order('is_featured', { ascending: false })
+    .limit(Math.min(Math.max(limit, 1), 12))
+  const rows = (data ?? []) as CatalogProduct[]
+  return rows.map((p) => ({
+    slug: p.slug,
+    categorySlug: p.category_slug ?? null,
+    name: displayProductName(p),
+    image: getCatalogProductImage(p),
+    price: formatCatalogPrice(p),
+    sku: p.supplier_sku ?? null,
+  }))
 }
 
 export async function getPublishedCatalogProductCount(): Promise<number> {
