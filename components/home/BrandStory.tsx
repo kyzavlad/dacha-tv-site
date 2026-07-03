@@ -1,7 +1,7 @@
-import Image from 'next/image'
 import { existsSync } from 'fs'
 import { join } from 'path'
 import { CTAButton } from '@/components/shared/CTAButton'
+import { SafeImage } from '@/components/shared/SafeImage'
 
 const TRUST_POINTS = [
   {
@@ -34,13 +34,18 @@ export function BrandStory() {
           {/* Apiary photo — only shown when image file exists */}
           {hasImage && (
             <div className="relative order-2 lg:order-1">
-              <div className="relative aspect-[4/3] rounded-3xl overflow-hidden">
-                <Image
+              <div className="relative aspect-[4/3] rounded-3xl overflow-hidden bg-honey-50">
+                {/* Plain <img> (no next/image optimizer, which 402s on Hobby).
+                    Falls back to a branded gradient if the file is ever missing. */}
+                <SafeImage
                   src={BRAND_STORY_IMAGE}
                   alt="Пасіка Дача TV — Коротич, Харківська область"
-                  fill
-                  className="object-cover"
-                  sizes="(max-width: 1024px) 100vw, 50vw"
+                  className="absolute inset-0 h-full w-full object-cover"
+                  fallback={
+                    <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-honey-100 via-honey-50 to-forest-100">
+                      <span className="text-6xl opacity-40" aria-hidden="true">🐝</span>
+                    </div>
+                  }
                 />
               </div>
 

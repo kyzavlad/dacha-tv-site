@@ -10,9 +10,12 @@ function getClient() {
 
 export const CATALOG_PAGE_SIZE = 24
 
-// Product URLs per sitemap shard. Under Google's 50,000-URL hard limit, with
-// headroom. Shared by app/sitemap.ts and app/robots.ts so shard math matches.
-export const SITEMAP_PRODUCTS_PER_CHUNK = 45000
+// Product URLs per sitemap shard. Set to PostgREST's max-rows page size (1000)
+// so ONE request fully fills a shard — a larger value is silently truncated to
+// 1000 by PostgREST, which was the bug (45k shards returning only 1000). Well
+// under Google's 50,000-URL limit. Shared by app/sitemap.ts and app/robots.ts
+// so shard math matches exactly.
+export const SITEMAP_PRODUCTS_PER_CHUNK = 1000
 
 // Manual food/natural categories that are NOT part of /catalog ("Магазин").
 // Their products are presented under /products ("Продукти пасіки") instead. We
@@ -417,7 +420,11 @@ export async function getPublishedCatalogSlugs(): Promise<{ category: string; pr
 }
 
 // One bounded, ordered page of published product slugs for the sharded sitemap.
-// Ordered by id so range() windows are stable across the whole 105k catalog.
+// Uses the SAME filter as getPublishedCatalogProductCount (published, non-natural,
+// null-category included) so shard math and pagination line up exactly — no
+// dropped URLs, no empty middle shard. Null-category products map to /catalog/all.
+// `limit` should be <= 1000 (PostgREST's max-rows) so a single request fills it.
+// Ordered by id so range() windows are stable across the whole catalog.
 export async function getPublishedCatalogSlugsPage(
   offset: number,
   limit: number,
@@ -428,11 +435,13 @@ export async function getPublishedCatalogSlugsPage(
     .from('catalog_products')
     .select('slug, category_slug')
     .eq('status', 'published')
-    .not('category_slug', 'is', null)
-    .not('category_slug', 'in', `(${NATURAL_CATEGORY_SLUGS.join(',')})`)
+    .or(EXCLUDE_NATURAL_OR)
     .order('id', { ascending: true })
     .range(offset, offset + limit - 1)
-  return (data ?? []).map((r) => ({ category: r.category_slug as string, product: r.slug as string }))
+  return (data ?? []).map((r) => ({
+    category: (r.category_slug as string | null) ?? 'all',
+    product: r.slug as string,
+  }))
 }
 
 export async function getPublishedCatalogProducts(
