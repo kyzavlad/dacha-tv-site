@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { formatDate, formatPhoneTel, formatPhoneDisplay } from '@/lib/utils'
+import { supplierStatusView, SUPPLIER_SEVERITY_BADGE } from '@/lib/supplier/status'
 import type { Order, OrderStatus } from '@/types'
 
 // Compact list card for a real row from the `orders` table (the primary
@@ -32,20 +33,13 @@ const PAYMENT_LABELS: Record<string, string> = {
   prepayment: 'Передоплата',
 }
 
-// Supplier forwarding status → human label + colour. Mirrors InquiryCard so the
-// real-order and fallback-order views read the same.
-const SUPPLIER_BADGES: Record<string, { label: string; className: string }> = {
-  test_sent: { label: 'Тестово відправлено постачальнику', className: 'bg-blue-50 text-blue-700 border-blue-200' },
-  sent: { label: 'Відправлено постачальнику', className: 'bg-green-50 text-green-700 border-green-200' },
-  sent_unconfirmed: { label: 'Відправлено без підтвердження', className: 'bg-yellow-50 text-yellow-700 border-yellow-200' },
-  failed: { label: 'Помилка постачальника', className: 'bg-red-50 text-red-700 border-red-200' },
-}
-
 export function AdminOrderCard({ order }: AdminOrderCardProps) {
-  const supplierBadge =
-    order.supplier_order_status && order.supplier_order_status !== 'skipped'
-      ? SUPPLIER_BADGES[order.supplier_order_status]
-      : null
+  // Shared, context-aware supplier label so this card, the detail page and the
+  // fallback card all read the same (sent_unconfirmed ≠ failure).
+  const hasSupplier = !!order.supplier_order_status && order.supplier_order_status !== 'skipped'
+  const supplier = hasSupplier
+    ? supplierStatusView(order.supplier_order_status, order.supplier_order_mode)
+    : null
   const warehouse = order.nova_poshta_warehouse_name ?? order.delivery_notes
 
   return (
@@ -87,10 +81,10 @@ export function AdminOrderCard({ order }: AdminOrderCardProps) {
       </div>
 
       {/* Supplier forwarding status */}
-      {supplierBadge && (
+      {supplier && (
         <div className="flex flex-wrap items-center gap-2">
-          <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border ${supplierBadge.className}`}>
-            {supplierBadge.label}
+          <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border ${SUPPLIER_SEVERITY_BADGE[supplier.severity]}`}>
+            {supplier.label}
           </span>
           {order.supplier_order_mode && order.supplier_order_mode !== 'skipped' && (
             <span className="text-xs text-bark/50">режим: {order.supplier_order_mode}</span>

@@ -44,9 +44,17 @@ export async function GET(req: Request) {
       auto_send: env.supplierOrderMode !== 'disabled'
         ? `Supplier auto-forward is ${env.supplierOrderMode.toUpperCase()} — ${env.supplierOrderMode === 'test' ? 'orders are validated & accepted as TEST, no real supplier order is created' : 'REAL supplier orders will be created'}.`
         : 'Supplier auto-forward is DISABLED — supplier items are flagged for manual handling, never sent.',
-      notifications: env.telegramBotToken && env.telegramChatId
-        ? 'Telegram configured.'
-        : 'Telegram NOT fully configured — set TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID.',
+      // Notifications are healthy when EITHER channel is configured — the
+      // webhook/n8n path and direct Telegram are independent and either alone
+      // delivers order alerts. Direct Telegram being unset is NOT a problem when
+      // the webhook is configured (the intended production setup).
+      notifications: env.webhookUrl
+        ? (env.telegramBotToken && env.telegramChatId
+            ? 'Notifications routed via webhook/n8n; direct Telegram also configured.'
+            : 'Notifications routed via webhook/n8n (WEBHOOK_URL). Direct Telegram is optional and intentionally unused.')
+        : (env.telegramBotToken && env.telegramChatId
+            ? 'Notifications sent via direct Telegram (WEBHOOK_URL not set).'
+            : 'No notification channel configured — set WEBHOOK_URL (n8n) or TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID.'),
     },
   }
 

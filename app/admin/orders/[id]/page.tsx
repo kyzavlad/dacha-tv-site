@@ -6,25 +6,8 @@ import { notFound } from 'next/navigation'
 import { getAdminClient } from '@/lib/supabase/admin'
 import { OrderStatusForm } from '../OrderStatusForm'
 import { SupplierTestButton } from '../SupplierTestButton'
+import { supplierStatusView, SUPPLIER_SEVERITY_BADGE } from '@/lib/supplier/status'
 import type { Order, OrderItem, OrderStatus } from '@/types'
-
-// Supplier send outcomes that count as success (green). Covers both the legacy
-// 'ok' value and the clearer test_sent/sent statuses. 'sent_unconfirmed' is
-// deliberately NOT here — it is a warning, not a confirmed success.
-const SUPPLIER_OK_STATUSES = new Set(['ok', 'sent', 'test_sent'])
-
-// Statuses shown as a warning (yellow): sent but not confirmed by the supplier.
-const SUPPLIER_WARN_STATUSES = new Set(['sent_unconfirmed'])
-
-const SUPPLIER_STATUS_LABELS: Record<string, string> = {
-  ok: 'Надіслано',
-  sent: 'Надіслано (live)',
-  test_sent: 'Тест надіслано',
-  sent_unconfirmed: 'Надіслано (без підтвердження)',
-  failed: 'Помилка',
-  not_sent: 'Не надіслано',
-  skipped: 'Пропущено',
-}
 
 export const metadata: Metadata = { title: 'Адмін: Замовлення', robots: 'noindex, nofollow' }
 
@@ -98,6 +81,13 @@ export default async function AdminOrderDetailPage({ params }: PageProps) {
   const order = await getOrder(id)
   const shortId = order.id.slice(0, 8).toUpperCase()
   const hasCatalogItems = order.items.some((i) => i.product_type === 'catalog')
+  const supplier = supplierStatusView(order.supplier_order_status, order.supplier_order_mode)
+  // A confirmed/accepted LIVE send already exists for this order. The manual
+  // test button re-sends in TEST mode (never live) but overwrites the stored
+  // supplier result, so we warn before it replaces a real send record.
+  const sentLive =
+    order.supplier_order_mode === 'live' &&
+    (order.supplier_order_status === 'sent' || order.supplier_order_status === 'sent_unconfirmed')
 
   return (
     <div className="max-w-3xl mx-auto py-6 px-4">
@@ -264,17 +254,16 @@ export default async function AdminOrderDetailPage({ params }: PageProps) {
                     )}
                   </dd>
                 </div>
-                <div>
+                <div className="sm:col-span-2">
                   <dt className="text-gray-400 text-xs mb-0.5">Статус</dt>
-                  <dd className={`font-medium text-xs ${
-                    SUPPLIER_OK_STATUSES.has(order.supplier_order_status ?? '')
-                      ? 'text-green-700'
-                      : SUPPLIER_WARN_STATUSES.has(order.supplier_order_status ?? '')
-                        ? 'text-yellow-700'
-                        : 'text-red-600'
-                  }`}>
-                    {SUPPLIER_STATUS_LABELS[order.supplier_order_status ?? ''] ?? order.supplier_order_status}
+                  <dd>
+                    <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${SUPPLIER_SEVERITY_BADGE[supplier.severity]}`}>
+                      {supplier.label}
+                    </span>
                   </dd>
+                  {supplier.hint && (
+                    <p className="text-xs text-gray-500 mt-1.5 leading-relaxed">{supplier.hint}</p>
+                  )}
                 </div>
                 {order.supplier_order_id && (
                   <div>
@@ -318,7 +307,7 @@ export default async function AdminOrderDetailPage({ params }: PageProps) {
             )}
 
             <div className="pt-3 border-t border-gray-100">
-              <SupplierTestButton orderId={order.id} />
+              <SupplierTestButton orderId={order.id} sentLive={sentLive} />
             </div>
           </section>
         )}

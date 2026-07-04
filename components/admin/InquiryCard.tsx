@@ -5,6 +5,7 @@ import { formatDate } from '@/lib/utils'
 import { formatPhoneTel, formatPhoneDisplay } from '@/lib/utils'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { StatusToggle } from './StatusToggle'
+import { supplierStatusView, SUPPLIER_SEVERITY_BADGE } from '@/lib/supplier/status'
 import type { Inquiry } from '@/types'
 
 interface InquiryCardProps {
@@ -83,22 +84,11 @@ const PAYMENT_LABELS: Record<string, string> = {
   prepayment: 'Передоплата',
 }
 
-// Supplier forwarding status → human label + colour.
-const SUPPLIER_BADGES: Record<string, { label: string; className: string }> = {
-  test_sent: { label: 'Тестово відправлено постачальнику', className: 'bg-blue-50 text-blue-700 border-blue-200' },
-  sent: { label: 'Відправлено постачальнику', className: 'bg-green-50 text-green-700 border-green-200' },
-  sent_unconfirmed: { label: 'Відправлено без підтвердження', className: 'bg-yellow-50 text-yellow-700 border-yellow-200' },
-  failed: { label: 'Помилка постачальника', className: 'bg-red-50 text-red-700 border-red-200' },
-  disabled: { label: 'Не відправлено', className: 'bg-gray-100 text-gray-600 border-gray-200' },
-  not_sent: { label: 'Не відправлено', className: 'bg-gray-100 text-gray-600 border-gray-200' },
-  skipped: { label: 'Не відправлено', className: 'bg-gray-100 text-gray-600 border-gray-200' },
-}
-
-function SupplierBadge({ status }: { status?: string }) {
-  const badge = SUPPLIER_BADGES[status ?? ''] ?? SUPPLIER_BADGES.skipped
+function SupplierBadge({ status, mode }: { status?: string; mode?: string }) {
+  const view = supplierStatusView(status, mode)
   return (
-    <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border ${badge.className}`}>
-      {badge.label}
+    <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border ${SUPPLIER_SEVERITY_BADGE[view.severity]}`}>
+      {view.label}
     </span>
   )
 }
@@ -211,7 +201,7 @@ export function InquiryCard({ inquiry }: InquiryCardProps) {
         <div className="space-y-3">
           {/* Supplier forwarding status */}
           <div className="flex flex-wrap items-center gap-2">
-            <SupplierBadge status={order.supplier_status} />
+            <SupplierBadge status={order.supplier_status} mode={order.supplier_mode} />
             {order.supplier_mode && order.supplier_mode !== 'skipped' && (
               <span className="text-xs text-bark/50">режим: {order.supplier_mode}</span>
             )}

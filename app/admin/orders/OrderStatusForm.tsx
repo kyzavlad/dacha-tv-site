@@ -79,8 +79,11 @@ export function OrderStatusForm({ orderId, currentStatus, currentAdminNotes }: P
           onChange={(e) => setNotes(e.target.value)}
           rows={3}
           className="w-full border border-gray-200 rounded-lg px-2.5 py-2 text-sm focus:outline-none focus:border-gray-400 resize-none"
-          placeholder="Внутрішні нотатки…"
+          placeholder="Внутрішні нотатки… напр., № замовлення в кабінеті постачальника, результат звірки"
         />
+        <p className="mt-1 text-[11px] text-gray-400 leading-relaxed">
+          Порада: якщо статус «звірити в кабінеті», запишіть тут № замовлення постачальника після перевірки.
+        </p>
         <button
           onClick={saveNotes}
           disabled={pending}
