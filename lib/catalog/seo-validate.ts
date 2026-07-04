@@ -86,6 +86,24 @@ export interface FieldValidation {
   reasons: string[] // human-readable Ukrainian reasons, empty when ok
 }
 
+// Ukrainian-language gate for AI-generated copy. Ukrainian uses і/ї/є/ґ and NEVER
+// the Russian-only letters ы/э/ъ/ё — so their presence is a reliable "this is
+// Russian, not Ukrainian" signal. Also requires Cyrillic to dominate over Latin
+// so an English/transliterated string is rejected. Conservative: a clean
+// Ukrainian value always passes; only clearly non-Ukrainian copy is blocked.
+export function validateUkrainianText(raw: string | null | undefined): FieldValidation {
+  const v = collapse(raw)
+  const reasons: string[] = []
+  if (!v) return { ok: false, reasons: ['порожній текст'] }
+  const cyr = (v.match(/[а-яіїєґ]/gi) ?? []).length
+  const lat = (v.match(/[a-z]/gi) ?? []).length
+  const letters = cyr + lat
+  if (letters === 0) reasons.push('немає літер')
+  else if (cyr / letters < 0.5) reasons.push('текст переважно не кирилицею (очікується українська)')
+  if (/[ыэъё]/i.test(v)) reasons.push('містить російські літери (ы/э/ъ/ё) — очікується українська')
+  return { ok: reasons.length === 0, reasons }
+}
+
 // Checks common to every text field.
 function commonChecks(value: string, reasons: string[]): void {
   if (hasHtml(value)) reasons.push('містить HTML')
