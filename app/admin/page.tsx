@@ -2,7 +2,8 @@ export const dynamic = 'force-dynamic'
 import type { Metadata } from 'next'
 import { getAdminClient } from '@/lib/supabase/admin'
 import { InquiryCard } from '@/components/admin/InquiryCard'
-import type { Inquiry, InquiryStatus } from '@/types'
+import { AdminOrderCard } from '@/components/admin/AdminOrderCard'
+import type { Inquiry, InquiryStatus, Order } from '@/types'
 
 export const metadata: Metadata = {
   title: 'Адмін: Вхідні заявки',
@@ -106,6 +107,46 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
     }
   }
 
+  // Real product orders live in the `orders` table — the primary checkout path.
+  // Load them so the "Замовлення" tab shows them. The inquiries-based fallback
+  // (used only when the orders table is ever missing) is rendered separately
+  // below, so the two data sources never get conflated. Read-only; status
+  // management stays on the /admin/orders/[id] detail page.
+  let orders: (Order & { itemCount: number })[] = []
+  let ordersError: string | null = null
+  if (!missingEnv) {
+    try {
+      const supabase = getAdminClient()
+      const { data: orderRows, error: ordersDbError } = await supabase
+        .from('orders')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(100)
+
+      if (ordersDbError) {
+        // A missing `orders` table (PGRST205) is NOT fatal — the fallback orders
+        // saved in `inquiries` still render. Any other error is surfaced.
+        if (ordersDbError.code !== 'PGRST205') ordersError = ordersDbError.message
+      } else {
+        const rows = (orderRows ?? []) as Order[]
+        const ids = rows.map((o) => o.id)
+        const counts = new Map<string, number>()
+        if (ids.length > 0) {
+          const { data: itemRows } = await supabase
+            .from('order_items')
+            .select('order_id')
+            .in('order_id', ids)
+          for (const r of (itemRows ?? []) as { order_id: string }[]) {
+            counts.set(r.order_id, (counts.get(r.order_id) ?? 0) + 1)
+          }
+        }
+        orders = rows.map((o) => ({ ...o, itemCount: counts.get(o.id) ?? 0 }))
+      }
+    } catch (e) {
+      ordersError = e instanceof Error ? e.message : String(e)
+    }
+  }
+
   // Client-side type classification + filter.
   // Legacy lavender/service booking rows are managed in /admin/bookings, so they
   // are excluded from the default "all" view here. They stay reachable via the
@@ -115,14 +156,24 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
     ? classified.filter((c) => c.kind !== 'booking').map((c) => c.inq)
     : classified.filter((c) => c.kind === safeType).map((c) => c.inq)
 
-  const newCount = filtered.filter((i) => i.status === 'new').length
   const isLegacyBookingView = safeType === 'booking'
 
-  // Count per type (before type filter, within current status filter)
+  // Real orders honour the same status filter as inquiries. Order statuses that
+  // have no inquiry equivalent (confirmed/packed/shipped) simply don't match the
+  // inquiry-oriented status chips, which is the intended behaviour.
+  const visibleOrders = safeStatus === 'all' ? orders : orders.filter((o) => o.status === safeStatus)
+
+  // Count per type (before type filter, within current status filter). The
+  // "Замовлення" count combines real orders + legacy fallback orders.
+  const fallbackOrderCount = classified.filter((c) => c.kind === 'order').length
   const typeCounts = {
-    order: classified.filter((c) => c.kind === 'order').length,
+    order: visibleOrders.length + fallbackOrderCount,
     inquiry: classified.filter((c) => c.kind === 'inquiry').length,
   }
+
+  const newCount = safeType === 'order'
+    ? visibleOrders.filter((o) => o.status === 'new').length + filtered.filter((i) => i.status === 'new').length
+    : filtered.filter((i) => i.status === 'new').length
 
   return (
     <div className="px-4 sm:px-6 py-8 max-w-3xl">
@@ -209,18 +260,48 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
         </div>
       )}
 
-      {!error && filtered.length === 0 && (
-        <div className="text-center py-16">
-          <p className="text-bark/50 text-lg">Заявок немає</p>
+      {/* A non-fatal error loading real orders is shown as a warning; the page
+          (and any fallback orders) still render. */}
+      {ordersError && safeType === 'order' && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 mb-6">
+          <p className="text-yellow-800 text-sm font-semibold">Не вдалося завантажити замовлення</p>
+          <p className="text-yellow-700 text-sm font-mono break-all mt-0.5">{ordersError}</p>
         </div>
       )}
 
-      {filtered.length > 0 && (
-        <div className="space-y-4">
-          {filtered.map((inquiry) => (
-            <InquiryCard key={inquiry.id} inquiry={inquiry} />
-          ))}
-        </div>
+      {safeType === 'order' ? (
+        /* Orders tab: real `orders` rows first, then any legacy fallback orders
+           saved as inquiries. Kept visually separate but under one tab. */
+        !error && visibleOrders.length === 0 && filtered.length === 0 ? (
+          <div className="text-center py-16">
+            <p className="text-bark/50 text-lg">Замовлень немає</p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {visibleOrders.map((order) => (
+              <AdminOrderCard key={order.id} order={order} />
+            ))}
+            {filtered.map((inquiry) => (
+              <InquiryCard key={inquiry.id} inquiry={inquiry} />
+            ))}
+          </div>
+        )
+      ) : (
+        <>
+          {!error && filtered.length === 0 && (
+            <div className="text-center py-16">
+              <p className="text-bark/50 text-lg">Заявок немає</p>
+            </div>
+          )}
+
+          {filtered.length > 0 && (
+            <div className="space-y-4">
+              {filtered.map((inquiry) => (
+                <InquiryCard key={inquiry.id} inquiry={inquiry} />
+              ))}
+            </div>
+          )}
+        </>
       )}
     </div>
   )

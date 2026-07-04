@@ -52,7 +52,7 @@ export async function GET(req: Request) {
 
   try {
     const client = getAdminClient()
-    const [{ data: recent }, statuses] = await Promise.all([
+    const [{ data: recent }, statuses, { count: ordersTotal }] = await Promise.all([
       client
         .from('orders')
         .select('id, created_at, customer_name, total_uah, status, supplier_order_mode, supplier_order_status, supplier_order_id')
@@ -63,7 +63,14 @@ export async function GET(req: Request) {
         .select('supplier_order_status')
         .not('supplier_order_status', 'is', null)
         .limit(1000),
+      // Total row count in the `orders` table — confirms real orders exist and
+      // are readable by the admin, independent of any UI wiring.
+      client
+        .from('orders')
+        .select('id', { count: 'exact', head: true }),
     ])
+
+    result.orders_total = ordersTotal ?? 0
 
     const statusCounts: Record<string, number> = {}
     for (const r of (statuses.data ?? []) as { supplier_order_status: string | null }[]) {
