@@ -15,7 +15,8 @@ export const revalidate = 3600
 
 // Sharded sitemap: a single flat file cannot hold 105k product URLs (Google's
 // hard limit is 50,000 URLs / 50MB per file). Shard 0 carries the static +
-// non-catalog + category URLs; shards 1..N each carry one 45k-product window.
+// non-catalog + category URLs; shards 1..N each carry one
+// SITEMAP_PRODUCTS_PER_CHUNK-product window (1000, well under the 50k limit).
 // Shards are served at /sitemap/[id].xml and enumerated in robots.ts.
 export async function generateSitemaps(): Promise<{ id: number }[]> {
   const productCount = await getPublishedCatalogProductCount().catch(() => 0)
@@ -72,7 +73,7 @@ export default async function sitemap(props: { id: Promise<string> }): Promise<M
     ]
   }
 
-  // Product shard N → the Nth 45k window of published catalog products.
+  // Product shard N → the Nth SITEMAP_PRODUCTS_PER_CHUNK (1000) window.
   const offset = (id - 1) * SITEMAP_PRODUCTS_PER_CHUNK
   const slugs = await getPublishedCatalogSlugsPage(offset, SITEMAP_PRODUCTS_PER_CHUNK).catch(() => [])
   return slugs.map(({ category, product }) => ({
