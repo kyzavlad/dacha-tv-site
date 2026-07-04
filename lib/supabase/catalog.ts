@@ -193,23 +193,49 @@ export function categoryDisplayName(name: string | null | undefined): string {
   return isUnusableCategoryName(name) ? FALLBACK_CATEGORY_NAME : (name as string).trim()
 }
 
-// A product name is "garbage" when it carries no real words — e.g. "<>", a bare
-// SKU/code, or pure punctuation. Such names must never show as a card title.
+// A product name is "garbage" when it carries no real words — e.g. "<>", "--10",
+// "F0000000024", a bare SKU/code, or pure punctuation. Never show as a card title.
 export function isGarbageProductName(name: string | null | undefined): boolean {
   if (!name) return true
   const n = name.trim()
   if (!n) return true
-  if (letterCount(n) < 2) return true               // "<>", "N-1171", "—", "12x"
-  if (/^[<>{}\[\]()._\-\s\/\\|]+$/.test(n)) return true // only punctuation
+  if (letterCount(n) < 2) return true                   // "<>", "--10", "F0000000024", "N-1171", "—"
+  if (/^[<>{}\[\]()._\-\s\/\\|]+$/.test(n)) return true  // only punctuation / brackets
   return false
 }
 
-// Clean, human-facing product title. Strips stray markup-ish chars; when the
-// stored name is garbage, falls back to the SKU (or a neutral label) so a card
-// never shows "<>" or an empty title. Display-only — never mutates the DB.
-export function displayProductName(product: Pick<CatalogProduct, 'name_ua' | 'supplier_sku'>): string {
-  const raw = (product.name_ua ?? '').replace(/\s+/g, ' ').trim()
-  if (!isGarbageProductName(raw)) return raw
+// A minimal shape covering the name-bearing columns (name_ua = Ukrainian,
+// name = raw Russian supplier feed) + the SKU used as a code sentinel.
+export type NameBearingProduct = Pick<CatalogProduct, 'name_ua' | 'supplier_sku'> & { name?: string | null }
+
+// The best real human name, preferring Ukrainian then the Russian supplier name.
+// Returns null when a product has NO real name (every candidate is empty,
+// punctuation, a code, or equal to its own SKU) — such products are unsuitable
+// for public listing.
+export function bestProductName(product: NameBearingProduct): string | null {
+  const sku = (product.supplier_sku ?? '').trim().toLowerCase()
+  const consider = (raw: string | null | undefined): string | null => {
+    const s = (raw ?? '').replace(/\s+/g, ' ').trim()
+    if (!s || isGarbageProductName(s)) return null
+    if (sku && s.toLowerCase() === sku) return null // name IS the SKU → code-like
+    return s
+  }
+  return consider(product.name_ua) ?? consider(product.name) ?? null
+}
+
+// True when a product has a real name and is safe to show in a PUBLIC list.
+// Products failing this are HIDDEN from public catalog/search/suggest — never
+// deleted or archived; admin still sees everything.
+export function isPublicListableProduct(product: NameBearingProduct): boolean {
+  return bestProductName(product) !== null
+}
+
+// Human-facing product title. Uses the best real name; only falls back to a SKU
+// label when there is genuinely no real name (those are filtered out of public
+// lists, but detail pages / cart still need a non-empty string). Never mutates DB.
+export function displayProductName(product: NameBearingProduct): string {
+  const best = bestProductName(product)
+  if (best) return best
   const sku = (product.supplier_sku ?? '').trim()
   return sku ? `Товар ${sku}` : 'Товар'
 }
@@ -349,7 +375,8 @@ export async function getPublishedProductsByCategory(
     .eq('status', 'published')
     .eq('category_slug', categorySlug)
   const { data, count } = await applyCatalogSort(base, sort).range(from, to)
-  return { products: (data ?? []) as CatalogProduct[], total: count ?? 0 }
+  const products = ((data ?? []) as CatalogProduct[]).filter(isPublicListableProduct)
+  return { products, total: count ?? 0 }
 }
 
 // Up to `limit` other published products in the same category, for the
@@ -361,6 +388,7 @@ export async function getRelatedCatalogProducts(
 ): Promise<CatalogProduct[]> {
   const client = getClient()
   if (!client || !categorySlug || NATURAL_CATEGORY_SLUGS.includes(categorySlug)) return []
+  // Over-fetch a little so the rail stays full after garbage rows are filtered.
   const { data } = await client
     .from('catalog_products')
     .select('*')
@@ -369,8 +397,8 @@ export async function getRelatedCatalogProducts(
     .neq('slug', excludeSlug)
     .order('is_featured', { ascending: false })
     .order('display_order', { ascending: true })
-    .limit(limit)
-  return (data ?? []) as CatalogProduct[]
+    .limit(limit * 4)
+  return ((data ?? []) as CatalogProduct[]).filter(isPublicListableProduct).slice(0, limit)
 }
 
 export async function getPublishedProductBySlug(
@@ -458,7 +486,8 @@ export async function getPublishedCatalogProducts(
     .eq('status', 'published')
     .or(EXCLUDE_NATURAL_OR)
   const { data, count } = await applyCatalogSort(base, sort).range(from, to)
-  return { products: (data ?? []) as CatalogProduct[], total: count ?? 0 }
+  const products = ((data ?? []) as CatalogProduct[]).filter(isPublicListableProduct)
+  return { products, total: count ?? 0 }
 }
 
 // Public catalog search (?q=) — matches published shop products by Ukrainian or
@@ -504,7 +533,9 @@ export async function searchPublishedCatalogProducts(
     base = base.or(`name_ua.ilike.%${tok}%,name.ilike.%${tok}%,supplier_sku.ilike.%${tok}%`)
   }
   const { data } = await applyCatalogSort(base, sort).range(from, to)
-  const products = (data ?? []) as CatalogProduct[]
+  // Hide products unsuitable for a public listing (garbage/code-like names) so
+  // search results only surface real, buyable products. Admin search is separate.
+  const products = ((data ?? []) as CatalogProduct[]).filter(isPublicListableProduct)
   // total is unknown without a count; report the page length so callers that
   // only need "is there a full page → maybe a next page" keep working.
   return { products, total: products.length }
@@ -530,16 +561,22 @@ export async function suggestCatalogProducts(q: string, limit = 8): Promise<Cata
   if (tokens.length === 0) return []
   let base = client
     .from('catalog_products')
-    .select('slug, category_slug, name_ua, main_image_url, images, price_uah, price_prefix, unit_label, is_price_suspicious, supplier_sku')
+    .select('slug, category_slug, name_ua, name, main_image_url, images, price_uah, price_prefix, unit_label, is_price_suspicious, supplier_sku')
     .eq('status', 'published')
     .or(EXCLUDE_NATURAL_OR)
   for (const tok of tokens) {
     base = base.or(`name_ua.ilike.%${tok}%,name.ilike.%${tok}%,supplier_sku.ilike.%${tok}%`)
   }
+  // Over-fetch, then drop products unsuitable for public listing (garbage/
+  // code-like names) before slicing back to `limit` — so garbage never eats a
+  // suggestion slot and the typeahead stays full of real, buyable products.
   const { data } = await base
     .order('is_featured', { ascending: false })
-    .limit(Math.min(Math.max(limit, 1), 12))
-  const rows = (data ?? []) as CatalogProduct[]
+    .limit(Math.min(Math.max(limit * 3, limit), 30))
+  // Cast via unknown: the select includes `name` (Russian supplier feed), which
+  // is a real DB column but not declared on CatalogProduct, so a direct cast is
+  // rejected. bestProductName reads it through the NameBearingProduct shape.
+  const rows = ((data ?? []) as unknown as CatalogProduct[]).filter(isPublicListableProduct).slice(0, limit)
   return rows.map((p) => ({
     slug: p.slug,
     categorySlug: p.category_slug ?? null,
