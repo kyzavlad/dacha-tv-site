@@ -10,7 +10,7 @@ import { getSeoAiCandidates, SEO_TARGETS } from '@/lib/catalog/seo-ai'
 // results to /api/admin/seo/apply-ai-batch. Human-authored SEO (sheet/manual/
 // locked) is excluded so AI never competes with it. Writes nothing.
 //
-//   GET /api/admin/seo/ai-candidates?limit=100   (1–500, default 100)
+//   GET /api/admin/seo/ai-candidates?limit=100   (1–1000, default 100)
 //
 //   curl -H "Authorization: Bearer $CRON_SECRET" \
 //     "https://<site>/api/admin/seo/ai-candidates?limit=5"

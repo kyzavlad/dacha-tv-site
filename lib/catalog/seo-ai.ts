@@ -106,34 +106,60 @@ function computeNeeds(p: {
 // prefer real sellable products (image + price + category + real name). Rows with
 // human-authored SEO (sheet/manual) or a manual lock are excluded up front.
 export async function getSeoAiCandidates(limit = 100): Promise<CandidatesResult> {
-  const capped = Math.min(Math.max(limit, 1), 500)
+  // Cap one AI run at 1000 items; the default (100) stays safe when no limit is
+  // passed. 1000 is also PostgREST's per-request row ceiling, so we page rather
+  // than over-fetch — a single `.limit(>1000)` would be silently truncated and
+  // could return fewer than requested once garbage-named rows are filtered.
+  const capped = Math.min(Math.max(limit, 1), 1000)
   const client = getAdminClient()
 
-  const { data, error } = await client
-    .from('catalog_products')
-    .select(CANDIDATE_COLS)
-    .eq('status', 'published')
-    .neq('seo_manual_lock', true)
-    .neq('seo_status', 'sheet')
-    .neq('seo_status', 'manual')
-    // Only rows that actually need work: no long description, or missing a meta field.
-    .or('description_ua.is.null,meta_title.is.null,meta_description.is.null')
-    // Prefer real, sellable products (image + valid price + category + name).
-    .not('main_image_url', 'is', null)
-    .gt('price_uah', 0)
-    .not('category_slug', 'is', null)
-    .not('name_ua', 'is', null)
-    // Oldest-generated first so repeated pulls rotate through the backlog.
-    .order('seo_generated_at', { ascending: true, nullsFirst: true })
-    // Over-fetch: the public-listability filter drops garbage-named rows in JS.
-    .limit(capped * 3)
+  // Fetch in pages of up to PAGE rows, dropping public-unlistable (garbage-named)
+  // rows in JS as we go, until we have `capped` candidates or the bounded scan is
+  // exhausted. MAX_SCAN bounds the work so a catalog with rare garbage stops early.
+  const PAGE = 1000
+  const MAX_SCAN = capped * 3
+  const picked: CatalogProduct[] = []
+  let scanFrom = 0
+  let scanned = 0
 
-  if (error) {
-    return { ok: false, count: 0, limit: capped, candidates: [], message: error.message }
+  while (picked.length < capped && scanned < MAX_SCAN) {
+    const { data, error } = await client
+      .from('catalog_products')
+      .select(CANDIDATE_COLS)
+      .eq('status', 'published')
+      .neq('seo_manual_lock', true)
+      .neq('seo_status', 'sheet')
+      .neq('seo_status', 'manual')
+      // Only rows that actually need work: no long description, or missing a meta field.
+      .or('description_ua.is.null,meta_title.is.null,meta_description.is.null')
+      // Prefer real, sellable products (image + valid price + category + name).
+      .not('main_image_url', 'is', null)
+      .gt('price_uah', 0)
+      .not('category_slug', 'is', null)
+      .not('name_ua', 'is', null)
+      // Oldest-generated first so repeated pulls rotate through the backlog; id is
+      // a stable tiebreaker so pages never overlap or skip rows.
+      .order('seo_generated_at', { ascending: true, nullsFirst: true })
+      .order('id', { ascending: true })
+      .range(scanFrom, scanFrom + PAGE - 1)
+
+    if (error) {
+      return { ok: false, count: 0, limit: capped, candidates: [], message: error.message }
+    }
+
+    const rows = (data ?? []) as unknown as CatalogProduct[]
+    scanned += rows.length
+    for (const p of rows) {
+      if (isPublicListableProduct(p)) {
+        picked.push(p)
+        if (picked.length >= capped) break
+      }
+    }
+    if (rows.length < PAGE) break // reached the end of the eligible set
+    scanFrom += PAGE
   }
 
-  const rows = (data ?? []) as unknown as CatalogProduct[]
-  const catSlugs = [...new Set(rows.map((r) => r.category_slug).filter(Boolean))] as string[]
+  const catSlugs = [...new Set(picked.map((r) => r.category_slug).filter(Boolean))] as string[]
   const catName = new Map<string, string>()
   for (let i = 0; i < catSlugs.length; i += 300) {
     const { data: cats } = await client
@@ -145,10 +171,7 @@ export async function getSeoAiCandidates(limit = 100): Promise<CandidatesResult>
     }
   }
 
-  const candidates: SeoCandidate[] = rows
-    .filter(isPublicListableProduct)
-    .slice(0, capped)
-    .map((p) => ({
+  const candidates: SeoCandidate[] = picked.map((p) => ({
       id: p.id,
       slug: p.slug,
       sku: p.supplier_sku ?? null,

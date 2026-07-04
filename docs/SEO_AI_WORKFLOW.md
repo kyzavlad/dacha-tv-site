@@ -26,7 +26,9 @@ SEO. Mutates nothing. Query: `?sampleCategories=4000` widens the category sample
 Returns published, **public-listable** products (garbage names filtered) that
 need SEO improvement, ranked to prefer real sellable products (image + valid
 price + category + real name). Rows with human-authored SEO (`seo_status` =
-`sheet`/`manual`) or a manual lock are **excluded**. `limit` is 1–500 (default 100).
+`sheet`/`manual`) or a manual lock are **excluded**. `limit` is 1–1000 (default
+100); the endpoint pages internally so a large batch is returned in full rather
+than being truncated by the 1000-row per-request ceiling.
 
 Each candidate carries: `id`, `sku`, `name`, `category_slug`, `category_name`,
 `price`, `image`, `current` (existing SEO fields), `needs`
