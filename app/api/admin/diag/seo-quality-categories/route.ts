@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { verifyCronAuth, cronUnauthorized } from '../../cron/_auth'
 import { getAdminClient } from '@/lib/supabase/admin'
+import { countCategoriesNeedingSeo } from '@/lib/catalog/seo-ai-category'
 
 // ─── READ-ONLY category SEO quality / queue diagnostic ────────────────────────
 // Reports catalog CATEGORY SEO coverage and the AI backlog WITHOUT mutating
@@ -59,16 +60,11 @@ export async function GET(req: Request) {
 
   const seoMissing = seoMissingLabel + seoUnset
 
-  // AI-eligible backlog: published, not human-authored/locked, still missing a
-  // long description, a meta field, or FAQ. Pool for category-ai-candidates.
-  const aiBacklog = await count(() =>
-    C()
-      .neq('seo_manual_lock', true)
-      .neq('seo_status', 'sheet')
-      .neq('seo_status', 'manual')
-      .or('description_ua.is.null,meta_title.is.null,meta_description.is.null,faq_json.is.null')
-      .not('name_ua', 'is', null),
-  )
+  // AI-eligible backlog — computed with the SAME shared helper that
+  // /api/admin/seo/category-ai-candidates uses, so the two endpoints never
+  // disagree. A field counts as missing when null/empty/whitespace, FAQ when
+  // empty; human-authored (sheet/manual/locked) categories are excluded.
+  const aiBacklog = await countCategoriesNeedingSeo().catch(() => 0)
 
   const pct = (n: number) => (total > 0 ? Math.round((n / total) * 1000) / 10 : 0)
 
@@ -105,7 +101,7 @@ export async function GET(req: Request) {
     },
     ai_backlog: {
       eligible_categories: aiBacklog,
-      note: 'Published, non-locked, non-sheet/manual categories still needing a long description, a meta field, or FAQ. Source pool for /api/admin/seo/category-ai-candidates.',
+      note: 'Published, non-locked, non-sheet/manual categories missing any of meta_title/meta_description/description_ua/h1/seo_keywords/faq (null, empty or whitespace). Identical selection to /api/admin/seo/category-ai-candidates.',
     },
   })
 }

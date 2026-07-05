@@ -10,7 +10,7 @@
 // here touches products, checkout, supplier data, import, sitemap, or schema.
 
 import { getAdminClient } from '@/lib/supabase/admin'
-import { isUnusableCategoryName, categoryDisplayName } from '@/lib/supabase/catalog'
+import { categoryDisplayName } from '@/lib/supabase/catalog'
 import {
   validateMetaTitle,
   validateMetaDescription,
@@ -83,26 +83,39 @@ export interface CategoryCandidatesResult {
   message: string
 }
 
-const isBlank = (s: string | null | undefined) => !collapse(s)
+// A text field counts as "missing" when it is null, empty, OR whitespace-only.
+// collapse() trims + type-guards, so this is true for null/undefined/'' /'   '.
+const isBlank = (s: unknown) => !collapse(s)
 
-function faqIsEmpty(faq: unknown): boolean {
+// FAQ is "missing" when it is not an array or is an empty array.
+export function faqIsEmpty(faq: unknown): boolean {
   return !Array.isArray(faq) || faq.length === 0
 }
 
-// Which fields a category still needs. A description under 300 chars counts as
-// "weak" so thin copy is upgraded, not treated as complete.
-function computeNeeds(c: {
-  meta_title: string | null
-  meta_description: string | null
-  description_ua: string | null
-  faq_json: unknown
+// ── SINGLE SOURCE OF TRUTH: which SEO fields a category still needs ────────────
+// Used by BOTH the candidates endpoint and the diagnostic backlog so they can
+// never diverge. Every tracked field is "needed" when blank (null/empty/
+// whitespace); FAQ when absent or empty.
+export function categorySeoNeeds(c: {
+  meta_title?: string | null
+  meta_description?: string | null
+  description_ua?: string | null
+  h1?: string | null
+  seo_keywords?: string | null
+  faq_json?: unknown
 }): string[] {
   const needs: string[] = []
   if (isBlank(c.meta_title)) needs.push('meta_title')
   if (isBlank(c.meta_description)) needs.push('meta_description')
-  if (collapse(c.description_ua).length < 300) needs.push('description')
+  if (isBlank(c.description_ua)) needs.push('description')
+  if (isBlank(c.h1)) needs.push('h1')
+  if (isBlank(c.seo_keywords)) needs.push('seo_keywords')
   if (faqIsEmpty(c.faq_json)) needs.push('faq')
   return needs
+}
+
+export function categoryNeedsSeo(c: Parameters<typeof categorySeoNeeds>[0]): boolean {
+  return categorySeoNeeds(c).length > 0
 }
 
 type CatRow = {
@@ -121,54 +134,84 @@ type CatRow = {
   seo_manual_lock: boolean | null
 }
 
+// A category is AI-eligible unless its SEO is human-authored. Evaluated in JS (not
+// via `.neq` in SQL) so NULL/'' seo_status is correctly ALLOWED — a SQL
+// `seo_status <> 'sheet'` filter drops NULL rows, which would silently exclude the
+// exact categories that still need SEO.
+function isAiEligibleCategory(c: { seo_status: string | null; seo_manual_lock: boolean | null }): boolean {
+  if (c.seo_manual_lock === true) return false
+  if (c.seo_status === 'sheet' || c.seo_status === 'manual') return false
+  return true
+}
+
+// Shared fetch: published categories (with a name) that are AI-eligible AND still
+// need SEO, using the shared helper. Pages the table; stops once `limit` matches
+// are collected. NO unusable-name exclusion — the diagnostic backlog counts those
+// too and categoryDisplayName gives them a real fallback name, so excluding them
+// here is exactly what made candidates return 0 while the backlog reported 500.
+async function fetchCategoriesNeedingSeo(opts: { limit?: number } = {}): Promise<CatRow[]> {
+  const client = getAdminClient()
+  const PAGE = 1000
+  const out: CatRow[] = []
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await client
+      .from('catalog_categories')
+      .select(CANDIDATE_COLS)
+      .eq('is_published', true)
+      .not('name_ua', 'is', null)
+      // Oldest-generated first so repeated pulls rotate through the backlog.
+      .order('seo_generated_at', { ascending: true, nullsFirst: true })
+      .order('id', { ascending: true })
+      .range(from, from + PAGE - 1)
+    if (error) throw new Error(error.message)
+    const rows = (data ?? []) as unknown as CatRow[]
+    for (const c of rows) {
+      if (isAiEligibleCategory(c) && categoryNeedsSeo(c)) {
+        out.push(c)
+        if (opts.limit && out.length >= opts.limit) return out
+      }
+    }
+    if (rows.length < PAGE) break
+  }
+  return out
+}
+
+// Count of AI-eligible categories that still need SEO — the diagnostic backlog.
+// Shares the exact selection logic of getCategorySeoAiCandidates.
+export async function countCategoriesNeedingSeo(): Promise<number> {
+  return (await fetchCategoriesNeedingSeo()).length
+}
+
 // Select published categories that need SEO improvement, excluding human-authored
-// SEO (sheet/manual) or a manual lock, and skipping unusable/garbage names.
+// SEO (sheet/manual) or a manual lock. Selection is identical to the diagnostic
+// backlog (same shared helper), so a non-zero backlog always yields candidates.
 export async function getCategorySeoAiCandidates(limit = 100): Promise<CategoryCandidatesResult> {
   const capped = Math.min(Math.max(limit, 1), 1000)
-  const client = getAdminClient()
 
-  const { data, error } = await client
-    .from('catalog_categories')
-    .select(CANDIDATE_COLS)
-    .eq('is_published', true)
-    .neq('seo_manual_lock', true)
-    .neq('seo_status', 'sheet')
-    .neq('seo_status', 'manual')
-    // Only rows that actually need work.
-    .or('description_ua.is.null,meta_title.is.null,meta_description.is.null,faq_json.is.null')
-    .not('name_ua', 'is', null)
-    // Oldest-generated first so repeated pulls rotate through the backlog.
-    .order('seo_generated_at', { ascending: true, nullsFirst: true })
-    .order('id', { ascending: true })
-    // Over-fetch modestly: unusable-name rows are dropped in JS below. Categories
-    // are far fewer than products, so a single request (≤1000) is sufficient.
-    .limit(Math.min(capped * 2, 1000))
-
-  if (error) {
-    return { ok: false, count: 0, limit: capped, candidates: [], message: error.message }
+  let rows: CatRow[]
+  try {
+    rows = await fetchCategoriesNeedingSeo({ limit: capped })
+  } catch (e) {
+    return { ok: false, count: 0, limit: capped, candidates: [], message: e instanceof Error ? e.message : String(e) }
   }
 
-  const rows = (data ?? []) as unknown as CatRow[]
-  const candidates: CategorySeoCandidate[] = rows
-    .filter((c) => !isUnusableCategoryName(c.name_ua))
-    .slice(0, capped)
-    .map((c) => ({
-      id: c.id,
-      slug: c.slug,
-      name: categoryDisplayName(c.name_ua),
-      current: {
-        meta_title: c.meta_title ?? null,
-        meta_description: c.meta_description ?? null,
-        description_ua: c.description_ua ?? null,
-        h1: c.h1 ?? null,
-        seo_keywords: c.seo_keywords ?? null,
-        has_faq: !faqIsEmpty(c.faq_json),
-        seo_status: c.seo_status ?? null,
-        seo_source: c.seo_source ?? null,
-      },
-      needs: computeNeeds(c),
-      suggested_targets: SEO_CATEGORY_TARGETS,
-    }))
+  const candidates: CategorySeoCandidate[] = rows.map((c) => ({
+    id: c.id,
+    slug: c.slug,
+    name: categoryDisplayName(c.name_ua),
+    current: {
+      meta_title: c.meta_title ?? null,
+      meta_description: c.meta_description ?? null,
+      description_ua: c.description_ua ?? null,
+      h1: c.h1 ?? null,
+      seo_keywords: c.seo_keywords ?? null,
+      has_faq: !faqIsEmpty(c.faq_json),
+      seo_status: c.seo_status ?? null,
+      seo_source: c.seo_source ?? null,
+    },
+    needs: categorySeoNeeds(c),
+    suggested_targets: SEO_CATEGORY_TARGETS,
+  }))
 
   return {
     ok: true,
