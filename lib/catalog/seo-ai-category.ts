@@ -10,7 +10,7 @@
 // here touches products, checkout, supplier data, import, sitemap, or schema.
 
 import { getAdminClient } from '@/lib/supabase/admin'
-import { categoryDisplayName } from '@/lib/supabase/catalog'
+import { categoryDisplayName, bestProductName, isPublicListableProduct, type NameBearingProduct } from '@/lib/supabase/catalog'
 import {
   validateMetaTitle,
   validateMetaDescription,
@@ -46,6 +46,8 @@ export const SEO_CATEGORY_TARGETS = {
   h1: { recommended: 'коротка українська назва категорії' },
   faq: { recommended_items: '3–5', item: { question: 'string', answer: 'string' } },
   rules: [
+    'Спирайся на sample_products, щоб зрозуміти, ЩО насправді містить категорія — не вигадуй сторонніх сценаріїв використання.',
+    'Якщо назва категорії загальна (напр. «Щітки»), визнач її суть за sample_products.',
     'Тільки українська мова (без російської, без літер ы/э/ъ/ё).',
     'Без keyword stuffing.',
     'Без фейкових гарантій, «найкраща ціна», медичних чи суперлятивних тверджень.',
@@ -72,6 +74,10 @@ export interface CategorySeoCandidate {
     seo_source: string | null
   }
   needs: string[] // 'meta_title' | 'meta_description' | 'description' | 'faq'
+  // Grounding data so the AI writes about what the category ACTUALLY contains,
+  // not a guess from a broad name.
+  products_count: number
+  sample_products: string[]
   suggested_targets: typeof SEO_CATEGORY_TARGETS
 }
 
@@ -182,20 +188,93 @@ export async function countCategoriesNeedingSeo(): Promise<number> {
   return (await fetchCategoriesNeedingSeo()).length
 }
 
+// Run `fn` over items with a bounded concurrency so we never open hundreds of
+// simultaneous DB requests. Results preserve input order.
+async function mapPool<T, R>(items: T[], concurrency: number, fn: (item: T, i: number) => Promise<R>): Promise<R[]> {
+  const results = new Array<R>(items.length)
+  let next = 0
+  const worker = async () => {
+    for (;;) {
+      const i = next++
+      if (i >= items.length) return
+      results[i] = await fn(items[i], i)
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(Math.max(concurrency, 1), items.length || 1) }, worker))
+  return results
+}
+
+// Count published products in a category (HEAD count — no rows transferred).
+async function countPublishedInCategory(client: ReturnType<typeof getAdminClient>, slug: string): Promise<number> {
+  const { count } = await client
+    .from('catalog_products')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'published')
+    .eq('category_slug', slug)
+  return count ?? 0
+}
+
+// 5–10 representative published product names for a category, using the shared
+// name helpers (real Ukrainian/Russian names, garbage/code-like names dropped).
+async function sampleProductNames(client: ReturnType<typeof getAdminClient>, slug: string): Promise<string[]> {
+  const { data } = await client
+    .from('catalog_products')
+    .select('name_ua, name, supplier_sku')
+    .eq('status', 'published')
+    .eq('category_slug', slug)
+    .limit(20)
+  const names: string[] = []
+  const seen = new Set<string>()
+  // Rows carry nullable name_ua; the shared helpers tolerate null at runtime.
+  for (const p of (data ?? []) as unknown as NameBearingProduct[]) {
+    if (!isPublicListableProduct(p)) continue
+    const n = bestProductName(p)
+    if (!n) continue
+    const key = n.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    names.push(n)
+    if (names.length >= 10) break
+  }
+  return names
+}
+
 // Select published categories that need SEO improvement, excluding human-authored
 // SEO (sheet/manual) or a manual lock. Selection is identical to the diagnostic
-// backlog (same shared helper), so a non-zero backlog always yields candidates.
+// backlog (same shared helper). Each candidate is GROUNDED with a published
+// product count and sample product names so the AI understands what a broad
+// category (e.g. "Щітки") actually contains. Ranked by products_count DESC so the
+// highest-impact categories are generated first; slug breaks ties for stability.
 export async function getCategorySeoAiCandidates(limit = 100): Promise<CategoryCandidatesResult> {
   const capped = Math.min(Math.max(limit, 1), 1000)
+  const client = getAdminClient()
 
   let rows: CatRow[]
   try {
-    rows = await fetchCategoriesNeedingSeo({ limit: capped })
+    // Fetch the FULL eligible set (not just `capped`) so ranking by product count
+    // picks the true top categories, then slice.
+    rows = await fetchCategoriesNeedingSeo()
   } catch (e) {
     return { ok: false, count: 0, limit: capped, candidates: [], message: e instanceof Error ? e.message : String(e) }
   }
 
-  const candidates: CategorySeoCandidate[] = rows.map((c) => ({
+  // Product counts for every eligible category (bounded concurrency), then rank.
+  let counts: number[]
+  try {
+    counts = await mapPool(rows, 12, (c) => countPublishedInCategory(client, c.slug))
+  } catch (e) {
+    return { ok: false, count: 0, limit: capped, candidates: [], message: e instanceof Error ? e.message : String(e) }
+  }
+
+  const ranked = rows
+    .map((row, i) => ({ row, products_count: counts[i] }))
+    .sort((a, b) => b.products_count - a.products_count || a.row.slug.localeCompare(b.row.slug))
+    .slice(0, capped)
+
+  // Sample product names only for the sliced top set (≤ limit queries).
+  const samples = await mapPool(ranked, 12, ({ row }) => sampleProductNames(client, row.slug)).catch(() => ranked.map(() => []))
+
+  const candidates: CategorySeoCandidate[] = ranked.map(({ row: c, products_count }, i) => ({
     id: c.id,
     slug: c.slug,
     name: categoryDisplayName(c.name_ua),
@@ -210,6 +289,8 @@ export async function getCategorySeoAiCandidates(limit = 100): Promise<CategoryC
       seo_source: c.seo_source ?? null,
     },
     needs: categorySeoNeeds(c),
+    products_count,
+    sample_products: samples[i] ?? [],
     suggested_targets: SEO_CATEGORY_TARGETS,
   }))
 

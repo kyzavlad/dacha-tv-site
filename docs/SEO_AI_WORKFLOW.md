@@ -139,11 +139,15 @@ Coverage counts for meta title / meta description / long description / FAQ, the
 `seo_status` breakdown, and the AI-eligible category backlog. Mutates nothing.
 
 ### `GET /api/admin/seo/category-ai-candidates?limit=100` — read-only candidates
-Published categories needing SEO, excluding `sheet`/`manual`/locked rows and
-unusable/garbage names. `limit` 1–1000 (default 100). Each candidate carries
-`id`, `slug`, `name`, `current` (existing SEO), `needs`
-(`meta_title`/`meta_description`/`description`/`faq`), and shared
-`suggested_targets`.
+Published categories needing SEO, excluding `sheet`/`manual`/locked rows.
+Code-like slugs are NOT excluded — every published category (which has a public
+page) is eligible. `limit` 1–1000 (default 100). Each candidate carries `id`,
+`slug`, `name`, `current` (existing SEO), `needs`
+(`meta_title`/`meta_description`/`description`/`faq`), `suggested_targets`, and —
+so the AI is grounded in what the category really contains — **`products_count`**
+(published products in the category) and **`sample_products`** (5–10
+representative real product names). Candidates are ranked by `products_count`
+DESC (slug breaks ties), so the highest-impact categories come first.
 
 ### `POST /api/admin/seo/apply-category-ai-batch` — guarded write
 Body: `{ "items": [ … ], "dryRun": false }`. `?dry=1` also forces a dry run.
@@ -172,18 +176,24 @@ Identical to the product workflow, with these node settings:
    `https://dachatv.com/api/admin/seo/category-ai-candidates?limit=100`,
    header `Authorization: Bearer {{$env.CRON_SECRET}}`. Stop if `count === 0`.
 3. **Split Out** on `candidates`.
-4. **Generate SEO (AI)** — one call per category. Give the model `name` and
-   `suggested_targets`; require JSON:
+4. **Generate SEO (AI)** — one call per category. Give the model `name`, `slug`,
+   **`sample_products`**, `products_count`, and `suggested_targets`; require JSON:
    ```json
    { "meta_title": "…", "meta_description": "…", "description": "…",
      "h1": "…", "keywords": "…",
      "faq": [ { "question": "…", "answer": "…" } ] }
    ```
-   Prompt rules: Ukrainian only; meta title ≤ 65; meta description 120–160;
-   description 700–1500 chars that is **commercially useful** — what the category
-   includes, how to choose, compatibility/variants, delivery across Ukraine, and
-   when to contact a manager; 3–5 FAQ pairs; no fake guarantees, no «найкраща
-   ціна», no medical/superlative claims; no HTML.
+   Prompt rules:
+   - **Ground the copy in `sample_products`** — they show what the category
+     actually contains. Describe THOSE kinds of products; **do not invent
+     unrelated use cases**.
+   - If the category `name` is broad or code-like (e.g. "Щітки", "На скутеры"),
+     **infer the real meaning from `sample_products`** before writing.
+   - Ukrainian only (no Russian, no ы/э/ъ/ё); meta title ≤ 65; meta description
+     120–160; description 700–1500 chars that is **commercially useful** — what
+     the category includes, how to choose, compatibility/variants, delivery
+     across Ukraine, and when to contact a manager; 3–5 FAQ pairs.
+   - No fake guarantees, no «найкраща ціна», no medical/superlative claims; no HTML.
 5. **Reshape** — attach `slug` (or `id`) to each result → `{ "items": [ … ] }`.
 6. **Dry-run once** — `POST …/apply-category-ai-batch?dry=1`; inspect `errorGroups`.
 7. **Apply** — `POST …/apply-category-ai-batch` with `{ items }`.
