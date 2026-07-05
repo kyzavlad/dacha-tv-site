@@ -15,18 +15,25 @@ import { CatalogSearchBar } from '@/components/catalog/CatalogSearchBar'
 import { CatalogSortSelect } from '@/components/catalog/CatalogSortSelect'
 import { FaqBlock } from '@/components/shared/FaqBlock'
 import { CATALOG_FAQ } from '@/lib/catalog-faq'
+import { buildAlternates } from '@/lib/seo'
+import { getRequestLocale } from '@/lib/i18n'
 
-export const metadata: Metadata = {
-  title: 'Магазин',
-  description: 'Магазин товарів для дому, саду та господарства: квіти, металопрофіль, покрівля та широкий асортимент від постачальників. Доставка по Україні.',
-  alternates: { canonical: '/catalog' },
-  openGraph: {
-    title: 'Магазин товарів',
-    description: 'Товари для дому, саду та господарства: квіти, металопрофіль, покрівля та широкий асортимент від постачальників.',
-    siteName: 'Дача TV',
-    type: 'website',
-    images: [{ url: '/images/dacha-tv/logo-square.png', width: 1200, height: 1200, alt: 'Дача TV: магазин товарів' }],
-  },
+export async function generateMetadata(): Promise<Metadata> {
+  const locale = await getRequestLocale()
+  const { canonical, languages } = buildAlternates(locale, '/catalog')
+  return {
+    title: 'Магазин',
+    description: 'Магазин товарів для дому, саду та господарства: квіти, металопрофіль, покрівля та широкий асортимент від постачальників. Доставка по Україні.',
+    alternates: { canonical, languages },
+    openGraph: {
+      title: 'Магазин товарів',
+      description: 'Товари для дому, саду та господарства: квіти, металопрофіль, покрівля та широкий асортимент від постачальників.',
+      siteName: 'Дача TV',
+      type: 'website',
+      url: canonical,
+      images: [{ url: '/images/dacha-tv/logo-square.png', width: 1200, height: 1200, alt: 'Дача TV: магазин товарів' }],
+    },
+  }
 }
 
 // How many category cards the landing shows. The full assortment is always one

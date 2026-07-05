@@ -98,4 +98,12 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='catalog_category_translations' AND policyname='service_role_all_category_translations') THEN
     CREATE POLICY "service_role_all_category_translations" ON catalog_category_translations FOR ALL USING (auth.role() = 'service_role') WITH CHECK (auth.role() = 'service_role');
   END IF;
+  -- Public (anon) read so the storefront can render localized SEO. Read-only;
+  -- all writes stay service-role via the policies above.
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='catalog_product_translations' AND policyname='public_read_product_translations') THEN
+    CREATE POLICY "public_read_product_translations" ON catalog_product_translations FOR SELECT USING (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='catalog_category_translations' AND policyname='public_read_category_translations') THEN
+    CREATE POLICY "public_read_category_translations" ON catalog_category_translations FOR SELECT USING (true);
+  END IF;
 END $$;

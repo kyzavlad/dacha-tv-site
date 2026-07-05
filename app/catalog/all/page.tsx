@@ -5,15 +5,21 @@ import { CatalogProductCard } from '@/components/catalog/CatalogProductCard'
 import { Breadcrumb } from '@/components/catalog/Breadcrumb'
 import { Pagination } from '@/components/catalog/Pagination'
 import { CatalogSortSelect } from '@/components/catalog/CatalogSortSelect'
+import { buildAlternates } from '@/lib/seo'
+import { getRequestLocale } from '@/lib/i18n'
 
 interface Props {
   searchParams: Promise<{ page?: string; sort?: string }>
 }
 
-export const metadata: Metadata = {
-  title: 'Усі товари',
-  description: 'Повний асортимент товарів для дому, саду та дачі з доставкою по Україні.',
-  alternates: { canonical: '/catalog/all' },
+export async function generateMetadata(): Promise<Metadata> {
+  const locale = await getRequestLocale()
+  const { canonical, languages } = buildAlternates(locale, '/catalog/all')
+  return {
+    title: 'Усі товари',
+    description: 'Повний асортимент товарів для дому, саду та дачі з доставкою по Україні.',
+    alternates: { canonical, languages },
+  }
 }
 
 export default async function AllCatalogProductsPage({ searchParams }: Props) {

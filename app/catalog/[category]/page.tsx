@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic'
 import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
-import { getCategoryBySlug, getPublishedProductsByCategory, CATALOG_PAGE_SIZE, categoryDisplayName, normalizeSort } from '@/lib/supabase/catalog'
+import { getCategoryBySlug, getPublishedProductsByCategory, CATALOG_PAGE_SIZE, categoryDisplayName, normalizeSort, getCategoryTranslation } from '@/lib/supabase/catalog'
 import { CatalogProductCard } from '@/components/catalog/CatalogProductCard'
 import { Breadcrumb } from '@/components/catalog/Breadcrumb'
 import { Pagination } from '@/components/catalog/Pagination'
@@ -10,7 +10,9 @@ import { StructuredData } from '@/components/shared/StructuredData'
 import { FaqBlock } from '@/components/shared/FaqBlock'
 import { breadcrumbSchema } from '@/lib/schema'
 import { categoryFaq } from '@/lib/catalog-faq'
-import { buildSocialMetadata, stripBrand } from '@/lib/seo'
+import { buildSocialMetadata, buildAlternates, stripBrand } from '@/lib/seo'
+import { getRequestLocale } from '@/lib/i18n'
+import { resolveCategorySeo } from '@/lib/catalog/localized-seo'
 
 interface Props {
   params: Promise<{ category: string }>
@@ -23,13 +25,21 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   if (!cat) return { title: 'Категорія не знайдена' }
 
   const displayName = categoryDisplayName(cat.name_ua)
-  const bareTitle = stripBrand(cat.seo_title || cat.meta_title) || displayName
-  const description = cat.seo_description || cat.meta_description || cat.description || `Каталог товарів категорії «${displayName}». Замовляйте з доставкою по Україні.`
+  // Localized SEO: ru/en pull the translation row (per-field UA fallback); the
+  // default uk locale skips the extra query.
+  const locale = await getRequestLocale()
+  const tx = locale === 'uk' ? null : await getCategoryTranslation(cat.id, locale).catch(() => null)
+  const seo = resolveCategorySeo(locale, { meta_title: cat.seo_title || cat.meta_title, meta_description: cat.seo_description || cat.meta_description, description_ua: cat.description }, tx)
+
+  const bareTitle = stripBrand(seo.meta_title) || displayName
+  const description = seo.meta_description || cat.description || `Каталог товарів категорії «${displayName}». Замовляйте з доставкою по Україні.`
+  const { canonical, languages } = buildAlternates(locale, `/catalog/${slug}`)
 
   return buildSocialMetadata({
     bareTitle,
     description,
-    canonical: `/catalog/${slug}`,
+    canonical,
+    languages,
     image: cat.image_url,
     imageAlt: displayName,
   })

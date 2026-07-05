@@ -13,8 +13,11 @@ import {
   canAddToCart,
   formatCatalogPrice,
   categoryDisplayName,
+  getProductTranslation,
 } from '@/lib/supabase/catalog'
-import { buildSocialMetadata, stripBrand } from '@/lib/seo'
+import { buildSocialMetadata, buildAlternates, stripBrand } from '@/lib/seo'
+import { getRequestLocale } from '@/lib/i18n'
+import { resolveProductSeo } from '@/lib/catalog/localized-seo'
 import { breadcrumbSchema } from '@/lib/schema'
 import { Breadcrumb } from '@/components/catalog/Breadcrumb'
 import { StructuredData } from '@/components/shared/StructuredData'
@@ -35,15 +38,23 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const product = await getPublishedProductBySlug(category, productSlug).catch(() => null)
   if (!product) return { title: 'Товар не знайдено' }
 
-  const bareTitle = stripBrand(product.meta_title) || displayProductName(product)
+  // Localized SEO: for ru/en use the translation row (falls back to Ukrainian
+  // per-field when absent). Ukrainian (default) skips the extra query entirely.
+  const locale = await getRequestLocale()
+  const tx = locale === 'uk' ? null : await getProductTranslation(product.id, locale).catch(() => null)
+  const seo = resolveProductSeo(locale, product, tx)
+
+  const bareTitle = stripBrand(seo.meta_title) || displayProductName(product)
   const priceStr = formatCatalogPrice(product)
   const priceLine = priceStr ? ` Ціна ${priceStr}.` : ''
-  const description = product.meta_description || product.short_description || `Купити ${displayProductName(product)} з доставкою по Україні.${priceLine}`
+  const description = seo.meta_description || product.short_description || `Купити ${displayProductName(product)} з доставкою по Україні.${priceLine}`
+  const { canonical, languages } = buildAlternates(locale, `/catalog/${category}/${productSlug}`)
 
   return buildSocialMetadata({
     bareTitle,
     description,
-    canonical: `/catalog/${category}/${productSlug}`,
+    canonical,
+    languages,
     image: getCatalogProductImage(product),
     imageAlt: displayProductName(product),
   })

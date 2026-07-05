@@ -1,7 +1,9 @@
 export const dynamic = 'force-dynamic'
 
 import { verifyCronAuth, cronUnauthorized } from '../../cron/_auth'
-import { ruProductCoverage } from '@/lib/catalog/seo-ai-ru'
+import { localizedProductCoverage } from '@/lib/catalog/seo-ai-ru'
+
+const SUPPORTED = new Set(['ru', 'en'])
 
 // ─── READ-ONLY localized product SEO coverage ─────────────────────────────────
 // Reports Russian product SEO coverage from catalog_product_translations WITHOUT
@@ -13,14 +15,14 @@ import { ruProductCoverage } from '@/lib/catalog/seo-ai-ru'
 export async function GET(req: Request) {
   if (!verifyCronAuth(req)) return cronUnauthorized()
   const locale = (new URL(req.url).searchParams.get('locale') ?? 'ru').toLowerCase()
-  if (locale !== 'ru') return Response.json({ ok: false, message: `Локаль '${locale}' не підтримується (лише 'ru').` }, { status: 400 })
+  if (!SUPPORTED.has(locale)) return Response.json({ ok: false, message: `Локаль '${locale}' не підтримується (лише 'ru'/'en').` }, { status: 400 })
 
   try {
-    const c = await ruProductCoverage()
+    const c = await localizedProductCoverage(locale)
     const pct = (n: number) => (c.total > 0 ? Math.round((n / c.total) * 1000) / 10 : 0)
     return Response.json({
       ok: true,
-      locale: 'ru',
+      locale,
       generated_at: new Date().toISOString(),
       totals: {
         published_products: c.total,

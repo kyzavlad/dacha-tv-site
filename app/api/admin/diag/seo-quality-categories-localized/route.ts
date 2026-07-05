@@ -1,7 +1,9 @@
 export const dynamic = 'force-dynamic'
 
 import { verifyCronAuth, cronUnauthorized } from '../../cron/_auth'
-import { ruCategoryCoverage } from '@/lib/catalog/seo-ai-ru'
+import { localizedCategoryCoverage } from '@/lib/catalog/seo-ai-ru'
+
+const SUPPORTED = new Set(['ru', 'en'])
 
 // ─── READ-ONLY localized category SEO coverage ────────────────────────────────
 // Reports Russian category SEO coverage from catalog_category_translations
@@ -13,14 +15,14 @@ import { ruCategoryCoverage } from '@/lib/catalog/seo-ai-ru'
 export async function GET(req: Request) {
   if (!verifyCronAuth(req)) return cronUnauthorized()
   const locale = (new URL(req.url).searchParams.get('locale') ?? 'ru').toLowerCase()
-  if (locale !== 'ru') return Response.json({ ok: false, message: `Локаль '${locale}' не підтримується (лише 'ru').` }, { status: 400 })
+  if (!SUPPORTED.has(locale)) return Response.json({ ok: false, message: `Локаль '${locale}' не підтримується (лише 'ru'/'en').` }, { status: 400 })
 
   try {
-    const c = await ruCategoryCoverage()
+    const c = await localizedCategoryCoverage(locale)
     const pct = (n: number) => (c.total > 0 ? Math.round((n / c.total) * 1000) / 10 : 0)
     return Response.json({
       ok: true,
-      locale: 'ru',
+      locale,
       generated_at: new Date().toISOString(),
       totals: {
         published_categories: c.total,

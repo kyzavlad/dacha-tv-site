@@ -3,6 +3,7 @@ import Image from 'next/image'
 import { existsSync } from 'fs'
 import { join } from 'path'
 import { PhoneLink } from '@/components/shared/PhoneLink'
+import { LanguageSwitcher } from '@/components/shared/LanguageSwitcher'
 import { PRIMARY_NAV, FOOTER_SECONDARY_NAV } from '@/lib/navigation'
 import {
   LAUNCH_PHONE,
@@ -209,6 +210,9 @@ export function Footer({ siteSettings }: FooterProps) {
                 Конфіденційність
               </Link>
             </div>
+          </div>
+          <div className="pt-1">
+            <LanguageSwitcher />
           </div>
           <p className="text-xs text-gray-300">
             Оплата після підтвердження · IBAN UA383220010000026002350058954 · Претензії за контактним номером

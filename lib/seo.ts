@@ -1,7 +1,23 @@
 import type { Metadata } from 'next'
+import { LOCALES, HREFLANG, DEFAULT_LOCALE, localizedPath, type Locale } from '@/lib/i18n'
 
 export const SITE_NAME = 'Дача TV'
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.dachatv.com'
+
+// Build canonical + hreflang alternates for a page, given the ACTIVE locale and
+// the canonical (uk, prefix-less) path. The canonical self-references the active
+// locale's URL; `languages` lists every locale plus x-default (→ uk), so each
+// localized page references itself and the others (Google hreflang requirement).
+export function buildAlternates(locale: Locale, canonicalPath: string): {
+  canonical: string
+  languages: Record<string, string>
+} {
+  const abs = (loc: Locale) => `${SITE_URL}${localizedPath(loc, canonicalPath)}`
+  const languages: Record<string, string> = {}
+  for (const loc of LOCALES) languages[HREFLANG[loc]] = abs(loc)
+  languages['x-default'] = abs(DEFAULT_LOCALE)
+  return { canonical: abs(locale), languages }
+}
 
 // Strip any trailing brand suffix an admin / CSV may have baked into a meta_title
 // (e.g. "Медовий шоколад | Дача TV" → "Медовий шоколад"). The document <title>
@@ -32,6 +48,9 @@ export function buildSocialMetadata(opts: {
   canonical: string
   image?: string | null
   imageAlt?: string
+  // Optional hreflang map (from buildAlternates). When present it is emitted as
+  // <link rel="alternate" hreflang=…>. Omitting it keeps the previous behaviour.
+  languages?: Record<string, string>
 }): Metadata {
   const title = stripBrand(opts.bareTitle) || SITE_NAME
   const image = absoluteUrl(opts.image)
@@ -40,7 +59,9 @@ export function buildSocialMetadata(opts: {
   return {
     title,
     description: opts.description,
-    alternates: { canonical: opts.canonical },
+    alternates: opts.languages
+      ? { canonical: opts.canonical, languages: opts.languages }
+      : { canonical: opts.canonical },
     openGraph: {
       title,
       description: opts.description,

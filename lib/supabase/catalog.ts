@@ -10,6 +10,45 @@ function getClient() {
 
 export const CATALOG_PAGE_SIZE = 24
 
+// ─── Localized SEO readers (public/anon; SELECT-only via RLS) ──────────────────
+// A single translation row for a product/category + locale, used by localized
+// (ru/en) pages. Never queried for the default 'uk' locale. Returns null when the
+// row is absent (→ the resolver falls back to Ukrainian content). Kept lean —
+// only the SEO columns the page renders.
+export interface CatalogTranslationRow {
+  meta_title: string | null
+  meta_description: string | null
+  description: string | null
+  h1?: string | null
+  seo_keywords: string | null
+  faq_json?: unknown
+  seo_status: string | null
+}
+
+export async function getProductTranslation(productId: string, locale: string): Promise<CatalogTranslationRow | null> {
+  const client = getClient()
+  if (!client || !productId) return null
+  const { data } = await client
+    .from('catalog_product_translations')
+    .select('meta_title, meta_description, description, seo_keywords, seo_status')
+    .eq('product_id', productId)
+    .eq('locale', locale)
+    .maybeSingle()
+  return (data as CatalogTranslationRow | null) ?? null
+}
+
+export async function getCategoryTranslation(categoryId: string, locale: string): Promise<CatalogTranslationRow | null> {
+  const client = getClient()
+  if (!client || !categoryId) return null
+  const { data } = await client
+    .from('catalog_category_translations')
+    .select('meta_title, meta_description, description, h1, seo_keywords, faq_json, seo_status')
+    .eq('category_id', categoryId)
+    .eq('locale', locale)
+    .maybeSingle()
+  return (data as CatalogTranslationRow | null) ?? null
+}
+
 // Product URLs per sitemap shard. Set to PostgREST's max-rows page size (1000)
 // so ONE request fully fills a shard — a larger value is silently truncated to
 // 1000 by PostgREST, which was the bug (45k shards returning only 1000). Well

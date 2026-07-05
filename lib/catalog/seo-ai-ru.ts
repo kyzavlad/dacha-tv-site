@@ -662,10 +662,10 @@ async function count(build: () => PromiseLike<{ count: number | null; error: unk
   try { const { count } = await build(); return count ?? 0 } catch { return 0 }
 }
 
-export async function ruProductCoverage() {
+export async function localizedProductCoverage(locale: string = RU_LOCALE) {
   const client = getAdminClient()
   const P = () => client.from('catalog_products').select('id', { count: 'exact', head: true }).eq('status', 'published')
-  const T = () => client.from('catalog_product_translations').select('id', { count: 'exact', head: true }).eq('locale', RU_LOCALE)
+  const T = () => client.from('catalog_product_translations').select('id', { count: 'exact', head: true }).eq('locale', locale)
   const [total, ruRows, ruMetaTitle, ruMetaDesc, ruDesc, ruAi, ruLocked] = await Promise.all([
     count(P),
     count(T),
@@ -680,10 +680,10 @@ export async function ruProductCoverage() {
   return { total, ruRows, ruMetaTitle, ruMetaDesc, ruDesc, ruAi, ruLocked, complete, backlog: Math.max(0, total - complete) }
 }
 
-export async function ruCategoryCoverage() {
+export async function localizedCategoryCoverage(locale: string = RU_LOCALE) {
   const client = getAdminClient()
   const C = () => client.from('catalog_categories').select('id', { count: 'exact', head: true }).eq('is_published', true)
-  const T = () => client.from('catalog_category_translations').select('id', { count: 'exact', head: true }).eq('locale', RU_LOCALE)
+  const T = () => client.from('catalog_category_translations').select('id', { count: 'exact', head: true }).eq('locale', locale)
   const [total, ruRows, ruMetaTitle, ruMetaDesc, ruDesc, ruH1, ruFaq, ruAi, ruLocked] = await Promise.all([
     count(C),
     count(T),
