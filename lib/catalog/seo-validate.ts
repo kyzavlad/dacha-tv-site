@@ -46,11 +46,18 @@ const BANNED_PATTERNS: Array<{ re: RegExp; label: string }> = [
   { re: /№\s*1\s+(в|у)\s+(світі|україні)/i,             label: '«№1 у світі/Україні»' },
   { re: /абсолютно\s+безпечн\w*/i,                      label: '«абсолютно безпечно»' },
   { re: re('схуднW*\\s+(за|на)\\s+\\d'),                label: 'обіцянки схуднення' },
-  // Russian fake-claim patterns from supplier sheets
+  // Russian fake-claim patterns from supplier sheets / RU AI output
   { re: re('лучшW*\\s+ценW*'),                          label: '«лучшая цена» (заборонена фраза)' },
   { re: re('по\\s+лучшW*\\s+ценW*'),                    label: '«по лучшей цене» (заборонена фраза)' },
+  { re: re('сам[аоыіь]W*\\s+низк[аоуий]W*\\s+ценW*'),   label: '«самая низкая цена» (заборонена фраза)' },
   { re: /самы[йм]\s+лучш\w*/i,                          label: '«самый лучший» (заборонена фраза)' },
   { re: /гарантия\s+качества/i,                          label: '«гарантия качества» (заборонена фраза)' },
+  { re: /\b100\s*%\s*гаранти/i,                          label: '«100% гарантия» (заборонена фраза)' },
+  { re: re('лучшW*\\s+(в|во)\\s+(мире|россии|украине)'), label: '«лучший в мире/России» (заборонена фраза)' },
+  { re: /№\s*1\s+(в|во)\s+(мире|россии|украине)/i,       label: '«№1 в мире/России» (заборонена фраза)' },
+  { re: /(излечи|вылечи|исцел|оздоровл)\w*/i,           label: 'медичні твердження (RU)' },
+  { re: /(чудодейственн|волшебн)\w*/i,                  label: '«чудодейственный / волшебный» (RU)' },
+  { re: /абсолютно\s+безопасн\w*/i,                     label: '«абсолютно безопасно» (RU)' },
 ]
 
 // Collapse whitespace + trim. Does NOT strip HTML (callers decide).
@@ -117,6 +124,23 @@ export function validateUkrainianText(raw: string | null | undefined): FieldVali
   if (letters === 0) reasons.push('немає літер')
   else if (cyr / letters < 0.5) reasons.push('текст переважно не кирилицею (очікується українська)')
   if (/[ыэъё]/i.test(v)) reasons.push('містить російські літери (ы/э/ъ/ё) — очікується українська')
+  return { ok: reasons.length === 0, reasons }
+}
+
+// Russian-language gate — the mirror of validateUkrainianText. Russian uses
+// ы/э/ъ/ё and NEVER the Ukrainian-specific letters і/ї/є/ґ, so their presence is
+// a reliable "this is Ukrainian, not Russian" signal. Cyrillic must dominate over
+// Latin. Reasons are Russian-facing since this validates RU output.
+export function validateRussianText(raw: string | null | undefined): FieldValidation {
+  const v = collapse(raw)
+  const reasons: string[] = []
+  if (!v) return { ok: false, reasons: ['пустой текст'] }
+  const cyr = (v.match(/[а-яёъыэ]/gi) ?? []).length
+  const lat = (v.match(/[a-z]/gi) ?? []).length
+  const letters = cyr + lat
+  if (letters === 0) reasons.push('нет букв')
+  else if (cyr / letters < 0.5) reasons.push('текст преимущественно не кириллицей (ожидается русский)')
+  if (/[іїєґ]/i.test(v)) reasons.push('содержит украинские буквы (і/ї/є/ґ) — ожидается русский')
   return { ok: reasons.length === 0, reasons }
 }
 

@@ -200,3 +200,71 @@ Identical to the product workflow, with these node settings:
 8. **Log / alert** on `errors`/high `invalid`, else loop to step 2 until
    `/api/admin/diag/seo-quality-categories` shows `ai_backlog.eligible_categories`
    near 0.
+
+---
+
+# Russian (RU) localized SEO — translation tables
+
+Russian SEO mirrors the Ukrainian pipelines but reads Ukrainian source data as
+the base and writes ONLY into per-locale translation tables — the Ukrainian
+columns on `catalog_products` / `catalog_categories` are **never touched**. RU
+SEO is fully independent of Ukrainian `seo_status` (a UA `ai`/`manual` product
+can still need RU SEO).
+
+Storage (migration `20260701_seo_translations.sql`, additive/idempotent):
+- `catalog_product_translations (product_id, locale, meta_title, meta_description, description, seo_keywords, seo_status, seo_source, seo_manual_lock, seo_generated_at)` — unique `(product_id, locale)`.
+- `catalog_category_translations` — same plus `h1`, `faq_json` — unique `(category_id, locale)`.
+
+## RU endpoints (all CRON_SECRET-protected)
+
+| Method + path | Purpose |
+|---|---|
+| `GET /api/admin/diag/seo-quality-products-localized?locale=ru` | Read-only RU product coverage + backlog |
+| `GET /api/admin/diag/seo-quality-categories-localized?locale=ru` | Read-only RU category coverage + backlog |
+| `GET /api/admin/seo/ru/product-ai-candidates?limit=100` | Products needing RU SEO (1–1000); UA source SEO included as reference |
+| `GET /api/admin/seo/ru/category-ai-candidates?limit=100` | Categories needing RU SEO; `products_count` + `sample_products`, ranked by count DESC |
+| `POST /api/admin/seo/ru/apply-product-ai-batch` | Validate + write RU product SEO to the translation table |
+| `POST /api/admin/seo/ru/apply-category-ai-batch` | Validate + write RU category SEO (incl. `h1`, `faq`) |
+
+**Candidate selection** excludes only RU rows with `seo_manual_lock=true`; it does
+NOT consider Ukrainian AI/manual status. Category candidates carry
+`products_count` + `sample_products` and are ranked by `products_count` DESC.
+
+**Apply** (both POST routes): body `{ "items": [ … ], "dryRun": false }`, `?dry=1`
+also forces dry run (max 500 items). Product item:
+`{ "sku"|"id", "meta_title"?, "meta_description"?, "description"?, "keywords"? }`.
+Category item adds `"h1"?` and `"faq"?: [ { "question", "answer" } ]`. Each field
+is validated: **Russian language** (Cyrillic-dominant, no і/ї/є/ґ), meta length
+windows, **no forbidden phrases** (`лучшая цена`, `самая низкая цена`,
+`100% гарантия`, medical, superlatives), no keyword-stuffing, no HTML, non-empty
+description; FAQ pairs must be non-empty Russian. Writes ONLY translation-table
+columns with `locale='ru'`, `seo_status='ai'`, `seo_source='n8n-ai-ru'`,
+`seo_generated_at`; RU-locked rows are skipped. Logged to `supplier_sync_log`
+(`sync_type='product_seo_ai_apply_ru'` / `category_seo_ai_apply_ru`, dry runs
+`…_dryrun`).
+
+## Exact n8n workflow (RU)
+
+Same shape as the UA workflows; only URLs and the prompt language change.
+
+1. **Schedule** — Cron.
+2. **Fetch candidates** — HTTP `GET`
+   `https://dachatv.com/api/admin/seo/ru/{product|category}-ai-candidates?limit=100`,
+   header `Authorization: Bearer {{$env.CRON_SECRET}}`. Stop if `count === 0`.
+3. **Split Out** on `candidates`.
+4. **Generate SEO (AI)** — one call per item. Give the model the RU
+   `suggested_targets`, the Ukrainian `source_uk` (translate from it), and — for
+   categories — `sample_products` + `products_count`. Require JSON:
+   - product: `{ "meta_title", "meta_description", "description", "keywords" }`
+   - category: `{ "meta_title", "meta_description", "description", "h1", "keywords", "faq":[{"question","answer"}] }`
+   Prompt rules: **Russian only** (no Ukrainian і/ї/є/ґ); translate/localize from
+   `source_uk`; meta title ≤ 65; meta description 120–160; product description
+   400–1200 / category 700–1500 chars, commercially useful; for categories ground
+   the copy in `sample_products`; no fake guarantees, no «лучшая цена» / «самая
+   низкая цена» / «100% гарантия», no medical or superlative claims; no HTML.
+5. **Reshape** — attach `sku`/`id` (products) or `slug`/`id` (categories) →
+   `{ "items": [ … ] }`.
+6. **Dry-run once** — `POST …/apply-{product|category}-ai-batch?dry=1`; inspect `errorGroups`.
+7. **Apply** — `POST …/apply-{product|category}-ai-batch` with `{ items }`.
+8. **Log / alert** on `errors`/high `invalid`; else loop to step 2 until the
+   localized diagnostic shows `ai_backlog` near 0.
