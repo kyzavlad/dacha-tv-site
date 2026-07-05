@@ -17,6 +17,8 @@ import {
   validateKeywords,
   validateDescription,
   validateUkrainianText,
+  bannedClaim,
+  hasHtml,
   collapse,
   META_TITLE_SOFT_MIN,
   META_TITLE_SOFT_MAX,
@@ -186,7 +188,7 @@ export interface AiCategorySeoItem {
   meta_description?: string | null
   description?: string | null // → description_ua
   h1?: string | null
-  keywords?: string | null // → seo_keywords
+  keywords?: string | string[] | null // → seo_keywords (CSV or array)
   faq?: unknown // → faq_json, expected [{ question, answer }]
 }
 
@@ -223,9 +225,11 @@ type ApplyRow = {
   seo_manual_lock: boolean | null
 }
 
-// Validate an FAQ array: each item must be { question, answer }, both non-empty
-// Ukrainian, no forbidden claims (reuses the meta-description validator, which
-// enforces banned patterns + no HTML/slug). Returns the cleaned pairs or reasons.
+// Validate an FAQ array WITHOUT ever passing the array/object into a generic text
+// validator. Each item must be a plain object with STRING question + answer; both
+// are validated as Ukrainian text and checked for forbidden phrases / HTML only
+// (no min-length rule — a real FAQ question is often short). Returns cleaned pairs
+// or reasons; never throws on malformed input.
 function validateFaq(faq: unknown): { ok: boolean; value: FaqPair[]; reasons: string[] } {
   const reasons: string[] = []
   if (!Array.isArray(faq)) return { ok: false, value: [], reasons: ['faq не є масивом'] }
@@ -234,18 +238,39 @@ function validateFaq(faq: unknown): { ok: boolean; value: FaqPair[]; reasons: st
 
   const out: FaqPair[] = []
   for (const raw of faq) {
-    const q = collapse((raw as { question?: string })?.question)
-    const a = collapse((raw as { answer?: string })?.answer)
+    if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+      reasons.push('faq: елемент не є обʼєктом {question, answer}')
+      continue
+    }
+    const rawQ = (raw as Record<string, unknown>).question
+    const rawA = (raw as Record<string, unknown>).answer
+    if (typeof rawQ !== 'string' || typeof rawA !== 'string') {
+      reasons.push('faq: question та answer мають бути рядками')
+      continue
+    }
+    const q = collapse(rawQ)
+    const a = collapse(rawA)
     if (!q || !a) { reasons.push('faq: порожнє питання або відповідь'); continue }
+
     for (const [field, text] of [['питання', q], ['відповідь', a]] as const) {
       const ua = validateUkrainianText(text)
-      const claim = validateDescription(text) // strips HTML, checks banned claims + slug
       if (!ua.ok) reasons.push(...ua.reasons.map((r) => `faq ${field}: ${r}`))
-      if (!claim.ok) reasons.push(...claim.reasons.map((r) => `faq ${field}: ${r}`))
+      if (hasHtml(text)) reasons.push(`faq ${field}: містить HTML`)
+      const claim = bannedClaim(text)
+      if (claim) reasons.push(`faq ${field}: недопустиме твердження: ${claim}`)
     }
     out.push({ question: q, answer: a })
   }
   return { ok: reasons.length === 0 && out.length > 0, value: out, reasons }
+}
+
+// Keywords may arrive as a CSV string OR a string[] (n8n/AI often emits an array).
+// Normalise to a clean CSV string; anything else (object/number) → ''. Never
+// passes a non-string into a validator.
+function normalizeKeywords(kw: unknown): string {
+  if (typeof kw === 'string') return kw
+  if (Array.isArray(kw)) return kw.filter((k): k is string => typeof k === 'string').join(', ')
+  return ''
 }
 
 function buildValidatedPayload(
@@ -288,9 +313,10 @@ function buildValidatedPayload(
     else record([...ua.reasons, ...v.reasons].map((r) => `h1: ${r}`))
   }
 
-  if (item.keywords != null && collapse(item.keywords)) {
-    const v = validateKeywords(item.keywords)
-    if (v.ok) { payload.seo_keywords = collapse(item.keywords); fields.push('seo_keywords') }
+  const keywordsStr = normalizeKeywords(item.keywords)
+  if (collapse(keywordsStr)) {
+    const v = validateKeywords(keywordsStr)
+    if (v.ok) { payload.seo_keywords = collapse(keywordsStr); fields.push('seo_keywords') }
     else record(v.reasons.map((r) => `keywords: ${r}`))
   }
 

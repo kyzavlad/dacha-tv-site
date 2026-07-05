@@ -35,7 +35,8 @@ export async function GET(req: Request) {
     seoManual,
     seoAi,
     seoTemplate,
-    seoMissing,
+    seoMissingLabel,
+    seoUnset,
   ] = await Promise.all([
     count(() => C()),
     count(() => C().not('meta_title', 'is', null).neq('meta_title', '')),
@@ -50,7 +51,13 @@ export async function GET(req: Request) {
     count(() => C().eq('seo_status', 'ai')),
     count(() => C().eq('seo_status', 'template')),
     count(() => C().eq('seo_status', 'missing')),
+    // Rows whose seo_status was never set (NULL or empty string) also count as
+    // "missing" — otherwise the breakdown under-reports (e.g. 564 published but
+    // only 64 labelled 'missing' while the rest had a blank status).
+    count(() => C().or('seo_status.is.null,seo_status.eq.')),
   ])
+
+  const seoMissing = seoMissingLabel + seoUnset
 
   // AI-eligible backlog: published, not human-authored/locked, still missing a
   // long description, a meta field, or FAQ. Pool for category-ai-candidates.
@@ -85,11 +92,15 @@ export async function GET(req: Request) {
       faq: pct(withFaq),
     },
     seo_status_breakdown: {
+      // `missing` includes rows whose seo_status is NULL or empty string.
       missing: seoMissing,
       template: seoTemplate,
       sheet: seoSheet,
       ai: seoAi,
       manual: seoManual,
+      // Any status not enumerated above (e.g. 'legacy'/'queued') so the buckets
+      // always reconcile against published_categories.
+      other: Math.max(0, total - seoMissing - seoTemplate - seoSheet - seoAi - seoManual),
       manual_locked: manualLocked,
     },
     ai_backlog: {

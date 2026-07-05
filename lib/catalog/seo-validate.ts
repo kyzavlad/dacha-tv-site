@@ -54,15 +54,20 @@ const BANNED_PATTERNS: Array<{ re: RegExp; label: string }> = [
 ]
 
 // Collapse whitespace + trim. Does NOT strip HTML (callers decide).
-export function collapse(s: string | null | undefined): string {
-  return (s ?? '').replace(/\s+/g, ' ').trim()
+// Defensive: a non-string input (array/object/number from an AI/n8n payload) is
+// treated as empty rather than throwing "…replace is not a function". Every text
+// validator funnels its raw value through here, so this single guard makes the
+// whole validation layer safe against malformed JSON values.
+export function collapse(s: unknown): string {
+  return typeof s === 'string' ? s.replace(/\s+/g, ' ').trim() : ''
 }
 
 // Strip HTML tags + decode-ish entities to spaces, then collapse. Used for
 // long-form description fields where the sheet may legitimately carry markup
-// that we want to drop rather than reject.
-export function stripHtml(s: string | null | undefined): string {
-  return collapse((s ?? '').replace(/<[^>]*>/g, ' ').replace(/&[a-z#0-9]+;/gi, ' '))
+// that we want to drop rather than reject. Non-string → '' (never throws).
+export function stripHtml(s: unknown): string {
+  if (typeof s !== 'string') return ''
+  return collapse(s.replace(/<[^>]*>/g, ' ').replace(/&[a-z#0-9]+;/gi, ' '))
 }
 
 export function hasHtml(s: string): boolean {
@@ -76,6 +81,7 @@ export function hasCatSlug(s: string): boolean {
 
 // Keyword-stuffing: the same 4+ char token repeated 5+ times.
 export function hasSpammyRepetition(s: string): boolean {
+  if (typeof s !== 'string') return false
   const words = s.toLowerCase().match(/[\p{L}\p{N}]{4,}/gu) ?? []
   const counts = new Map<string, number>()
   for (const w of words) {
