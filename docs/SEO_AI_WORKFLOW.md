@@ -122,3 +122,71 @@ SEO_SITE_URL=https://dachatv.com CRON_SECRET=… \
 - No checkout / order / supplier / import / publish behaviour is touched.
 - Human-authored (Sheets/manual/locked) SEO is never overwritten.
 - Candidate & diag endpoints are strictly read-only.
+
+---
+
+# Category SEO (same loop, different target)
+
+The category pipeline mirrors the product one but writes to **categories** and
+supports long-form Ukrainian copy + FAQ. Same guarantees: app never calls AI,
+only SEO columns are written, Sheets/manual/locked categories are never
+overwritten, nothing touches products/checkout/supplier/import/sitemap/schema.
+
+## Category endpoints (all CRON_SECRET-protected)
+
+### `GET /api/admin/diag/seo-quality-categories` — read-only status
+Coverage counts for meta title / meta description / long description / FAQ, the
+`seo_status` breakdown, and the AI-eligible category backlog. Mutates nothing.
+
+### `GET /api/admin/seo/category-ai-candidates?limit=100` — read-only candidates
+Published categories needing SEO, excluding `sheet`/`manual`/locked rows and
+unusable/garbage names. `limit` 1–1000 (default 100). Each candidate carries
+`id`, `slug`, `name`, `current` (existing SEO), `needs`
+(`meta_title`/`meta_description`/`description`/`faq`), and shared
+`suggested_targets`.
+
+### `POST /api/admin/seo/apply-category-ai-batch` — guarded write
+Body: `{ "items": [ … ], "dryRun": false }`. `?dry=1` also forces a dry run.
+Each item: `{ "slug"|"id": "…", "meta_title"?, "meta_description"?, "description"?,
+"h1"?, "keywords"?, "faq"?: [ { "question": "…", "answer": "…" } ] }`
+(max 500 items/request).
+
+Per field, the server enforces: Ukrainian language (Cyrillic-dominant, no
+ы/э/ъ/ё), meta length windows, **no forbidden phrases** (`найкраща ціна`,
+`гарантия качества`, medical/superlative claims), no HTML / no `cat-NNN`,
+non-empty description. FAQ must be an array of `{ question, answer }` with both
+sides non-empty Ukrainian (max 10 pairs).
+
+Only these columns are ever written: `meta_title`, `meta_description`,
+`description_ua`, `h1`, `seo_keywords`, `faq_json`, plus provenance
+`seo_status='ai'`, `seo_source='ai'`, `seo_generated_at`. Guards re-asserted at
+write time. Logged to `supplier_sync_log` (`sync_type='category_seo_ai_apply'`,
+dry runs `…_dryrun`).
+
+## Exact n8n workflow (categories)
+
+Identical to the product workflow, with these node settings:
+
+1. **Schedule** — Cron (e.g. daily; categories are far fewer than products).
+2. **Fetch candidates** — HTTP `GET`
+   `https://dachatv.com/api/admin/seo/category-ai-candidates?limit=100`,
+   header `Authorization: Bearer {{$env.CRON_SECRET}}`. Stop if `count === 0`.
+3. **Split Out** on `candidates`.
+4. **Generate SEO (AI)** — one call per category. Give the model `name` and
+   `suggested_targets`; require JSON:
+   ```json
+   { "meta_title": "…", "meta_description": "…", "description": "…",
+     "h1": "…", "keywords": "…",
+     "faq": [ { "question": "…", "answer": "…" } ] }
+   ```
+   Prompt rules: Ukrainian only; meta title ≤ 65; meta description 120–160;
+   description 700–1500 chars that is **commercially useful** — what the category
+   includes, how to choose, compatibility/variants, delivery across Ukraine, and
+   when to contact a manager; 3–5 FAQ pairs; no fake guarantees, no «найкраща
+   ціна», no medical/superlative claims; no HTML.
+5. **Reshape** — attach `slug` (or `id`) to each result → `{ "items": [ … ] }`.
+6. **Dry-run once** — `POST …/apply-category-ai-batch?dry=1`; inspect `errorGroups`.
+7. **Apply** — `POST …/apply-category-ai-batch` with `{ items }`.
+8. **Log / alert** on `errors`/high `invalid`, else loop to step 2 until
+   `/api/admin/diag/seo-quality-categories` shows `ai_backlog.eligible_categories`
+   near 0.

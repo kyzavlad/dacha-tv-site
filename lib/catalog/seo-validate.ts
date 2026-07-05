@@ -27,18 +27,28 @@ export const KEYWORDS_HARD_MAX = 255
 // Fake-guarantee / medical / superlative claims. Conservative on purpose — only
 // patterns that are clearly unsupportable marketing BS, not ordinary product
 // language.
+// NOTE: JS `\w` does NOT match Cyrillic letters, so a stem that must reach a
+// FOLLOWING word (e.g. "найкращ… ціна") uses the Cyrillic-aware class `W` below
+// instead of `\w*` — otherwise the inflected suffix ("а") is never consumed and
+// the phrase slips through. Stems with no required following word (e.g. a bare
+// "чудодійн…") can keep `\w*` since `\w*` matching zero chars is enough.
+const W = '[\\wа-яіїєґё]*' // Latin OR Cyrillic word continuation
+const re = (body: string) => new RegExp(body.replace(/W\*/g, W), 'i')
+
 const BANNED_PATTERNS: Array<{ re: RegExp; label: string }> = [
   { re: /\b100\s*%\s*гарант/i,                          label: '«100% гарантія»' },
-  { re: /гарант\w*\s+здоров/i,                          label: "гарантія здоров'я" },
+  { re: re('гарантW*\\s+здоров'),                       label: "гарантія здоров'я" },
   { re: /(виліков\w*|зцілю\w*|лікує|оздоровлю\w* повніст)/i, label: 'медичні твердження' },
   { re: /(чудодійн|магічн)\w*/i,                        label: '«чудодійний / магічний»' },
-  { re: /найкращ\w*\s+(в|у)\s+(світі|україні)/i,        label: '«найкращий у світі/Україні»' },
+  { re: re('найкращW*\\s+(в|у)\\s+(світі|україні)'),    label: '«найкращий у світі/Україні»' },
+  { re: re('найкращW*\\s+цінW*'),                       label: '«найкраща ціна» (заборонена фраза)' },
+  { re: re('найнижчW*\\s+цінW*'),                       label: '«найнижча ціна» (заборонена фраза)' },
   { re: /№\s*1\s+(в|у)\s+(світі|україні)/i,             label: '«№1 у світі/Україні»' },
   { re: /абсолютно\s+безпечн\w*/i,                      label: '«абсолютно безпечно»' },
-  { re: /схудн\w*\s+(за|на)\s+\d/i,                     label: 'обіцянки схуднення' },
+  { re: re('схуднW*\\s+(за|на)\\s+\\d'),                label: 'обіцянки схуднення' },
   // Russian fake-claim patterns from supplier sheets
-  { re: /лучш\w*\s+цен\w*/i,                            label: '«лучшая цена» (заборонена фраза)' },
-  { re: /по\s+лучш\w*\s+цен\w*/i,                       label: '«по лучшей цене» (заборонена фраза)' },
+  { re: re('лучшW*\\s+ценW*'),                          label: '«лучшая цена» (заборонена фраза)' },
+  { re: re('по\\s+лучшW*\\s+ценW*'),                    label: '«по лучшей цене» (заборонена фраза)' },
   { re: /самы[йм]\s+лучш\w*/i,                          label: '«самый лучший» (заборонена фраза)' },
   { re: /гарантия\s+качества/i,                          label: '«гарантия качества» (заборонена фраза)' },
 ]
