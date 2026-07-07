@@ -4,6 +4,7 @@ import { existsSync } from 'fs'
 import { join } from 'path'
 import { Navigation } from './Navigation'
 import { MobileMenu } from './MobileMenu'
+import { HeaderSearch } from './HeaderSearch'
 import { PhoneLink } from '@/components/shared/PhoneLink'
 import { CartButton } from '@/components/cart/CartButton'
 import { LAUNCH_PHONE, LAUNCH_PHONE_SECONDARY, LAUNCH_LOGO_PATH } from '@/lib/launch-defaults'
@@ -66,6 +67,13 @@ export function Header({ siteSettings }: HeaderProps) {
               logoPath={hasLogo ? LOGO_PATH : null}
             />
           </div>
+        </div>
+
+        {/* Global product search — a second row so it is always visible on every
+            page (home, catalog, category, product, content) on desktop AND
+            mobile, like a real e-commerce store. */}
+        <div className="pb-3">
+          <HeaderSearch />
         </div>
       </div>
     </header>

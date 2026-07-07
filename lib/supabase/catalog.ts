@@ -569,7 +569,12 @@ export async function searchPublishedCatalogProducts(
     .eq('status', 'published')
     .or(EXCLUDE_NATURAL_OR)
   for (const tok of tokens) {
-    base = base.or(`name_ua.ilike.%${tok}%,name.ilike.%${tok}%,supplier_sku.ilike.%${tok}%`)
+    // Match name_ua (UA), name (RU supplier feed), supplier_sku (code/article),
+    // and category_slug (so a category-slug term surfaces its products too).
+    // TODO(search): add human category-NAME search + a Postgres full-text /
+    // pg_trgm index on a combined tsvector so ranking beats ilike at 105k. The
+    // ilike path here is the safe fallback that needs no dashboard changes.
+    base = base.or(`name_ua.ilike.%${tok}%,name.ilike.%${tok}%,supplier_sku.ilike.%${tok}%,category_slug.ilike.%${tok}%`)
   }
   const { data } = await applyCatalogSort(base, sort).range(from, to)
   // Hide products unsuitable for a public listing (garbage/code-like names) so
