@@ -251,7 +251,7 @@ export type NameBearingProduct = Pick<CatalogProduct, 'name_ua' | 'supplier_sku'
 // Returns null when a product has NO real name (every candidate is empty,
 // punctuation, a code, or equal to its own SKU) — such products are unsuitable
 // for public listing.
-export function bestProductName(product: NameBearingProduct, locale?: string): string | null {
+export function bestProductName(product: NameBearingProduct): string | null {
   const sku = (product.supplier_sku ?? '').trim().toLowerCase()
   const consider = (raw: string | null | undefined): string | null => {
     const s = (raw ?? '').replace(/\s+/g, ' ').trim()
@@ -259,10 +259,6 @@ export function bestProductName(product: NameBearingProduct, locale?: string): s
     if (sku && s.toLowerCase() === sku) return null // name IS the SKU → code-like
     return s
   }
-  // ru: prefer the Russian supplier feed name (catalog_products.name), then the
-  // Ukrainian name. Otherwise Ukrainian first. Always falls back so a listable
-  // product is never blank just because the locale-preferred name is missing.
-  if (locale === 'ru') return consider(product.name) ?? consider(product.name_ua) ?? null
   return consider(product.name_ua) ?? consider(product.name) ?? null
 }
 
@@ -276,8 +272,8 @@ export function isPublicListableProduct(product: NameBearingProduct): boolean {
 // Human-facing product title. Uses the best real name; only falls back to a SKU
 // label when there is genuinely no real name (those are filtered out of public
 // lists, but detail pages / cart still need a non-empty string). Never mutates DB.
-export function displayProductName(product: NameBearingProduct, locale?: string): string {
-  const best = bestProductName(product, locale)
+export function displayProductName(product: NameBearingProduct): string {
+  const best = bestProductName(product)
   if (best) return best
   const sku = (product.supplier_sku ?? '').trim()
   return sku ? `Товар ${sku}` : 'Товар'
@@ -548,82 +544,6 @@ function searchTokens(term: string): string[] {
     .slice(0, 6)
 }
 
-// Common Ukrainian/Russian inflectional endings, longest first. Stripping them
-// gives a stem so ilike matches across cases/plurals: "амортизатора" → "амортизатор",
-// "скутеров"/"скутеры"/"скутери" → "скутер". A cheap fallback for Cyrillic
-// morphology that needs no Postgres full-text config (see TODO in search below).
-const SLAVIC_ENDINGS = ['ами', 'ями', 'ах', 'ях', 'ов', 'ів', 'ей', 'ом', 'ем', 'и', 'ы', 'і', 'ї', 'а', 'я', 'у', 'ю', 'е', 'є', 'й', 'ь']
-
-function stemToken(tok: string): string {
-  const t = tok.toLowerCase()
-  // Leave SKUs / Latin / anything with digits untouched (exact code matching).
-  if (t.length <= 4 || /\d/.test(t) || !/[а-яіїєґё]/i.test(t)) return t
-  for (const e of SLAVIC_ENDINGS) {
-    if (t.endsWith(e) && t.length - e.length >= 4) return t.slice(0, t.length - e.length)
-  }
-  return t
-}
-
-// Sanitise a value for use inside a PostgREST .or() ilike pattern.
-const sanitizeIlike = (s: string) => s.replace(/[%,()]/g, '')
-
-// Find published category slugs whose name/slug/SEO matches the query — so a
-// category-level query ("скутер", "на скутеры", "запчасти для скутеров") returns
-// that category's products even when the slug is a Latin transliteration
-// ("na-skuter-…"). Matches catalog_categories (name_ua/slug/meta) and, best-effort,
-// supplier_categories (original RU names) via the supplier link. Bounded + safe.
-async function findCategorySlugsForQuery(
-  client: NonNullable<ReturnType<typeof getClient>>,
-  tokens: string[],
-): Promise<string[]> {
-  const stems = [...new Set(tokens.map(stemToken).map(sanitizeIlike).filter((s) => s.length >= 3))]
-  if (stems.length === 0) return []
-  const slugs = new Set<string>()
-
-  // 1) Direct catalog_categories match (name_ua / slug / meta title+description).
-  const catOr: string[] = []
-  for (const s of stems) {
-    catOr.push(`name_ua.ilike.%${s}%`, `slug.ilike.%${s}%`, `meta_title.ilike.%${s}%`, `meta_description.ilike.%${s}%`)
-  }
-  const { data: cats } = await client
-    .from('catalog_categories')
-    .select('slug')
-    .eq('is_published', true)
-    .or(catOr.join(','))
-    .limit(40)
-  for (const c of (cats ?? []) as { slug: string | null }[]) if (c.slug) slugs.add(c.slug)
-
-  // 2) Best-effort: supplier_categories (original, often Russian names) → linked
-  // published catalog category. Silently ignored if not readable by the anon role.
-  try {
-    const supOr: string[] = []
-    for (const s of stems) supOr.push(`name.ilike.%${s}%`, `name_ua.ilike.%${s}%`)
-    const { data: sup } = await client
-      .from('supplier_categories')
-      .select('id, supplier_id')
-      .or(supOr.join(','))
-      .limit(80)
-    const supKeys = new Set<string>()
-    for (const r of (sup ?? []) as { id: string | number; supplier_id: string | number | null }[]) {
-      if (r.supplier_id != null) supKeys.add(String(r.supplier_id))
-      supKeys.add(String(r.id))
-    }
-    if (supKeys.size > 0) {
-      const { data: linked } = await client
-        .from('catalog_categories')
-        .select('slug')
-        .eq('is_published', true)
-        .in('supplier_category_id', [...supKeys])
-        .limit(40)
-      for (const c of (linked ?? []) as { slug: string | null }[]) if (c.slug) slugs.add(c.slug)
-    }
-  } catch {
-    /* supplier_categories not readable publicly — catalog_categories match is enough */
-  }
-
-  return [...slugs].slice(0, 30)
-}
-
 export async function searchPublishedCatalogProducts(
   q: string,
   page = 1,
@@ -643,43 +563,23 @@ export async function searchPublishedCatalogProducts(
   // calls AND together in PostgREST. NO count:'exact' — the caller paginates by
   // page length, so a full COUNT over the match set would be pure wasted work.
   // Requires the pg_trgm GIN indexes (migration 20260630) to stay fast at 105k.
-  // Category intent: map the query to matching category slugs so a category-level
-  // query returns that category's products even when its slug is a Latin
-  // transliteration the Cyrillic query can't ilike-match.
-  const matchedSlugs = await findCategorySlugsForQuery(client, tokens).catch(() => [] as string[])
-  const inClause = matchedSlugs.length ? `,category_slug.in.(${matchedSlugs.join(',')})` : ''
-
   let base = client
     .from('catalog_products')
     .select('*')
     .eq('status', 'published')
     .or(EXCLUDE_NATURAL_OR)
   for (const tok of tokens) {
-    // Match name_ua (UA) + name (RU supplier feed) by STEM (so inflected Cyrillic
-    // like "амортизатора" matches "Амортизатор"), supplier_sku by the RAW token
-    // (exact codes), category_slug by stem, and — token-independent — any matched
-    // category (so all of that category's products surface). Repeating the
-    // category-in per token keeps it satisfied across every AND-ed token group.
-    // TODO(search): a Postgres full-text / pg_trgm tsvector index would give real
-    // relevance ranking beyond ilike at 105k; this stemmed ilike is the safe,
-    // no-dashboard fallback.
-    const st = sanitizeIlike(stemToken(tok))
-    const raw = sanitizeIlike(tok)
-    base = base.or(`name_ua.ilike.%${st}%,name.ilike.%${st}%,supplier_sku.ilike.%${raw}%,category_slug.ilike.%${st}%${inClause}`)
+    // Match name_ua (UA), name (RU supplier feed), supplier_sku (code/article),
+    // and category_slug (so a category-slug term surfaces its products too).
+    // TODO(search): add human category-NAME search + a Postgres full-text /
+    // pg_trgm index on a combined tsvector so ranking beats ilike at 105k. The
+    // ilike path here is the safe fallback that needs no dashboard changes.
+    base = base.or(`name_ua.ilike.%${tok}%,name.ilike.%${tok}%,supplier_sku.ilike.%${tok}%,category_slug.ilike.%${tok}%`)
   }
   const { data } = await applyCatalogSort(base, sort).range(from, to)
   // Hide products unsuitable for a public listing (garbage/code-like names) so
   // search results only surface real, buyable products. Admin search is separate.
-  let products = ((data ?? []) as CatalogProduct[]).filter(isPublicListableProduct)
-  // Rank category-intent matches ahead of generic product text matches (within
-  // the page — stable sort preserves the DB sort inside each group).
-  if (matchedSlugs.length) {
-    const set = new Set(matchedSlugs)
-    products = products
-      .map((p, i) => ({ p, i, cat: set.has(p.category_slug ?? '') ? 0 : 1 }))
-      .sort((a, b) => a.cat - b.cat || a.i - b.i)
-      .map((x) => x.p)
-  }
+  const products = ((data ?? []) as CatalogProduct[]).filter(isPublicListableProduct)
   // total is unknown without a count; report the page length so callers that
   // only need "is there a full page → maybe a next page" keep working.
   return { products, total: products.length }
@@ -703,18 +603,13 @@ export async function suggestCatalogProducts(q: string, limit = 8): Promise<Cata
   if (!client || term.length < 2) return []
   const tokens = searchTokens(term)
   if (tokens.length === 0) return []
-  // Category intent so "скутер" suggests scooter-category products, not nothing.
-  const matchedSlugs = await findCategorySlugsForQuery(client, tokens).catch(() => [] as string[])
-  const inClause = matchedSlugs.length ? `,category_slug.in.(${matchedSlugs.join(',')})` : ''
   let base = client
     .from('catalog_products')
     .select('slug, category_slug, name_ua, name, main_image_url, images, price_uah, price_prefix, unit_label, is_price_suspicious, supplier_sku')
     .eq('status', 'published')
     .or(EXCLUDE_NATURAL_OR)
   for (const tok of tokens) {
-    const st = sanitizeIlike(stemToken(tok))
-    const raw = sanitizeIlike(tok)
-    base = base.or(`name_ua.ilike.%${st}%,name.ilike.%${st}%,supplier_sku.ilike.%${raw}%${inClause}`)
+    base = base.or(`name_ua.ilike.%${tok}%,name.ilike.%${tok}%,supplier_sku.ilike.%${tok}%`)
   }
   // Over-fetch, then drop products unsuitable for public listing (garbage/
   // code-like names) before slicing back to `limit` — so garbage never eats a

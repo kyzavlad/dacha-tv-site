@@ -7,15 +7,12 @@ import { canAddToCart, displayProductName, formatCatalogPrice, getCatalogProduct
 interface CatalogProductCardProps {
   product: CatalogProduct
   categorySlug: string
-  // Active locale ('ru' prefers the Russian supplier name; default Ukrainian).
-  // Only affects the displayed name — never whether the card renders.
-  locale?: string
 }
 
-export function CatalogProductCard({ product, categorySlug, locale }: CatalogProductCardProps) {
+export function CatalogProductCard({ product, categorySlug }: CatalogProductCardProps) {
   const href = `/catalog/${categorySlug}/${product.slug}`
   const imageUrl = getCatalogProductImage(product)
-  const name = displayProductName(product, locale)
+  const name = displayProductName(product)
   const priceOk = hasDisplayablePrice(product)
   const buyable = canAddToCart(product)
   const priceLabel = formatCatalogPrice(product)

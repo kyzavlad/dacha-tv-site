@@ -103,7 +103,7 @@ export default async function SearchPage({ searchParams }: Props) {
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
               {products.map((p) => (
-                <CatalogProductCard key={p.id} product={p} categorySlug={p.category_slug ?? 'all'} locale={locale} />
+                <CatalogProductCard key={p.id} product={p} categorySlug={p.category_slug ?? 'all'} />
               ))}
             </div>
             {(page > 1 || fullPage) && (

@@ -11,35 +11,8 @@ import { FaqBlock } from '@/components/shared/FaqBlock'
 import { breadcrumbSchema } from '@/lib/schema'
 import { categoryFaq } from '@/lib/catalog-faq'
 import { buildSocialMetadata, buildAlternates, stripBrand } from '@/lib/seo'
-import { getRequestLocale, localizedPath, type Locale } from '@/lib/i18n'
+import { getRequestLocale } from '@/lib/i18n'
 import { resolveCategorySeo } from '@/lib/catalog/localized-seo'
-
-// Locale-only UI copy for the category page. Products/query are locale-independent
-// — locale never filters the listing, only relabels it.
-const CAT_STRINGS: Record<Locale, {
-  home: string; catalog: string; noProducts: string
-  products: (n: number) => string; page: (p: number, t: number) => string
-  introFallback: (name: string) => string; about: (name: string) => string
-}> = {
-  uk: {
-    home: 'Головна', catalog: 'Каталог', noProducts: 'У цій категорії поки немає товарів.',
-    products: (n) => `${n} товарів`, page: (p, t) => ` · сторінка ${p} з ${t}`,
-    introFallback: (name) => `${name} — замовляйте з доставкою по Україні. Оплата після підтвердження замовлення.`,
-    about: (name) => `Про категорію «${name}»`,
-  },
-  ru: {
-    home: 'Главная', catalog: 'Каталог', noProducts: 'В этой категории пока нет товаров.',
-    products: (n) => `${n} товаров`, page: (p, t) => ` · страница ${p} из ${t}`,
-    introFallback: (name) => `${name} — заказывайте с доставкой по Украине. Оплата после подтверждения заказа.`,
-    about: (name) => `О категории «${name}»`,
-  },
-  en: {
-    home: 'Home', catalog: 'Catalog', noProducts: 'No products in this category yet.',
-    products: (n) => `${n} products`, page: (p, t) => ` · page ${p} of ${t}`,
-    introFallback: (name) => `${name} — order with delivery across Ukraine. Payment after order confirmation.`,
-    about: (name) => `About “${name}”`,
-  },
-}
 
 interface Props {
   params: Promise<{ category: string }>
@@ -85,8 +58,6 @@ export default async function CategoryPage({ params, searchParams }: Props) {
 
   if (!cat) notFound()
 
-  const locale = await getRequestLocale()
-  const s = CAT_STRINGS[locale]
   const displayName = categoryDisplayName(cat.name_ua)
   const totalPages = Math.ceil(total / CATALOG_PAGE_SIZE)
   // Short intro (description) above the grid; longer SEO body (description_ua)
@@ -95,8 +66,8 @@ export default async function CategoryPage({ params, searchParams }: Props) {
   const seoBody = (cat.description_ua ?? '').trim()
 
   const crumbs = [
-    { label: s.home, href: localizedPath(locale, '/') },
-    { label: s.catalog, href: localizedPath(locale, '/catalog') },
+    { label: 'Головна', href: '/' },
+    { label: 'Каталог', href: '/catalog' },
     { label: displayName },
   ]
 
@@ -112,10 +83,12 @@ export default async function CategoryPage({ params, searchParams }: Props) {
           {intro ? (
             <p className="text-gray-500 text-base max-w-2xl">{intro}</p>
           ) : (
-            <p className="text-gray-500 text-base max-w-2xl">{s.introFallback(displayName)}</p>
+            <p className="text-gray-500 text-base max-w-2xl">
+              {displayName} — замовляйте з доставкою по Україні. Оплата після підтвердження замовлення.
+            </p>
           )}
           {total > 0 && (
-            <p className="text-xs text-gray-400 mt-2">{s.products(total)}{page > 1 ? s.page(page, totalPages) : ''}</p>
+            <p className="text-xs text-gray-400 mt-2">{total} товарів{page > 1 ? ` · сторінка ${page} з ${totalPages}` : ''}</p>
           )}
         </div>
       </div>
@@ -123,7 +96,7 @@ export default async function CategoryPage({ params, searchParams }: Props) {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
         {products.length === 0 ? (
           <div className="text-center py-16">
-            <p className="text-bark/40 text-sm">{s.noProducts}</p>
+            <p className="text-bark/40 text-sm">У цій категорії поки немає товарів.</p>
           </div>
         ) : (
           <>
@@ -134,25 +107,23 @@ export default async function CategoryPage({ params, searchParams }: Props) {
             )}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
               {products.map((product) => (
-                <CatalogProductCard key={product.id} product={product} categorySlug={slug} locale={locale} />
+                <CatalogProductCard key={product.id} product={product} categorySlug={slug} />
               ))}
             </div>
-            <Pagination page={page} total={total} baseHref={localizedPath(locale, `/catalog/${slug}`)} params={{ sort: sort === 'featured' ? undefined : sort }} />
+            <Pagination page={page} total={total} baseHref={`/catalog/${slug}`} params={{ sort: sort === 'featured' ? undefined : sort }} />
           </>
         )}
 
         {seoBody && seoBody !== intro && (
           <section className="mt-14 border-t border-gray-100 pt-10">
-            <h2 className="font-serif text-xl font-bold text-bark mb-3">{s.about(displayName)}</h2>
+            <h2 className="font-serif text-xl font-bold text-bark mb-3">Про категорію «{displayName}»</h2>
             <div className="prose prose-sm max-w-3xl text-gray-600 leading-relaxed whitespace-pre-line">
               {seoBody}
             </div>
           </section>
         )}
 
-        {/* FAQ copy is Ukrainian-only static content — show it on the uk locale
-            to avoid mixing languages on ru/en category pages. */}
-        {locale === 'uk' && <FaqBlock items={categoryFaq(displayName)} />}
+        <FaqBlock items={categoryFaq(displayName)} />
       </div>
     </div>
   )
