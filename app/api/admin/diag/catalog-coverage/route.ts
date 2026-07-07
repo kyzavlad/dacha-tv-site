@@ -2,8 +2,15 @@ export const dynamic = 'force-dynamic'
 
 import { verifyCronAuth, cronUnauthorized } from '../../cron/_auth'
 import { getAdminClient } from '@/lib/supabase/admin'
-import { AUTOMATION_MAX_PUBLISHED, AUTOMATION_BATCH_SIZE } from '@/lib/catalog/automation-config'
+import { AUTOMATION_MAX_PUBLISHED, AUTOMATION_BATCH_SIZE, PRIORITY_AD_CATEGORIES } from '@/lib/catalog/automation-config'
 import { fetchCsvText, parseCsv, normalizeHeaders, getCol } from '@/lib/catalog/csv-utils'
+import { getCatalogProductImage, hasDisplayablePrice, searchPublishedCatalogProducts } from '@/lib/supabase/catalog'
+import { getSupplierOrderMode, TEST_ORDER_GUARD_ENABLED } from '@/lib/supplier/order'
+import type { CatalogProduct } from '@/types'
+
+async function headCount(build: () => PromiseLike<{ count: number | null; error: unknown }>): Promise<number> {
+  try { const { count } = await build(); return count ?? 0 } catch { return 0 }
+}
 
 async function getCoverage() {
   const client = getAdminClient()
@@ -57,8 +64,43 @@ async function getCoverage() {
   const cpDraft = cpDraftRaw ?? 0
   const cpArchived = cpArchivedRes.count ?? 0
   const cpWithSpid = cpWithSpidRes.count ?? 0
-  const cpWithImage = cpWithImageRes.count ?? 0
   const capActive = cpPublished >= AUTOMATION_MAX_PUBLISHED
+
+  // ── IMAGE COVERAGE FIX ──────────────────────────────────────────────────────
+  // Live product cards resolve their image via getCatalogProductImage(), which
+  // reads main_image_url → image_url → images[] (jsonb) → raw_data. Most supplier
+  // rows carry the images.zone URL ONLY in the `images` array, so counting
+  // main_image_url alone wrongly reported with_image=0. Count ANY image source,
+  // and separately sample the real resolver to report the true coverage %.
+  const cpWithImageMainUrl = cpWithImageRes.count ?? 0
+  const cpWithImagesArray = await headCount(() =>
+    client.from('catalog_products').select('id', { count: 'exact', head: true }).not('images', 'is', null))
+  const cpWithImageAny = await headCount(() =>
+    client.from('catalog_products').select('id', { count: 'exact', head: true })
+      .or('main_image_url.not.is.null,images.not.is.null'))
+
+  // Ground truth: sample published rows and run the SAME resolver + price check
+  // the cards use, so the reported % reflects what shoppers actually see.
+  let imgSampleChecked = 0
+  let imgSampleResolved = 0
+  let priceSampleOk = 0
+  try {
+    const { data: sample } = await client
+      .from('catalog_products')
+      .select('main_image_url, images, image_url, raw_data, price_uah, price_prefix, unit_label, is_price_suspicious, inquiry_only, source, lead_type')
+      .eq('status', 'published')
+      .limit(300)
+    const rows = (sample ?? []) as unknown as CatalogProduct[]
+    imgSampleChecked = rows.length
+    imgSampleResolved = rows.filter((r) => !!getCatalogProductImage(r)).length
+    priceSampleOk = rows.filter((r) => hasDisplayablePrice(r)).length
+  } catch { /* non-fatal */ }
+  const imgSamplePct = imgSampleChecked > 0 ? Math.round((imgSampleResolved / imgSampleChecked) * 1000) / 10 : 0
+  const priceSamplePct = imgSampleChecked > 0 ? Math.round((priceSampleOk / imgSampleChecked) * 1000) / 10 : 0
+
+  // Use the fixed "any image source" count for readiness — never the empty
+  // main_image_url-only column.
+  const cpWithImage = cpWithImageAny
 
   // SEO sheet check: fetch first 20 rows from PRODUCT_SEO_CSV_URL and probe DB
   const productSeoUrl = (process.env.PRODUCT_SEO_CSV_URL ?? '').trim()
@@ -187,6 +229,68 @@ async function getCoverage() {
     nextAction = 'SEO: catalog imported and published — run product SEO sheet import, then product-seo-template to fill any remaining published rows.'
   }
 
+  // ── SEO coverage per PRIORITY (ad) category ─────────────────────────────────
+  // We do NOT wait for 100% AI SEO on all 105k products before ads — only these
+  // categories need rich SEO first. Template meta covers the rest quickly.
+  const P = (slug: string) =>
+    client.from('catalog_products').select('id', { count: 'exact', head: true }).eq('status', 'published').eq('category_slug', slug)
+  const priorityCategories = await Promise.all(
+    PRIORITY_AD_CATEGORIES.map(async (slug) => {
+      const [products, withMetaTitle, withMetaDesc, withLongDesc] = await Promise.all([
+        headCount(() => P(slug)),
+        headCount(() => P(slug).not('meta_title', 'is', null).neq('meta_title', '')),
+        headCount(() => P(slug).not('meta_description', 'is', null).neq('meta_description', '')),
+        headCount(() => P(slug).not('description_ua', 'is', null).neq('description_ua', '')),
+      ])
+      const pct = (n: number) => (products > 0 ? Math.round((n / products) * 1000) / 10 : 0)
+      return {
+        slug,
+        published_products: products,
+        with_meta_title: withMetaTitle,
+        with_meta_description: withMetaDesc,
+        with_long_description: withLongDesc,
+        coverage_pct: { meta_title: pct(withMetaTitle), meta_description: pct(withMetaDesc), long_description: pct(withLongDesc) },
+      }
+    }),
+  )
+  const priorityHasProducts = priorityCategories.some((c) => c.published_products > 0)
+
+  // ── LAUNCH READINESS (ads) ──────────────────────────────────────────────────
+  // A pragmatic gate: what shoppers/ads actually need — NOT 100% AI SEO.
+  const supplierMode = getSupplierOrderMode()
+  const notificationsConfigured = Boolean(process.env.WEBHOOK_URL) || Boolean(process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID)
+  let ordersTableOk = false
+  try {
+    const { error } = await client.from('orders').select('id', { count: 'exact', head: true })
+    ordersTableOk = !error
+  } catch { ordersTableOk = false }
+
+  // Real search probe (same path the storefront uses).
+  let searchWorks = false
+  try {
+    const res = await searchPublishedCatalogProducts('амортизатор', 1).catch(() => ({ products: [] }))
+    searchWorks = (res.products?.length ?? 0) > 0
+  } catch { searchWorks = false }
+
+  const checks = {
+    products_published: { ok: cpPublished > 0, value: cpPublished },
+    priority_categories_have_products: { ok: priorityHasProducts, value: priorityCategories.reduce((s, c) => s + c.published_products, 0) },
+    search_works: { ok: searchWorks, note: 'Live search probe for "амортизатор".' },
+    product_images: { ok: imgSamplePct >= 90, value_pct: imgSamplePct, note: 'Sampled via getCatalogProductImage (the resolver product cards use).' },
+    product_prices: { ok: priceSamplePct >= 50, value_pct: priceSamplePct, note: 'Sampled via hasDisplayablePrice; "Уточнити ціну" is an acceptable state, so the bar is low.' },
+    checkout: { ok: ordersTableOk && notificationsConfigured, orders_table: ordersTableOk, notifications_configured: notificationsConfigured },
+    supplier_live_mode: { mode: supplierMode, live: supplierMode === 'live', note: 'Live real orders forward to the supplier.' },
+    test_order_guard: { ok: TEST_ORDER_GUARD_ENABLED, note: 'Test/internal orders are blocked from supplier forwarding even in live mode.' },
+  }
+  // Ads-ready gate: the shopper-facing essentials must pass. Supplier mode + guard
+  // are reported for awareness but do not block browsing/ads.
+  const readyForAds =
+    checks.products_published.ok &&
+    checks.priority_categories_have_products.ok &&
+    checks.search_works.ok &&
+    checks.product_images.ok &&
+    checks.checkout.ok
+
   return {
     supplier_products: {
       total: spTotal,
@@ -204,8 +308,22 @@ async function getCoverage() {
       archived: cpArchived,
       with_supplier_product_id: cpWithSpid,
       without_supplier_product_id: cpTotal - cpWithSpid,
+      // with_image now counts ANY image source (main_image_url OR images[]), not
+      // the empty main_image_url column alone.
       with_image: cpWithImage,
-      without_image: cpTotal - cpWithImage,
+      without_image: Math.max(0, cpTotal - cpWithImage),
+      images: {
+        with_any_source: cpWithImageAny,
+        with_main_image_url: cpWithImageMainUrl,
+        with_images_array: cpWithImagesArray,
+        // The resolver product cards actually use, sampled on live published rows.
+        resolver_sample: { checked: imgSampleChecked, resolved: imgSampleResolved, resolved_pct: imgSamplePct },
+        note: 'Cards resolve images via main_image_url → image_url → images[] → raw_data. main_image_url is usually empty; the images.zone URLs live in images[].',
+      },
+      prices: {
+        displayable_sample: { checked: imgSampleChecked, ok: priceSampleOk, ok_pct: priceSamplePct },
+        note: 'hasDisplayablePrice sample; products without a price show "Уточнити ціну" and are still ad-eligible.',
+      },
     },
     caps: {
       max_published: AUTOMATION_MAX_PUBLISHED,
@@ -216,6 +334,18 @@ async function getCoverage() {
       note: capActive ? `Ліміт ${AUTOMATION_MAX_PUBLISHED} опублікованих досягнуто — авто-імпорт призупинено` : null,
     },
     catalog_ready: catalogReady,
+    // ── Ads launch readiness — the pragmatic gate for launching ads NOW ────────
+    launch_readiness: {
+      ready_for_ads: readyForAds,
+      checks,
+      note: 'ready_for_ads reflects shopper-facing essentials (published products, priority categories populated, working search, images, checkout). It does NOT require 100% AI SEO — template meta covers all products; AI long descriptions are prioritised to the ad categories below.',
+    },
+    // ── SEO coverage for the ad (priority) categories ──────────────────────────
+    priority_categories: {
+      slugs: PRIORITY_AD_CATEGORIES,
+      categories: priorityCategories,
+      note: 'Focus AI SEO (long descriptions) here first; run product-seo-template to give every product a meta title/description quickly.',
+    },
     next_recommended_action: nextAction,
     seo_sheet_check: seoSheetCheck,
   }
