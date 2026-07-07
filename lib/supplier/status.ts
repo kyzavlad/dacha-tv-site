@@ -62,6 +62,12 @@ export function supplierStatusView(
     case 'not_sent':
     case 'disabled':
       return { label: 'Не надіслано постачальнику', severity: 'neutral' }
+    case 'test_blocked':
+      return {
+        label: 'Тестове/службове — не надсилалось постачальнику',
+        severity: 'warn',
+        hint: 'Замовлення позначене як тестове/службове («не відправляти», «тест» тощо) і НЕ надіслане постачальнику навіть у live-режимі. Потребує ручної перевірки.',
+      }
     case 'skipped':
       return { label: 'Не надсилалося (немає товарів постачальника)', severity: 'neutral' }
     default:

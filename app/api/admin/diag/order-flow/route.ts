@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { verifyCronAuth, cronUnauthorized } from '../../cron/_auth'
 import { getAdminClient } from '@/lib/supabase/admin'
-import { getSupplierOrderMode, buildPersonalCabOrderPayload } from '@/lib/supplier/order'
+import { getSupplierOrderMode, buildPersonalCabOrderPayload, TEST_ORDER_GUARD_ENABLED } from '@/lib/supplier/order'
 
 // ─── Read-only order-flow readiness diagnostic ────────────────────────────────
 // Confirms the ecommerce order path is wired WITHOUT sending anything. Reports
@@ -22,6 +22,7 @@ export async function GET(req: Request) {
     supplierApiUrl: Boolean(process.env.SUPPLIER_API_URL),
     supplierApiKey: Boolean(process.env.SUPPLIER_API_KEY),
     supplierOrderMode: getSupplierOrderMode(), // 'test' | 'live' | 'disabled'
+    testOrderGuardEnabled: TEST_ORDER_GUARD_ENABLED,
   }
 
   // Dry-run: build (but never send) a supplier payload to confirm the builder
@@ -44,6 +45,11 @@ export async function GET(req: Request) {
       auto_send: env.supplierOrderMode !== 'disabled'
         ? `Supplier auto-forward is ${env.supplierOrderMode.toUpperCase()} — ${env.supplierOrderMode === 'test' ? 'orders are validated & accepted as TEST, no real supplier order is created' : 'REAL supplier orders will be created'}.`
         : 'Supplier auto-forward is DISABLED — supplier items are flagged for manual handling, never sent.',
+      // Live real orders ARE forwarded to the supplier; test/internal orders are
+      // always blocked from forwarding (supplier_order_status='test_blocked').
+      test_order_guard: env.testOrderGuardEnabled
+        ? 'ENABLED — real customer orders forward to the supplier in live mode, but orders marked as test/internal (тест / test / «не відправляти» / «не отправлять» / «не надсилати» / "don\'t send") are NEVER forwarded and are saved with supplier_order_status=test_blocked for manual review.'
+        : 'DISABLED.',
       // Notifications are healthy when EITHER channel is configured — the
       // webhook/n8n path and direct Telegram are independent and either alone
       // delivers order alerts. Direct Telegram being unset is NOT a problem when

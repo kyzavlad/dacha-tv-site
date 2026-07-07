@@ -28,6 +28,37 @@ export function isAutoSendEnabled(): boolean {
   return getSupplierOrderMode() !== 'disabled'
 }
 
+// ─── Test / internal order guard ──────────────────────────────────────────────
+// Even with SUPPLIER_ORDER_MODE=live, an order whose customer name / phone /
+// delivery text / comment marks it as a test or "do not send" order must NEVER be
+// forwarded to the supplier. The site order + notifications are still created; only
+// the supplier API call is suppressed. The guard is always on — there is no env
+// flag to turn it off, so a real test can never leak to the supplier.
+const TEST_ORDER_MARKERS = [
+  'тест',            // covers тест / тестове / тестовий / тестовый
+  'test',            // covers test / testing
+  'не відправляти',
+  'не відправляйте',
+  'не надсилати',
+  'не надсилайте',
+  'не отправлять',
+  'не отправляйте',
+  "don't send",
+  'dont send',
+  'do not send',
+]
+
+// Returns the marker that flagged the order as test/internal, or null. Matching is
+// case-insensitive substring across every provided field.
+export function detectTestOrderMarker(fields: Array<string | null | undefined>): string | null {
+  const hay = fields.map((f) => (f ?? '').toString().toLowerCase()).join('  ¶  ')
+  for (const m of TEST_ORDER_MARKERS) if (hay.includes(m)) return m
+  return null
+}
+
+// True when the test-order guard is active (it always is — no env toggle).
+export const TEST_ORDER_GUARD_ENABLED = true
+
 export interface SupplierOrderPayload {
   receiver_first_name: string
   receiver_last_name: string

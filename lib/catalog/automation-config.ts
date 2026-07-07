@@ -1,6 +1,17 @@
 export const AUTOMATION_MAX_PUBLISHED = 3000
 export const AUTOMATION_BATCH_SIZE = 300
 
+// Categories the first ad campaigns point at. SEO effort (AI long descriptions)
+// is prioritised here — we do NOT wait for 100% AI SEO on all ~105k products
+// before launching. Template meta covers the rest quickly.
+export const PRIORITY_AD_CATEGORIES = [
+  'na-skuter-1782704758752',
+  'na-moped-1782704757771',
+  'na-benzopyl-1782704756437',
+  'na-motokos-1782704757995',
+  'unyversaln-e-dlya-moto-1782704773670',
+] as const
+
 export interface CronStep {
   label: string
   description: string
