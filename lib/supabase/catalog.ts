@@ -654,15 +654,23 @@ function looksLikeSku(q: string): boolean {
 async function findProductsBySku(
   client: NonNullable<ReturnType<typeof getClient>>,
   rawQuery: string,
-  limit = 60,
+  limit = 200,
 ): Promise<CatalogProduct[]> {
   const raw = sanitizeIlike(rawQuery.trim().toUpperCase())
   const compact = normalizeCompactSku(rawQuery)
-  const digitRun = (compact.match(/\d{3,}/g) ?? []).sort((a, b) => b.length - a.length)[0] ?? compact
-  const anchors = [...new Set([compact, raw, digitRun].filter((a) => a && a.length >= 3))]
+  // Every 3+ digit run (not just the longest) — the numeric part of a code is the
+  // most stable anchor across "N-270997" / "N270997" / "N-270-997" storage.
+  const digitRuns = compact.match(/\d{3,}/g) ?? []
+  const anchors = [...new Set([compact, raw, ...digitRuns].filter((a) => a && a.length >= 3))]
   if (anchors.length === 0) return []
   try {
-    const orClause = anchors.map((a) => `supplier_sku.ilike.%${a}%`).join(',')
+    // Reuse the PROVEN suggest/search field shape: match each anchor against
+    // supplier_sku AND name_ua/name. A supplier code very often also lives in the
+    // product name, so a supplier_sku-only query (PR #51) missed rows that the
+    // multi-field suggest query finds. Only .or() ilike — no category_slug.in().
+    const orClause = anchors
+      .flatMap((a) => [`supplier_sku.ilike.%${a}%`, `name_ua.ilike.%${a}%`, `name.ilike.%${a}%`])
+      .join(',')
     const { data, error } = await client
       .from('catalog_products')
       .select('*')
@@ -671,19 +679,22 @@ async function findProductsBySku(
       .or(orClause)
       .limit(limit)
     if (error) {
-      console.warn(`[search] SKU lookup failed for "${rawQuery}": ${error.message}`)
+      console.warn(`[sku] query error q="${rawQuery}" compact="${compact}" anchors=${JSON.stringify(anchors)}: ${error.message}`)
       return []
     }
     const rows = (data ?? []) as CatalogProduct[]
-    // Precision filter: normalized stored SKU equals / contains / is contained by
-    // the normalized query (handles exact codes and typed partial full codes).
-    return rows.filter((p) => {
+    // Precision filter: keep only rows whose NORMALIZED supplier_sku matches the
+    // normalized query — so multi-field candidates are pruned to true SKU hits.
+    const results = rows.filter((p) => {
       const skuC = normalizeCompactSku(p.supplier_sku ?? '')
       if (!skuC) return false
       return skuC === compact || skuC.includes(compact) || compact.includes(skuC)
     })
+    // Temporary diagnostics (Vercel logs): shows why a SKU lookup did/didn't hit.
+    console.warn(`[sku] q="${rawQuery}" compact="${compact}" anchors=${JSON.stringify(anchors)} candidates=${rows.length} results=${results.length}`)
+    return results
   } catch (e) {
-    console.warn(`[search] SKU lookup threw for "${rawQuery}": ${e instanceof Error ? e.message : String(e)}`)
+    console.warn(`[sku] threw q="${rawQuery}" compact="${compact}": ${e instanceof Error ? e.message : String(e)}`)
     return []
   }
 }
