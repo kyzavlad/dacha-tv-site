@@ -5,8 +5,22 @@ export const dynamic = 'force-dynamic'
 import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { useCart } from '@/lib/cart/CartContext'
+import type { CartItem } from '@/lib/cart/CartContext'
 import { submitProductOrder } from '@/actions/submitProductOrder'
 import { isValidUkrainianPhone } from '@/lib/utils'
+import { trackBeginCheckout, trackPurchase, type AnalyticsItem } from '@/lib/analytics/gtag'
+
+// Map cart items → GA4 ecommerce items (SKU = productSlug when available).
+function toAnalyticsItems(items: CartItem[]): AnalyticsItem[] {
+  return items.map((i) => ({
+    item_id: i.productSlug || i.id,
+    item_name: i.name,
+    price: i.price,
+    quantity: i.quantity,
+    item_variant: i.variant,
+    item_category: i.productType,
+  }))
+}
 
 // Shape returned by /api/supplier/warehouses (server-filtered, ≤30 rows)
 interface WarehouseResult {
@@ -234,6 +248,15 @@ export default function CheckoutPage() {
     }
   }, [hasSupplierItems, methodPayment])
 
+  // GA4 begin_checkout — fire once when the cart is hydrated and non-empty.
+  const beginCheckoutFired = useRef(false)
+  useEffect(() => {
+    if (beginCheckoutFired.current) return
+    if (!hydrated || items.length === 0) return
+    beginCheckoutFired.current = true
+    trackBeginCheckout(toAnalyticsItems(items), totalPrice)
+  }, [hydrated, items, totalPrice])
+
   if (successOrderId) {
     return (
       <div className="bg-cream min-h-screen flex items-center justify-center px-4">
@@ -299,6 +322,10 @@ export default function CheckoutPage() {
     if (comment.trim()) fd.set('comment', comment.trim())
     fd.set('source', '/checkout')
 
+    // Snapshot the cart BEFORE clearing so the purchase event has line items.
+    const purchasedItems = toAnalyticsItems(items)
+    const purchasedValue = totalPrice
+
     const result = await submitProductOrder(items, fd)
     setSubmitting(false)
 
@@ -307,6 +334,15 @@ export default function CheckoutPage() {
       if ('fieldErrors' in result && result.fieldErrors) setFieldErrors(result.fieldErrors)
       return
     }
+
+    // Purchase fires ONLY here — after the internal order was created. Test /
+    // internal orders send a marked debug event instead of the real conversion.
+    trackPurchase({
+      orderId: result.orderId,
+      value: purchasedValue,
+      items: purchasedItems,
+      isTest: result.isTestOrder === true,
+    })
 
     clearCart()
     setSuccessOrderId(result.orderId)

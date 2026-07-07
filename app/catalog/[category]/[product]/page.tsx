@@ -25,6 +25,7 @@ import { SafeImage } from '@/components/shared/SafeImage'
 import { CatalogProductCard } from '@/components/catalog/CatalogProductCard'
 import { AddToCartButton } from '@/components/cart/AddToCartButton'
 import { BuyNowButton } from '@/components/cart/BuyNowButton'
+import { TrackViewItem } from '@/components/analytics/TrackEvent'
 import { ProductOptions } from '@/components/catalog/ProductOptions'
 import { ManualLeadForm } from '@/components/catalog/ManualLeadForm'
 import type { ManualLeadType } from '@/types'
@@ -127,6 +128,14 @@ export default async function ProductPage({ params }: Props) {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
       <StructuredData data={breadcrumbSchema(crumbs)} />
+      <TrackViewItem
+        item={{
+          item_id: product.supplier_sku || product.slug,
+          item_name: productTitle,
+          price: priceOk ? (product.price_uah as number) : undefined,
+          item_category: product.category_slug ?? categorySlug,
+        }}
+      />
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-12">
         <Breadcrumb crumbs={crumbs} />

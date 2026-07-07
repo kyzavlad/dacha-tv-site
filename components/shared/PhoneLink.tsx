@@ -1,19 +1,25 @@
+'use client'
+
 import { formatPhoneDisplay, formatPhoneTel } from '@/lib/utils'
 import { cn } from '@/lib/utils'
+import { trackPhoneClick } from '@/lib/analytics/gtag'
 
 interface PhoneLinkProps {
   phone: string
   className?: string
   showIcon?: boolean
+  // Optional label for where the click happened (e.g. "header", "product").
+  location?: string
 }
 
-export function PhoneLink({ phone, className, showIcon = false }: PhoneLinkProps) {
+export function PhoneLink({ phone, className, showIcon = false, location }: PhoneLinkProps) {
   const telHref = `tel:${formatPhoneTel(phone)}`
   const display = formatPhoneDisplay(phone)
 
   return (
     <a
       href={telHref}
+      onClick={() => trackPhoneClick(formatPhoneTel(phone), location)}
       className={cn(
         'inline-flex items-center gap-1 font-semibold text-honey-700 hover:text-honey-900 transition-colors',
         className
