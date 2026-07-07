@@ -6,6 +6,7 @@ import { Footer } from '@/components/layout/Footer'
 import { getSiteSettings } from '@/lib/supabase/queries'
 import { CartProvider } from '@/lib/cart/CartContext'
 import { CartDrawer } from '@/components/cart/CartDrawer'
+import { Analytics } from '@/components/analytics/Analytics'
 
 const inter = Inter({
   variable: '--font-inter',
@@ -43,19 +44,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   return (
     <html lang="uk" className={`${inter.variable} ${lora.variable} h-full antialiased overflow-x-hidden`}>
       <head>
-        {process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID && (
-          <>
-            <script
-              async
-              src={`https://www.googletagmanager.com/gtag/js?id=${process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID}`}
-            />
-            <script
-              dangerouslySetInnerHTML={{
-                __html: `window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments)}gtag('js',new Date());gtag('config','${process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID}')`,
-              }}
-            />
-          </>
-        )}
+        <Analytics />
       </head>
       <body className="min-h-full flex flex-col bg-cream text-bark overflow-x-hidden">
         <CartProvider>

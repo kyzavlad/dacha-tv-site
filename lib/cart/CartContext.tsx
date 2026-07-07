@@ -1,6 +1,7 @@
 'use client'
 
 import { createContext, useContext, useEffect, useReducer, useCallback, useState } from 'react'
+import { trackAddToCart } from '@/lib/analytics/gtag'
 
 export interface CartItem {
   id: string           // unique: productType + productSlug + variant (or just productSlug)
@@ -113,6 +114,16 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   const addItem = useCallback((item: Omit<CartItem, 'quantity'> & { quantity?: number }) => {
     dispatch({ type: 'ADD_ITEM', item })
+    // GA4 add_to_cart — central so every add path (product page, cards, honey
+    // form) is covered. Never throws; no-op when analytics is unconfigured.
+    trackAddToCart({
+      item_id: item.productSlug || item.id,
+      item_name: item.name,
+      price: item.price,
+      quantity: item.quantity ?? 1,
+      item_variant: item.variant,
+      item_category: item.productType,
+    })
   }, [])
 
   const removeItem = useCallback((id: string) => {

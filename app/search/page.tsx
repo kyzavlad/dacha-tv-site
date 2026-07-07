@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { searchPublishedCatalogProducts, normalizeSort, CATALOG_PAGE_SIZE } from '@/lib/supabase/catalog'
 import { CatalogProductCard } from '@/components/catalog/CatalogProductCard'
 import { CatalogSortSelect } from '@/components/catalog/CatalogSortSelect'
+import { TrackSearch } from '@/components/analytics/TrackEvent'
 import { getRequestLocale, localizedPath, type Locale } from '@/lib/i18n'
 import { buildAlternates } from '@/lib/seo'
 
@@ -85,6 +86,7 @@ export default async function SearchPage({ searchParams }: Props) {
 
   return (
     <div className="bg-cream min-h-screen">
+      {query.length >= 2 && <TrackSearch term={query} resultCount={products.length} />}
       <div className="bg-white border-b border-gray-100 py-8 md:py-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <h1 className="font-serif text-2xl md:text-3xl font-bold text-bark">{t.title}</h1>

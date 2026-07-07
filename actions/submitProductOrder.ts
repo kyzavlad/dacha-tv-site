@@ -40,7 +40,9 @@ const submitOrderSchema = z.object({
 })
 
 type ActionResult =
-  | { success: true; orderId: string }
+  // `isTestOrder` lets the client fire a clearly-marked test/debug analytics
+  // event instead of a real purchase conversion. It never affects order storage.
+  | { success: true; orderId: string; isTestOrder?: boolean }
   | { success: false; error: string; fieldErrors?: Record<string, string[]> }
 
 // Short, non-secret correlation id so a single checkout attempt can be traced
@@ -536,7 +538,7 @@ export async function submitProductOrder(
         console.info(`[checkout-submit ${trace}] inquiry fallback saved`)
       }
 
-      return { success: true, orderId: fallbackId }
+      return { success: true, orderId: fallbackId, isTestOrder }
     }
 
     const orderId = order.id as string
@@ -699,7 +701,7 @@ export async function submitProductOrder(
     }
 
     console.info(`[checkout-submit ${trace}] success — order ${orderId}`)
-    return { success: true, orderId }
+    return { success: true, orderId, isTestOrder }
   } catch (e) {
     // Anything unexpected (missing Supabase env, network, etc.). Log the full
     // cause server-side; show the customer a friendly message.
