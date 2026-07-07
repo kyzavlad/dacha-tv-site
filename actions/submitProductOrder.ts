@@ -6,6 +6,7 @@ import {
   buildPersonalCabOrderPayload,
   sendPersonalCabOrder,
   getSupplierOrderMode,
+  detectTestOrderMarker,
 } from '@/lib/supplier/order'
 import { normalizeUkrainianPhone, isValidUkrainianPhone } from '@/lib/utils'
 
@@ -201,8 +202,22 @@ export async function submitProductOrder(
   const customerName = `${d.lastName} ${d.firstName}${d.patronymic ? ` ${d.patronymic}` : ''}`
   const totalUah = d.items.reduce((sum, item) => sum + item.price * item.quantity, 0)
   // d.phone is already normalised to +380XXXXXXXXX by the Zod transform above.
+
+  // ── Test/internal order guard ───────────────────────────────────────────────
+  // Even in live mode, an order marked as a test / "do not send" must never reach
+  // the supplier. Detected from the human-entered fields; the site order and all
+  // notifications still run — only the supplier API call is suppressed below.
+  const testMarker = detectTestOrderMarker([
+    customerName,
+    d.phone,
+    d.warehouseName,
+    d.comment,
+    d.source,
+  ])
+  const isTestOrder = testMarker !== null
+
   console.info(
-    `[checkout-submit ${trace}] validated — payment=${d.methodPayment} warehouse=${d.warehouseId} total=${totalUah} phone=${d.phone}`,
+    `[checkout-submit ${trace}] validated — payment=${d.methodPayment} warehouse=${d.warehouseId} total=${totalUah} phone=${d.phone}${isTestOrder ? ` TEST-ORDER(blocked from supplier; marker="${testMarker}")` : ''}`,
   )
 
   // ── Step 2: primary notification — fires before ANY DB or supplier logic ─────
@@ -224,7 +239,7 @@ export async function submitProductOrder(
     : `Відділення ID: ${d.warehouseId}`
 
   const primaryNotifyText = [
-    '🛒 НОВЕ ЗАМОВЛЕННЯ З САЙТУ',
+    isTestOrder ? '🧪 ТЕСТОВЕ/СЛУЖБОВЕ ЗАМОВЛЕННЯ — постачальнику НЕ надсилалось' : '🛒 НОВЕ ЗАМОВЛЕННЯ З САЙТУ',
     '',
     `Ім'я: ${customerName}`,
     `Телефон: ${d.phone}`,
@@ -298,6 +313,11 @@ export async function submitProductOrder(
     const mixedNote = isMixedOrder
       ? '⚠ Змішане замовлення: до постачальника передано лише товари з SKU; ручні товари (мед/квіти/інше) потребують окремої обробки.'
       : null
+    // Reason stored on the order so admin knows WHY it was not forwarded.
+    const testNote = isTestOrder
+      ? `🧪 Тестове/службове замовлення — заблоковано від надсилання постачальнику (знайдено: «${testMarker}»). Потребує ручної перевірки.`
+      : null
+    const seededNotes = [testNote, mixedNote].filter(Boolean).join('\n') || null
     console.info(
       `[checkout-submit ${trace}] items resolved — supplier=${supplierLineItems.length} manual=${hasManualItems ? d.items.length - supplierLineItems.length : 0} mixed=${isMixedOrder}`,
     )
@@ -321,9 +341,9 @@ export async function submitProductOrder(
         method_payment: d.methodPayment,
         nova_poshta_warehouse_id: d.warehouseId,
         nova_poshta_warehouse_name: d.warehouseName ?? null,
-        // New order: admin_notes is empty, so it's safe to seed the mixed-order
-        // flag here without clobbering anything an admin typed later.
-        admin_notes: mixedNote,
+        // New order: admin_notes is empty, so it's safe to seed the test-order /
+        // mixed-order flags here without clobbering anything an admin typed later.
+        admin_notes: seededNotes,
       })
       .select('id')
       .single()
@@ -370,7 +390,12 @@ export async function submitProductOrder(
           comments: d.comment,
         })
 
-        if (configuredMode === 'disabled') {
+        if (isTestOrder) {
+          // Test/internal order guard also applies on the inquiries fallback path.
+          fbSupplierMode = 'blocked'
+          fbSupplierStatus = 'test_blocked'
+          fbSupplierResponse = { reason: 'Test/internal order — blocked from supplier forwarding', marker: testMarker }
+        } else if (configuredMode === 'disabled') {
           fbSupplierMode = 'disabled'
           fbSupplierStatus = 'not_sent'
           fbSupplierResponse = { reason: 'SUPPLIER_ORDER_MODE=disabled' }
@@ -561,7 +586,13 @@ export async function submitProductOrder(
         comments: d.comment,
       })
 
-      if (configuredMode === 'disabled') {
+      if (isTestOrder) {
+        // Test/internal order guard: NEVER contact the supplier, even in live mode.
+        // The order + notifications are already handled; we only record why.
+        supplierMode = 'blocked'
+        supplierStatus = 'test_blocked'
+        supplierResponse = { reason: 'Test/internal order — blocked from supplier forwarding', marker: testMarker }
+      } else if (configuredMode === 'disabled') {
         // Kill switch: do not contact the supplier at all.
         supplierMode = 'disabled'
         supplierStatus = 'not_sent'
