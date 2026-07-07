@@ -631,6 +631,63 @@ async function findCategorySlugsForQuery(
   return [...slugs].slice(0, 30)
 }
 
+// Alphanumeric-normalized code: uppercase, drop hyphens/spaces/punctuation.
+// "N-270997" / "N270997" / "n 270997" → "N270997".
+const normalizeCompactSku = (s: string): string => s.toUpperCase().replace(/[^A-Z0-9]/g, '')
+
+// A query is "SKU-like" when it is a single token whose compact form is a short
+// alphanumeric code containing a digit (N-270997, N270997, A-845, R-4147).
+function looksLikeSku(q: string): boolean {
+  const t = q.trim()
+  if (!t || /\s/.test(t)) return false
+  const c = normalizeCompactSku(t)
+  return c.length >= 3 && c.length <= 24 && /\d/.test(c)
+}
+
+// Exact-ish SKU/article lookup that is hyphen/space/case-insensitive. The stored
+// supplier_sku may be hyphenated ("N-270997") or compact ("N270997") and the user
+// may type either — plain ilike.%N-270997% can't bridge that. So we fetch a broad
+// candidate set with ilike anchors (compact + raw + longest digit run — the digit
+// run is contiguous in BOTH stored forms) and then keep only rows whose normalized
+// SKU matches the normalized query. Uses only .or() ilike + a top-level filter —
+// never the category_slug.in(...)-in-.or() shape that broke PR #48. Never throws.
+async function findProductsBySku(
+  client: NonNullable<ReturnType<typeof getClient>>,
+  rawQuery: string,
+  limit = 60,
+): Promise<CatalogProduct[]> {
+  const raw = sanitizeIlike(rawQuery.trim().toUpperCase())
+  const compact = normalizeCompactSku(rawQuery)
+  const digitRun = (compact.match(/\d{3,}/g) ?? []).sort((a, b) => b.length - a.length)[0] ?? compact
+  const anchors = [...new Set([compact, raw, digitRun].filter((a) => a && a.length >= 3))]
+  if (anchors.length === 0) return []
+  try {
+    const orClause = anchors.map((a) => `supplier_sku.ilike.%${a}%`).join(',')
+    const { data, error } = await client
+      .from('catalog_products')
+      .select('*')
+      .eq('status', 'published')
+      .or(EXCLUDE_NATURAL_OR)
+      .or(orClause)
+      .limit(limit)
+    if (error) {
+      console.warn(`[search] SKU lookup failed for "${rawQuery}": ${error.message}`)
+      return []
+    }
+    const rows = (data ?? []) as CatalogProduct[]
+    // Precision filter: normalized stored SKU equals / contains / is contained by
+    // the normalized query (handles exact codes and typed partial full codes).
+    return rows.filter((p) => {
+      const skuC = normalizeCompactSku(p.supplier_sku ?? '')
+      if (!skuC) return false
+      return skuC === compact || skuC.includes(compact) || compact.includes(skuC)
+    })
+  } catch (e) {
+    console.warn(`[search] SKU lookup threw for "${rawQuery}": ${e instanceof Error ? e.message : String(e)}`)
+    return []
+  }
+}
+
 export async function searchPublishedCatalogProducts(
   q: string,
   page = 1,
@@ -687,10 +744,18 @@ export async function searchPublishedCatalogProducts(
     console.warn(`[search] category intent failed for "${term}": ${e instanceof Error ? e.message : String(e)}`)
   }
 
-  // ── (d) Merge: category matches first, dedup by id, keep only listable ───────
+  // ── Exact SKU/article lookup — normalized (hyphen/space/case-insensitive) ────
+  // Only for page 1 and SKU-like queries; separate query, merged FIRST so an
+  // exact code (N-270997) surfaces even when the stored SKU format differs.
+  let skuProducts: CatalogProduct[] = []
+  if (page === 1 && looksLikeSku(term)) {
+    skuProducts = await findProductsBySku(client, term)
+  }
+
+  // ── (d) Merge: SKU first, then category matches, then text; dedup by id ──────
   const seen = new Set<string>()
   const products: CatalogProduct[] = []
-  for (const p of [...catProducts, ...textProducts]) {
+  for (const p of [...skuProducts, ...catProducts, ...textProducts]) {
     if (seen.has(p.id) || !isPublicListableProduct(p)) continue
     seen.add(p.id)
     products.push(p)
@@ -756,10 +821,17 @@ export async function suggestCatalogProducts(q: string, limit = 8): Promise<Cata
     console.warn(`[suggest] category intent failed for "${term}": ${e instanceof Error ? e.message : String(e)}`)
   }
 
-  // Merge category-first, dedup by slug, keep only listable, slice to limit.
+  // Exact SKU/article lookup, normalized — so a full code like N-270997 surfaces
+  // in the typeahead even when the stored format differs. Prepended.
+  let skuRows: CatalogProduct[] = []
+  if (looksLikeSku(term)) {
+    skuRows = (await findProductsBySku(client, term, over)) as unknown as CatalogProduct[]
+  }
+
+  // Merge SKU + category first, dedup by slug, keep only listable, slice to limit.
   const seen = new Set<string>()
   const rows: CatalogProduct[] = []
-  for (const p of [...catRows, ...textRows]) {
+  for (const p of [...skuRows, ...catRows, ...textRows]) {
     if (seen.has(p.slug) || !isPublicListableProduct(p)) continue
     seen.add(p.slug)
     rows.push(p)
