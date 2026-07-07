@@ -84,17 +84,27 @@ async function getCoverage() {
   let imgSampleChecked = 0
   let imgSampleResolved = 0
   let priceSampleOk = 0
+  let sampleError: string | null = null
   try {
-    const { data: sample } = await client
+    // Select '*' — NOT an explicit column list. catalog_products has no
+    // `image_url` / `raw_data` columns (those live on supplier rows and raw
+    // payloads), so naming them made PostgREST reject the ENTIRE query, leaving
+    // the sample stuck at checked=0 even with 105k rows published. '*' returns
+    // every real column; getCatalogProductImage()/hasDisplayablePrice() read only
+    // the fields that exist. Surface any error instead of swallowing it silently.
+    const { data: sample, error } = await client
       .from('catalog_products')
-      .select('main_image_url, images, image_url, raw_data, price_uah, price_prefix, unit_label, is_price_suspicious, inquiry_only, source, lead_type')
+      .select('*')
       .eq('status', 'published')
       .limit(300)
+    if (error) throw error
     const rows = (sample ?? []) as unknown as CatalogProduct[]
     imgSampleChecked = rows.length
     imgSampleResolved = rows.filter((r) => !!getCatalogProductImage(r)).length
     priceSampleOk = rows.filter((r) => hasDisplayablePrice(r)).length
-  } catch { /* non-fatal */ }
+  } catch (e) {
+    sampleError = e instanceof Error ? e.message : String(e)
+  }
   const imgSamplePct = imgSampleChecked > 0 ? Math.round((imgSampleResolved / imgSampleChecked) * 1000) / 10 : 0
   const priceSamplePct = imgSampleChecked > 0 ? Math.round((priceSampleOk / imgSampleChecked) * 1000) / 10 : 0
 
@@ -217,7 +227,11 @@ async function getCoverage() {
       `all with images, ${cpWithSpid.toLocaleString('en-US')}/${cpTotal.toLocaleString('en-US')} linked to supplier products. ` +
       `Do NOT run import: the ${spImportable.toLocaleString('en-US')} "unapproved" supplier rows are leftovers from a resync (is_approved reset), not a real backlog — those products are already in the live catalog. ` +
       `Optional only: run product-seo-template to fill any remaining published rows missing meta.`
-  } else if (spWithImage === 0 && spTotal > 0) {
+  } else if (spWithImage === 0 && spTotal > 0 && cpWithImageAny === 0) {
+    // Only recommend a supplier-image backfill when the CATALOG genuinely lacks
+    // images. supplier_products.with_image can read 0 after a resync (is_approved
+    // reset) while catalog_products already carry images.zone URLs in images[] —
+    // live cards display them. Don't nag for a backfill that isn't needed.
     nextAction = 'IMAGES: supplier_products.with_image=0 — run supplier-images dry-run, then apply, then catalog backfill-images. Do this before publishing so live products have photos.'
   } else if (seoNotInCatalog > 0) {
     nextAction = `IMPORT (SEO-first): ${seoNotInCatalog}/20 SEO-sheet SKUs are in supplier but not catalog — run import-seo-priority (apply) so the SEO sheet can match, OR continue the general backlog import below.`
@@ -272,24 +286,54 @@ async function getCoverage() {
     searchWorks = (res.products?.length ?? 0) > 0
   } catch { searchWorks = false }
 
+  // The resolver sample is a REFINEMENT, not the source of truth. Live images
+  // exist when ANY image source is populated (cpWithImageAny — the same source
+  // product cards read). If the sample could not run (checked=0) but published
+  // rows and a live image source both exist, treat images as OK with a WARNING —
+  // a diagnostics sample gap must never fail ads-readiness while live cards show
+  // images. Prices likewise never block: "Уточнити ціну" is an acceptable state.
+  const liveImagesExist = cpWithImageAny > 0
+  const imageSampleUnavailable = imgSampleChecked === 0
+  const productImagesOk = liveImagesExist && (imageSampleUnavailable || imgSamplePct >= 90)
+  const priceSampleUnavailable = imgSampleChecked === 0
+  const productPricesOk = priceSampleUnavailable ? true : priceSamplePct >= 50
+
   const checks = {
     products_published: { ok: cpPublished > 0, value: cpPublished },
     priority_categories_have_products: { ok: priorityHasProducts, value: priorityCategories.reduce((s, c) => s + c.published_products, 0) },
     search_works: { ok: searchWorks, note: 'Live search probe for "амортизатор".' },
-    product_images: { ok: imgSamplePct >= 90, value_pct: imgSamplePct, note: 'Sampled via getCatalogProductImage (the resolver product cards use).' },
-    product_prices: { ok: priceSamplePct >= 50, value_pct: priceSamplePct, note: 'Sampled via hasDisplayablePrice; "Уточнити ціну" is an acceptable state, so the bar is low.' },
+    product_images: {
+      ok: productImagesOk,
+      value_pct: imgSamplePct,
+      with_any_source: cpWithImageAny,
+      status: imageSampleUnavailable ? (liveImagesExist ? 'warning' : 'error') : (productImagesOk ? 'ok' : 'error'),
+      note: imageSampleUnavailable
+        ? `Resolver sample unavailable (checked=0${sampleError ? `: ${sampleError}` : ''}); ${cpWithImageAny.toLocaleString('en-US')} published rows carry a live image source, so images are treated as present.`
+        : 'Sampled via getCatalogProductImage (the resolver product cards use).',
+    },
+    product_prices: {
+      ok: productPricesOk,
+      value_pct: priceSamplePct,
+      status: priceSampleUnavailable ? 'warning' : (productPricesOk ? 'ok' : 'warn'),
+      note: priceSampleUnavailable
+        ? 'Displayable-price sample unavailable — not blocking; products without a price show "Уточнити ціну" and stay ad-eligible.'
+        : 'Sampled via hasDisplayablePrice; "Уточнити ціну" is an acceptable state, so the bar is low.',
+    },
     checkout: { ok: ordersTableOk && notificationsConfigured, orders_table: ordersTableOk, notifications_configured: notificationsConfigured },
-    supplier_live_mode: { mode: supplierMode, live: supplierMode === 'live', note: 'Live real orders forward to the supplier.' },
+    supplier_live_mode: { ok: supplierMode === 'live', mode: supplierMode, live: supplierMode === 'live', note: 'Live real orders forward to the supplier.' },
     test_order_guard: { ok: TEST_ORDER_GUARD_ENABLED, note: 'Test/internal orders are blocked from supplier forwarding even in live mode.' },
   }
-  // Ads-ready gate: the shopper-facing essentials must pass. Supplier mode + guard
-  // are reported for awareness but do not block browsing/ads.
+  // Ads-ready gate (req 5): published products, priority categories populated,
+  // working search, images present via the live source, checkout wired, supplier
+  // live mode configured, and the test-order guard enabled. Prices never gate.
   const readyForAds =
     checks.products_published.ok &&
     checks.priority_categories_have_products.ok &&
     checks.search_works.ok &&
     checks.product_images.ok &&
-    checks.checkout.ok
+    checks.checkout.ok &&
+    checks.supplier_live_mode.ok &&
+    checks.test_order_guard.ok
 
   return {
     supplier_products: {
@@ -317,11 +361,11 @@ async function getCoverage() {
         with_main_image_url: cpWithImageMainUrl,
         with_images_array: cpWithImagesArray,
         // The resolver product cards actually use, sampled on live published rows.
-        resolver_sample: { checked: imgSampleChecked, resolved: imgSampleResolved, resolved_pct: imgSamplePct },
+        resolver_sample: { checked: imgSampleChecked, resolved: imgSampleResolved, resolved_pct: imgSamplePct, error: sampleError },
         note: 'Cards resolve images via main_image_url → image_url → images[] → raw_data. main_image_url is usually empty; the images.zone URLs live in images[].',
       },
       prices: {
-        displayable_sample: { checked: imgSampleChecked, ok: priceSampleOk, ok_pct: priceSamplePct },
+        displayable_sample: { checked: imgSampleChecked, ok: priceSampleOk, ok_pct: priceSamplePct, error: sampleError },
         note: 'hasDisplayablePrice sample; products without a price show "Уточнити ціну" and are still ad-eligible.',
       },
     },
