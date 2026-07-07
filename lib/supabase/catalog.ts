@@ -251,7 +251,7 @@ export type NameBearingProduct = Pick<CatalogProduct, 'name_ua' | 'supplier_sku'
 // Returns null when a product has NO real name (every candidate is empty,
 // punctuation, a code, or equal to its own SKU) — such products are unsuitable
 // for public listing.
-export function bestProductName(product: NameBearingProduct): string | null {
+export function bestProductName(product: NameBearingProduct, locale?: string): string | null {
   const sku = (product.supplier_sku ?? '').trim().toLowerCase()
   const consider = (raw: string | null | undefined): string | null => {
     const s = (raw ?? '').replace(/\s+/g, ' ').trim()
@@ -259,6 +259,10 @@ export function bestProductName(product: NameBearingProduct): string | null {
     if (sku && s.toLowerCase() === sku) return null // name IS the SKU → code-like
     return s
   }
+  // ru: prefer the Russian supplier feed name (catalog_products.name), then the
+  // Ukrainian name. Otherwise Ukrainian first. Always falls back so a card is
+  // never blank just because the locale-preferred name is missing (RU→UA→original).
+  if (locale === 'ru') return consider(product.name) ?? consider(product.name_ua) ?? null
   return consider(product.name_ua) ?? consider(product.name) ?? null
 }
 
@@ -272,8 +276,8 @@ export function isPublicListableProduct(product: NameBearingProduct): boolean {
 // Human-facing product title. Uses the best real name; only falls back to a SKU
 // label when there is genuinely no real name (those are filtered out of public
 // lists, but detail pages / cart still need a non-empty string). Never mutates DB.
-export function displayProductName(product: NameBearingProduct): string {
-  const best = bestProductName(product)
+export function displayProductName(product: NameBearingProduct, locale?: string): string {
+  const best = bestProductName(product, locale)
   if (best) return best
   const sku = (product.supplier_sku ?? '').trim()
   return sku ? `Товар ${sku}` : 'Товар'
@@ -544,6 +548,89 @@ function searchTokens(term: string): string[] {
     .slice(0, 6)
 }
 
+// Common Ukrainian/Russian inflectional endings (longest first). Stripping them
+// gives a stem so a CATEGORY-name ilike matches across cases/plurals, e.g.
+// "скутеров"/"скутеры" → "скутер" (matches "На скутери"). Used ONLY for the
+// isolated category-name lookup below — the product text search keeps raw tokens
+// so its proven behaviour is unchanged.
+const SLAVIC_ENDINGS = ['ами', 'ями', 'ах', 'ях', 'ов', 'ів', 'ей', 'ом', 'ем', 'и', 'ы', 'і', 'ї', 'а', 'я', 'у', 'ю', 'е', 'є', 'й', 'ь']
+
+function stemToken(tok: string): string {
+  const t = tok.toLowerCase()
+  if (t.length <= 4 || /\d/.test(t) || !/[а-яіїєґё]/i.test(t)) return t
+  for (const e of SLAVIC_ENDINGS) {
+    if (t.endsWith(e) && t.length - e.length >= 4) return t.slice(0, t.length - e.length)
+  }
+  return t
+}
+
+// Strip chars that would break a PostgREST .or() ilike pattern.
+const sanitizeIlike = (s: string) => s.replace(/[%,()]/g, '')
+
+// Resolve a query to published category slugs by matching category name/slug/meta.
+// Isolated + self-guarded: returns [] on ANY error (never throws into the caller),
+// so a category-lookup failure can never take down the product search. Uses only
+// simple .or() ilike clauses (NO nested in.() inside .or) and a plain .in() —
+// the shapes that broke PR #48 are deliberately avoided.
+async function findCategorySlugsForQuery(
+  client: NonNullable<ReturnType<typeof getClient>>,
+  tokens: string[],
+): Promise<string[]> {
+  const stems = [...new Set(tokens.map(stemToken).map(sanitizeIlike).filter((s) => s.length >= 3))]
+  if (stems.length === 0) return []
+  const slugs = new Set<string>()
+
+  try {
+    const catOr: string[] = []
+    for (const s of stems) {
+      catOr.push(`name_ua.ilike.%${s}%`, `slug.ilike.%${s}%`, `meta_title.ilike.%${s}%`, `meta_description.ilike.%${s}%`)
+    }
+    const { data, error } = await client
+      .from('catalog_categories')
+      .select('slug')
+      .eq('is_published', true)
+      .or(catOr.join(','))
+      .limit(40)
+    if (error) {
+      console.warn(`[search] category name lookup error: ${error.message}`)
+    } else {
+      for (const c of (data ?? []) as { slug: string | null }[]) if (c.slug) slugs.add(c.slug)
+    }
+  } catch (e) {
+    console.warn(`[search] category name lookup threw: ${e instanceof Error ? e.message : String(e)}`)
+  }
+
+  // Best-effort: supplier_categories (original, often Russian names) → linked
+  // published catalog slug. Silently skipped if not readable by the anon role.
+  try {
+    const supOr: string[] = []
+    for (const s of stems) supOr.push(`name.ilike.%${s}%`, `name_ua.ilike.%${s}%`)
+    const { data: sup, error } = await client
+      .from('supplier_categories')
+      .select('id, supplier_id')
+      .or(supOr.join(','))
+      .limit(80)
+    if (!error && sup && sup.length) {
+      const keys = new Set<string>()
+      for (const r of sup as { id: string | number; supplier_id: string | number | null }[]) {
+        if (r.supplier_id != null) keys.add(String(r.supplier_id))
+        keys.add(String(r.id))
+      }
+      if (keys.size) {
+        const { data: linked } = await client
+          .from('catalog_categories')
+          .select('slug')
+          .eq('is_published', true)
+          .in('supplier_category_id', [...keys])
+          .limit(40)
+        for (const c of (linked ?? []) as { slug: string | null }[]) if (c.slug) slugs.add(c.slug)
+      }
+    }
+  } catch { /* supplier_categories not public — catalog_categories match is enough */ }
+
+  return [...slugs].slice(0, 30)
+}
+
 export async function searchPublishedCatalogProducts(
   q: string,
   page = 1,
@@ -563,23 +650,52 @@ export async function searchPublishedCatalogProducts(
   // calls AND together in PostgREST. NO count:'exact' — the caller paginates by
   // page length, so a full COUNT over the match set would be pure wasted work.
   // Requires the pg_trgm GIN indexes (migration 20260630) to stay fast at 105k.
+  // ── (a) Proven product text/SKU search — RAW tokens, UNCHANGED behaviour ─────
+  // Each token must appear (AND) in name_ua / name (RU supplier) / supplier_sku /
+  // category_slug. This is the exact query that worked before; the category-intent
+  // step below is layered on SEPARATELY so it can never break this path.
   let base = client
     .from('catalog_products')
     .select('*')
     .eq('status', 'published')
     .or(EXCLUDE_NATURAL_OR)
   for (const tok of tokens) {
-    // Match name_ua (UA), name (RU supplier feed), supplier_sku (code/article),
-    // and category_slug (so a category-slug term surfaces its products too).
-    // TODO(search): add human category-NAME search + a Postgres full-text /
-    // pg_trgm index on a combined tsvector so ranking beats ilike at 105k. The
-    // ilike path here is the safe fallback that needs no dashboard changes.
     base = base.or(`name_ua.ilike.%${tok}%,name.ilike.%${tok}%,supplier_sku.ilike.%${tok}%,category_slug.ilike.%${tok}%`)
   }
-  const { data } = await applyCatalogSort(base, sort).range(from, to)
-  // Hide products unsuitable for a public listing (garbage/code-like names) so
-  // search results only surface real, buyable products. Admin search is separate.
-  const products = ((data ?? []) as CatalogProduct[]).filter(isPublicListableProduct)
+  const textRes = await applyCatalogSort(base, sort).range(from, to)
+  if (textRes.error) console.warn(`[search] product text query failed for "${term}": ${textRes.error.message}`)
+  const textProducts = (textRes.data ?? []) as CatalogProduct[]
+
+  // ── (b+c) Category intent — resolved + fetched SEPARATELY via a plain .in() ──
+  // No category_slug.in(...) is ever injected into the .or() groups above (that
+  // was the PR #48 regression). If anything here fails, the text results stand.
+  let catProducts: CatalogProduct[] = []
+  try {
+    const matchedSlugs = await findCategorySlugsForQuery(client, tokens)
+    if (matchedSlugs.length > 0) {
+      const catBase = client
+        .from('catalog_products')
+        .select('*')
+        .eq('status', 'published')
+        .or(EXCLUDE_NATURAL_OR)
+        .in('category_slug', matchedSlugs)
+      const catRes = await applyCatalogSort(catBase, sort).range(from, to)
+      if (catRes.error) console.warn(`[search] category products query failed for "${term}": ${catRes.error.message}`)
+      else catProducts = (catRes.data ?? []) as CatalogProduct[]
+    }
+  } catch (e) {
+    console.warn(`[search] category intent failed for "${term}": ${e instanceof Error ? e.message : String(e)}`)
+  }
+
+  // ── (d) Merge: category matches first, dedup by id, keep only listable ───────
+  const seen = new Set<string>()
+  const products: CatalogProduct[] = []
+  for (const p of [...catProducts, ...textProducts]) {
+    if (seen.has(p.id) || !isPublicListableProduct(p)) continue
+    seen.add(p.id)
+    products.push(p)
+    if (products.length >= CATALOG_PAGE_SIZE) break
+  }
   // total is unknown without a count; report the page length so callers that
   // only need "is there a full page → maybe a next page" keep working.
   return { products, total: products.length }
@@ -603,24 +719,52 @@ export async function suggestCatalogProducts(q: string, limit = 8): Promise<Cata
   if (!client || term.length < 2) return []
   const tokens = searchTokens(term)
   if (tokens.length === 0) return []
+  const SUGGEST_COLS = 'slug, category_slug, name_ua, name, main_image_url, images, price_uah, price_prefix, unit_label, is_price_suspicious, supplier_sku'
+  const over = Math.min(Math.max(limit * 3, limit), 30)
+
+  // ── Proven text/SKU suggest — RAW tokens, UNCHANGED behaviour ────────────────
   let base = client
     .from('catalog_products')
-    .select('slug, category_slug, name_ua, name, main_image_url, images, price_uah, price_prefix, unit_label, is_price_suspicious, supplier_sku')
+    .select(SUGGEST_COLS)
     .eq('status', 'published')
     .or(EXCLUDE_NATURAL_OR)
   for (const tok of tokens) {
     base = base.or(`name_ua.ilike.%${tok}%,name.ilike.%${tok}%,supplier_sku.ilike.%${tok}%`)
   }
-  // Over-fetch, then drop products unsuitable for public listing (garbage/
-  // code-like names) before slicing back to `limit` — so garbage never eats a
-  // suggestion slot and the typeahead stays full of real, buyable products.
-  const { data } = await base
-    .order('is_featured', { ascending: false })
-    .limit(Math.min(Math.max(limit * 3, limit), 30))
-  // Cast via unknown: the select includes `name` (Russian supplier feed), which
-  // is a real DB column but not declared on CatalogProduct, so a direct cast is
-  // rejected. bestProductName reads it through the NameBearingProduct shape.
-  const rows = ((data ?? []) as unknown as CatalogProduct[]).filter(isPublicListableProduct).slice(0, limit)
+  const textRes = await base.order('is_featured', { ascending: false }).limit(over)
+  if (textRes.error) console.warn(`[suggest] text query failed for "${term}": ${textRes.error.message}`)
+  const textRows = (textRes.data ?? []) as unknown as CatalogProduct[]
+
+  // ── Category intent — SEPARATE .in() query, prepended so "скутер" suggests ───
+  // scooter-category products instead of []. Fully guarded — failure = text only.
+  let catRows: CatalogProduct[] = []
+  try {
+    const matchedSlugs = await findCategorySlugsForQuery(client, tokens)
+    if (matchedSlugs.length > 0) {
+      const catRes = await client
+        .from('catalog_products')
+        .select(SUGGEST_COLS)
+        .eq('status', 'published')
+        .or(EXCLUDE_NATURAL_OR)
+        .in('category_slug', matchedSlugs)
+        .order('is_featured', { ascending: false })
+        .limit(over)
+      if (catRes.error) console.warn(`[suggest] category query failed for "${term}": ${catRes.error.message}`)
+      else catRows = (catRes.data ?? []) as unknown as CatalogProduct[]
+    }
+  } catch (e) {
+    console.warn(`[suggest] category intent failed for "${term}": ${e instanceof Error ? e.message : String(e)}`)
+  }
+
+  // Merge category-first, dedup by slug, keep only listable, slice to limit.
+  const seen = new Set<string>()
+  const rows: CatalogProduct[] = []
+  for (const p of [...catRows, ...textRows]) {
+    if (seen.has(p.slug) || !isPublicListableProduct(p)) continue
+    seen.add(p.slug)
+    rows.push(p)
+    if (rows.length >= limit) break
+  }
   return rows.map((p) => ({
     slug: p.slug,
     categorySlug: p.category_slug ?? null,
