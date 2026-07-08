@@ -171,31 +171,72 @@ export function hasDisplayablePrice(product: CatalogProduct): boolean {
 }
 
 // ─── Ads / conversion-readiness ranking ──────────────────────────────────────
-// For paid (Google Ads) traffic we surface the most purchasable products first:
-// a product with BOTH an image and a real, displayable price converts best, then
-// products that at least have a price, then "price on request" (inquiry) items.
-// This is a RE-ORDER ONLY, applied to an already-fetched, page-bounded result
-// set — it NEVER filters "price on request" products out of the catalog (they
-// still appear, just lower). Lower tier = higher priority; the callers use a
-// STABLE sort so the original relative order is preserved within each tier.
+// For paid (Google Ads) traffic we surface the most purchasable products first.
+// CRITICAL: the "does this product have a price" test MUST use the SAME resolver
+// the public API `price` field and the product card use — `formatCatalogPrice`
+// (which returns null exactly when there is no displayable price). An earlier
+// version keyed off a separate helper, which could disagree with the API/card
+// and let price-null products score as "priced". Basing the tier on
+// `formatCatalogPrice(p) !== null` makes the tier and the shown price agree by
+// construction. Lower tier = higher priority. This is a RE-ORDER ONLY on an
+// already-fetched, page-bounded pool — "price on request" products are never
+// removed from the catalog, only ranked lower.
 export function adsReadinessTier(product: CatalogProduct): number {
-  const hasPrice = hasDisplayablePrice(product)
+  const hasPrice = formatCatalogPrice(product) !== null // same field the card/API show
   const hasImage = !!getCatalogProductImage(product)
-  if (hasImage && hasPrice) return 0 // image + price — best for ads
-  if (hasPrice) return 1             // price only
-  return 2                           // "price on request" / inquiry-only
+  if (hasImage && hasPrice) return 0 // image + real display price — best for ads
+  if (hasPrice) return 1             // price only (no image)
+  if (hasImage) return 2             // image but "price on request"
+  return 3                           // no image and no price — last
 }
 
-// Order an already-assembled, page-bounded pool for ads readiness while keeping
-// `pinned` ids (e.g. an exact SKU match like N-270997) at the very top so precise
-// lookups never get demoted below a merely-purchasable product. Pure, stable,
-// and does not fetch — safe to call on any small merged page.
-function rankForAds<T extends CatalogProduct>(pool: T[], pinnedIds: Set<string>): T[] {
-  const pinned = pool.filter((p) => pinnedIds.has(p.id))
-  const rest = pool
-    .filter((p) => !pinnedIds.has(p.id))
-    .sort((a, b) => adsReadinessTier(a) - adsReadinessTier(b)) // stable (ES2019+)
-  return [...pinned, ...rest]
+// Relevance buckets (primary sort key, lower = more relevant):
+//   0 exact SKU match · 1 direct name/SKU token match · 2 category-intent match ·
+//   3 broad fallback. Within a bucket we sort by adsReadinessTier so purchasable
+//   products come first WITHOUT letting a broad, less-relevant product jump above
+//   a direct match just because it happens to be priced.
+export type RelevanceBucket = 0 | 1 | 2 | 3
+
+// Does the product itself (name_ua / name / supplier_sku — NOT category_slug)
+// directly contain every query token? Distinguishes a real product match from a
+// row that only matched because its category slug contained the token.
+function directTokenMatch(p: CatalogProduct, tokens: string[]): boolean {
+  if (tokens.length === 0) return false
+  // `name` (RU supplier feed) is present at runtime via select('*') but is not on
+  // the CatalogProduct type — read it defensively.
+  const ruName = (p as { name?: string | null }).name ?? ''
+  const hay = `${p.name_ua ?? ''} ${ruName} ${p.supplier_sku ?? ''}`.toLowerCase()
+  return tokens.every((t) => hay.includes(t.toLowerCase()))
+}
+
+interface RankEntry { product: CatalogProduct; bucket: number }
+interface RankedEntry extends RankEntry { tier: number; i: number }
+
+// Stable sort by (relevance bucket, ads tier, original order). Pure, no fetch.
+// Bucket 0 (exact SKU) is deliberately NOT ads-tiered — an exact code lookup like
+// N-270997 must return the exact product first, in the SKU resolver's own order,
+// regardless of whether it happens to be "price on request".
+function rankByRelevanceThenAds(entries: RankEntry[]): RankedEntry[] {
+  return entries
+    .map((e, i) => ({ ...e, i, tier: e.bucket === 0 ? 0 : adsReadinessTier(e.product) }))
+    .sort((a, b) => a.bucket - b.bucket || a.tier - b.tier || a.i - b.i)
+}
+
+// Opt-in per-item ranking diagnostics for search/suggest. Enable in prod with
+// CATALOG_SEARCH_DEBUG=1 to log why the top results ordered the way they did:
+// sku, name, resolved display price (the same value the API returns), whether an
+// image resolves, the relevance bucket, and the ads tier.
+function debugLogRanking(where: string, term: string, ranked: RankedEntry[]): void {
+  if (process.env.CATALOG_SEARCH_DEBUG !== '1') return
+  const rows = ranked.slice(0, 15).map(({ product: p, bucket, tier }) => ({
+    sku: p.supplier_sku ?? null,
+    name: displayProductName(p),
+    price: formatCatalogPrice(p),
+    image: !!getCatalogProductImage(p),
+    bucket,
+    tier,
+  }))
+  console.log(`[${where}] q="${term}" ranked=${ranked.length}`, JSON.stringify(rows))
 }
 
 // Metal / roofing products are always inquiry/lead-only (price is per-order,
@@ -472,10 +513,14 @@ export async function getRelatedCatalogProducts(
     .order('display_order', { ascending: true })
     .limit(limit * 8)
   const pool = ((data ?? []) as CatalogProduct[]).filter(isPublicListableProduct)
-  // Ads-readiness ranking (see adsReadinessTier): show image + price products
-  // first in the related rail (best for ad conversions); "price on request"
-  // items remain eligible, just lower. No pins here — related has no exact match.
-  return rankForAds(pool, new Set()).slice(0, limit)
+  // Ads-readiness ranking (see adsReadinessTier): show image + real-price products
+  // first in the related rail (best for ad conversions); "price on request" items
+  // remain eligible, just lower. Related is a single category, so relevance is
+  // uniform — use bucket 1 (a tier-sorted bucket; bucket 0 is reserved for exact
+  // SKU and is intentionally NOT tier-sorted) so the rail orders purely by ads
+  // tier, using the SAME price resolver the card/API use.
+  const ranked = rankByRelevanceThenAds(pool.map((product) => ({ product, bucket: 1 })))
+  return ranked.slice(0, limit).map((e) => e.product)
 }
 
 export async function getPublishedProductBySlug(
@@ -797,22 +842,33 @@ export async function searchPublishedCatalogProducts(
     skuProducts = await findProductsBySku(client, term)
   }
 
-  // ── (d) Merge: SKU first, then category matches, then text; dedup by id ──────
+  // ── (d) Merge + rank: relevance bucket first, ads tier within bucket ─────────
+  // Dedup by id (SKU → category → text order feeds the stable tiebreaker), assign
+  // each product its BEST relevance bucket, then sort by (bucket, ads tier). This
+  // keeps exact-SKU matches (N-270997) pinned first and direct name/SKU matches
+  // above broad category-only matches, while surfacing purchasable products first
+  // WITHIN each bucket — without hiding "price on request" products. Operates only
+  // on the already-fetched, page-bounded pool (≤ 3× page size); pagination stays
+  // server-side via the range() calls above.
+  const skuIds = new Set(skuProducts.map((p) => p.id))
+  const catIds = new Set(catProducts.map((p) => p.id))
   const seen = new Set<string>()
-  const pool: CatalogProduct[] = []
+  const entries: RankEntry[] = []
   for (const p of [...skuProducts, ...catProducts, ...textProducts]) {
     if (seen.has(p.id) || !isPublicListableProduct(p)) continue
     seen.add(p.id)
-    pool.push(p)
+    const bucket: RelevanceBucket = skuIds.has(p.id)
+      ? 0                                   // exact SKU match
+      : directTokenMatch(p, tokens)
+        ? 1                                 // direct name/SKU token match
+        : catIds.has(p.id)
+          ? 2                               // category-intent match
+          : 3                               // broad fallback (e.g. category_slug-only)
+    entries.push({ product: p, bucket })
   }
-  // Ads-readiness ranking (see adsReadinessTier): for paid traffic, purchasable
-  // products (image + price, then price) rank before "price on request" ones,
-  // while exact-SKU matches stay pinned on top so a precise code like N-270997 is
-  // never demoted. Re-orders ONLY the already-fetched, page-bounded pool
-  // (≤ 3× page size) — pagination stays server-side via the range() calls above,
-  // and "price on request" products are kept, not hidden.
-  const pinnedIds = new Set(skuProducts.map((p) => p.id))
-  const products = rankForAds(pool, pinnedIds).slice(0, CATALOG_PAGE_SIZE)
+  const ranked = rankByRelevanceThenAds(entries)
+  debugLogRanking('catalog-search', term, ranked)
+  const products = ranked.slice(0, CATALOG_PAGE_SIZE).map((e) => e.product)
   // total is unknown without a count; report the page length so callers that
   // only need "is there a full page → maybe a next page" keep working.
   return { products, total: products.length }
@@ -880,20 +936,30 @@ export async function suggestCatalogProducts(q: string, limit = 8): Promise<Cata
     skuRows = (await findProductsBySku(client, term, over)) as unknown as CatalogProduct[]
   }
 
-  // Merge SKU + category first, dedup by slug, keep only listable.
+  // Merge + rank exactly like search: relevance bucket first (exact SKU → direct
+  // name/SKU token → category-intent → broad), ads tier within each bucket. So
+  // the typeahead surfaces relevant, purchasable products first instead of
+  // unrelated price-null rows; "price on request" items remain, just lower. Pool
+  // is already bounded (≤ 3× over ≈ 90 rows) so this never loads the full catalog.
+  const skuIds = new Set(skuRows.map((p) => p.id))
+  const catIds = new Set(catRows.map((p) => p.id))
   const seen = new Set<string>()
-  const pool: CatalogProduct[] = []
+  const entries: RankEntry[] = []
   for (const p of [...skuRows, ...catRows, ...textRows]) {
     if (seen.has(p.slug) || !isPublicListableProduct(p)) continue
     seen.add(p.slug)
-    pool.push(p)
+    const bucket: RelevanceBucket = skuIds.has(p.id)
+      ? 0
+      : directTokenMatch(p, tokens)
+        ? 1
+        : catIds.has(p.id)
+          ? 2
+          : 3
+    entries.push({ product: p, bucket })
   }
-  // Ads-readiness ranking (see adsReadinessTier): products with image + price
-  // surface first in the typeahead for paid traffic; exact-SKU matches stay
-  // pinned on top; "price on request" items remain, just lower. Pool is already
-  // bounded (≤ 3× over ≈ 90 rows) so this never loads the full catalog.
-  const pinnedIds = new Set(skuRows.map((p) => p.id))
-  const rows = rankForAds(pool, pinnedIds).slice(0, limit)
+  const ranked = rankByRelevanceThenAds(entries)
+  debugLogRanking('catalog-suggest', term, ranked)
+  const rows = ranked.slice(0, limit).map((e) => e.product)
   return rows.map((p) => ({
     slug: p.slug,
     categorySlug: p.category_slug ?? null,
