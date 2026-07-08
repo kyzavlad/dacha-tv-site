@@ -170,6 +170,34 @@ export function hasDisplayablePrice(product: CatalogProduct): boolean {
   return hasValidPrice(product.price_uah) && !product.is_price_suspicious
 }
 
+// ─── Ads / conversion-readiness ranking ──────────────────────────────────────
+// For paid (Google Ads) traffic we surface the most purchasable products first:
+// a product with BOTH an image and a real, displayable price converts best, then
+// products that at least have a price, then "price on request" (inquiry) items.
+// This is a RE-ORDER ONLY, applied to an already-fetched, page-bounded result
+// set — it NEVER filters "price on request" products out of the catalog (they
+// still appear, just lower). Lower tier = higher priority; the callers use a
+// STABLE sort so the original relative order is preserved within each tier.
+export function adsReadinessTier(product: CatalogProduct): number {
+  const hasPrice = hasDisplayablePrice(product)
+  const hasImage = !!getCatalogProductImage(product)
+  if (hasImage && hasPrice) return 0 // image + price — best for ads
+  if (hasPrice) return 1             // price only
+  return 2                           // "price on request" / inquiry-only
+}
+
+// Order an already-assembled, page-bounded pool for ads readiness while keeping
+// `pinned` ids (e.g. an exact SKU match like N-270997) at the very top so precise
+// lookups never get demoted below a merely-purchasable product. Pure, stable,
+// and does not fetch — safe to call on any small merged page.
+function rankForAds<T extends CatalogProduct>(pool: T[], pinnedIds: Set<string>): T[] {
+  const pinned = pool.filter((p) => pinnedIds.has(p.id))
+  const rest = pool
+    .filter((p) => !pinnedIds.has(p.id))
+    .sort((a, b) => adsReadinessTier(a) - adsReadinessTier(b)) // stable (ES2019+)
+  return [...pinned, ...rest]
+}
+
 // Metal / roofing products are always inquiry/lead-only (price is per-order,
 // cut-to-size, region-dependent), never add-to-cart — regardless of any
 // reference price stored on the row.
@@ -431,7 +459,9 @@ export async function getRelatedCatalogProducts(
 ): Promise<CatalogProduct[]> {
   const client = getClient()
   if (!client || !categorySlug || NATURAL_CATEGORY_SLUGS.includes(categorySlug)) return []
-  // Over-fetch a little so the rail stays full after garbage rows are filtered.
+  // Over-fetch a bounded pool so the rail stays full after garbage rows are
+  // filtered AND so ads-readiness ranking has enough purchasable candidates to
+  // choose from. Still a small, server-side-limited window — never the full set.
   const { data } = await client
     .from('catalog_products')
     .select('*')
@@ -440,8 +470,12 @@ export async function getRelatedCatalogProducts(
     .neq('slug', excludeSlug)
     .order('is_featured', { ascending: false })
     .order('display_order', { ascending: true })
-    .limit(limit * 4)
-  return ((data ?? []) as CatalogProduct[]).filter(isPublicListableProduct).slice(0, limit)
+    .limit(limit * 8)
+  const pool = ((data ?? []) as CatalogProduct[]).filter(isPublicListableProduct)
+  // Ads-readiness ranking (see adsReadinessTier): show image + price products
+  // first in the related rail (best for ad conversions); "price on request"
+  // items remain eligible, just lower. No pins here — related has no exact match.
+  return rankForAds(pool, new Set()).slice(0, limit)
 }
 
 export async function getPublishedProductBySlug(
@@ -765,13 +799,20 @@ export async function searchPublishedCatalogProducts(
 
   // ── (d) Merge: SKU first, then category matches, then text; dedup by id ──────
   const seen = new Set<string>()
-  const products: CatalogProduct[] = []
+  const pool: CatalogProduct[] = []
   for (const p of [...skuProducts, ...catProducts, ...textProducts]) {
     if (seen.has(p.id) || !isPublicListableProduct(p)) continue
     seen.add(p.id)
-    products.push(p)
-    if (products.length >= CATALOG_PAGE_SIZE) break
+    pool.push(p)
   }
+  // Ads-readiness ranking (see adsReadinessTier): for paid traffic, purchasable
+  // products (image + price, then price) rank before "price on request" ones,
+  // while exact-SKU matches stay pinned on top so a precise code like N-270997 is
+  // never demoted. Re-orders ONLY the already-fetched, page-bounded pool
+  // (≤ 3× page size) — pagination stays server-side via the range() calls above,
+  // and "price on request" products are kept, not hidden.
+  const pinnedIds = new Set(skuProducts.map((p) => p.id))
+  const products = rankForAds(pool, pinnedIds).slice(0, CATALOG_PAGE_SIZE)
   // total is unknown without a count; report the page length so callers that
   // only need "is there a full page → maybe a next page" keep working.
   return { products, total: products.length }
@@ -795,7 +836,7 @@ export async function suggestCatalogProducts(q: string, limit = 8): Promise<Cata
   if (!client || term.length < 2) return []
   const tokens = searchTokens(term)
   if (tokens.length === 0) return []
-  const SUGGEST_COLS = 'slug, category_slug, name_ua, name, main_image_url, images, price_uah, price_prefix, unit_label, is_price_suspicious, supplier_sku'
+  const SUGGEST_COLS = 'id, slug, category_slug, name_ua, name, main_image_url, images, price_uah, price_prefix, unit_label, is_price_suspicious, supplier_sku'
   const over = Math.min(Math.max(limit * 3, limit), 30)
 
   // ── Proven text/SKU suggest — RAW tokens, UNCHANGED behaviour ────────────────
@@ -839,15 +880,20 @@ export async function suggestCatalogProducts(q: string, limit = 8): Promise<Cata
     skuRows = (await findProductsBySku(client, term, over)) as unknown as CatalogProduct[]
   }
 
-  // Merge SKU + category first, dedup by slug, keep only listable, slice to limit.
+  // Merge SKU + category first, dedup by slug, keep only listable.
   const seen = new Set<string>()
-  const rows: CatalogProduct[] = []
+  const pool: CatalogProduct[] = []
   for (const p of [...skuRows, ...catRows, ...textRows]) {
     if (seen.has(p.slug) || !isPublicListableProduct(p)) continue
     seen.add(p.slug)
-    rows.push(p)
-    if (rows.length >= limit) break
+    pool.push(p)
   }
+  // Ads-readiness ranking (see adsReadinessTier): products with image + price
+  // surface first in the typeahead for paid traffic; exact-SKU matches stay
+  // pinned on top; "price on request" items remain, just lower. Pool is already
+  // bounded (≤ 3× over ≈ 90 rows) so this never loads the full catalog.
+  const pinnedIds = new Set(skuRows.map((p) => p.id))
+  const rows = rankForAds(pool, pinnedIds).slice(0, limit)
   return rows.map((p) => ({
     slug: p.slug,
     categorySlug: p.category_slug ?? null,
