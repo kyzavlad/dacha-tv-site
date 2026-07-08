@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { verifyCronAuth, cronUnauthorized } from '../../cron/_auth'
 import { getAdminClient } from '@/lib/supabase/admin'
 import { applyAiSeoBatch, type AiSeoItem } from '@/lib/catalog/seo-ai'
+import { summarizeApply } from '@/lib/catalog/seo-batch-report'
 
 // ─── Apply validated AI SEO results (WRITE, guarded) ──────────────────────────
 // Accepts a JSON batch of AI-generated SEO from n8n and writes ONLY allowed SEO
@@ -76,7 +77,10 @@ export async function POST(req: Request) {
       completed_at: new Date().toISOString(),
     }).eq('id', log?.id)
 
-    return Response.json(result, { status: 200 })
+    // Consistent, locale-agnostic summary for the unified notification.
+    const summary = summarizeApply(result)
+    console.info(`[seo-uk-apply] processed=${summary.processed} applied=${summary.applied} skipped=${summary.skipped} failed=${summary.failed}${summary.topReasons.length ? ` reasons=${summary.topReasons.join(' | ')}` : ''}`)
+    return Response.json({ ...result, locale: 'uk', summary }, { status: 200 })
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     await client.from('supplier_sync_log').update({
