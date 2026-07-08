@@ -17,7 +17,9 @@ export async function GET(req: Request) {
   const limit = Number(new URL(req.url).searchParams.get('limit') ?? 100) || 100
   try {
     const r = await getRuProductAiCandidates(limit)
-    return Response.json({ ok: r.ok, locale: 'ru', count: r.count, limit: r.limit, message: r.message, targets: RU_PRODUCT_TARGETS, candidates: r.candidates }, { status: r.ok ? 200 : 500 })
+    // Log throughput diagnostics so a low-yield run explains itself in the logs.
+    console.info(`[seo-ru-candidates] limit=${r.limit} count=${r.count} fresh=${r.diagnostics.fresh_found} partial=${r.diagnostics.partial_found} usedPartial=${r.diagnostics.used_partial} scanned=${r.diagnostics.scanned} pages=${r.diagnostics.pages} reachedEnd=${r.diagnostics.reached_end} scanCapped=${r.diagnostics.scan_capped} — ${r.message}`)
+    return Response.json({ ok: r.ok, locale: 'ru', count: r.count, limit: r.limit, message: r.message, diagnostics: r.diagnostics, targets: RU_PRODUCT_TARGETS, candidates: r.candidates }, { status: r.ok ? 200 : 500 })
   } catch (e) {
     return Response.json({ ok: false, message: e instanceof Error ? e.message : String(e) }, { status: 200 })
   }

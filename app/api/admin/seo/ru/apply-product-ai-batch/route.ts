@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { verifyCronAuth, cronUnauthorized } from '../../../cron/_auth'
 import { getAdminClient } from '@/lib/supabase/admin'
 import { applyRuProductAiBatch, type AiRuProductItem } from '@/lib/catalog/seo-ai-ru'
+import { summarizeApply } from '@/lib/catalog/seo-batch-report'
 
 // ─── Apply validated RU product SEO (WRITE — translation table only) ──────────
 // Writes ONLY to catalog_product_translations (locale='ru'); Ukrainian columns
@@ -43,7 +44,9 @@ export async function POST(req: Request) {
       error_details: { locale: 'ru', dry_run: dryRun, updated: r.updated, skipped: r.skipped, invalid: r.invalid, errors: r.errors, error_groups: r.errorGroups, message: r.message, duration_ms: Date.now() - startedAt },
       completed_at: new Date().toISOString(),
     }).eq('id', log?.id)
-    return Response.json(r, { status: 200 })
+    const summary = summarizeApply(r)
+    console.info(`[seo-ru-apply] processed=${summary.processed} applied=${summary.applied} skipped=${summary.skipped} failed=${summary.failed}${summary.topReasons.length ? ` reasons=${summary.topReasons.join(' | ')}` : ''}`)
+    return Response.json({ ...r, summary }, { status: 200 })
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     await client.from('supplier_sync_log').update({ status: 'failed', error_details: { locale: 'ru', message: msg, dry_run: dryRun }, completed_at: new Date().toISOString() }).eq('id', log?.id)
