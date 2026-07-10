@@ -58,9 +58,9 @@ const LAUNCH_SITE_SETTINGS = {
   telegram_url: null,
   youtube_url: 'https://www.youtube.com/@dacha_tv',
   featured_youtube_video_url: 'https://www.youtube.com/watch?v=Qwmi6Igjp4I',
-  instagram_url: 'https://instagram.com/dachatv.store',
-  facebook_url: 'https://facebook.com/kyzmenko.sergej',
-  tiktok_url: 'https://tiktok.com/@vladkuzmenkosxy',
+  instagram_url: 'https://www.instagram.com/dachatv.store',
+  facebook_url: 'https://www.facebook.com/profile.php?id=100093442074407',
+  tiktok_url: 'https://www.tiktok.com/@dachatv',
   hero_tagline: 'Дача TV — товари, продукти й послуги для дому, саду та господарства',
   hero_subtext: 'Мед і продукти пасіки, натуральні продукти, квіти, лаванда, металопрофіль та товари для господарства — з перевірених джерел і зручним замовленням онлайн.',
 }

@@ -12,6 +12,12 @@ import {
   getVisibleReviews,
   getSiteSettings,
 } from '@/lib/supabase/queries'
+import {
+  LAUNCH_YOUTUBE_URL,
+  LAUNCH_FACEBOOK_URL,
+  LAUNCH_INSTAGRAM_URL,
+  LAUNCH_TIKTOK_URL,
+} from '@/lib/launch-defaults'
 export const metadata: Metadata = {
   title: { absolute: 'Дача TV: товари, продукти й послуги' },
   description:
@@ -47,11 +53,14 @@ export default async function HomePage() {
       addressRegion: 'Харківська область',
       addressCountry: 'UA',
     },
+    // Structured-data sameAs mirrors the footer/social links. Fall back to the
+    // official brand profiles so the JSON-LD always advertises the correct
+    // accounts even if the admin-managed site_settings row is empty/partial.
     sameAs: [
-      siteSettings?.youtube_url,
-      siteSettings?.facebook_url,
-      siteSettings?.instagram_url,
-      siteSettings?.tiktok_url,
+      siteSettings?.youtube_url || LAUNCH_YOUTUBE_URL,
+      siteSettings?.facebook_url || LAUNCH_FACEBOOK_URL,
+      siteSettings?.instagram_url || LAUNCH_INSTAGRAM_URL,
+      siteSettings?.tiktok_url || LAUNCH_TIKTOK_URL,
     ].filter(Boolean),
   }
 

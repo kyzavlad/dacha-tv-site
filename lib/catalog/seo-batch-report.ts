@@ -63,8 +63,51 @@ export interface ProductCoverage {
   backlog: number
 }
 
-async function count(build: () => PromiseLike<{ count: number | null; error: unknown }>): Promise<number> {
-  try { const { count } = await build(); return count ?? 0 } catch { return 0 }
+type CountMode = 'exact' | 'planned'
+
+// Resilient count. An EXACT count on the ~105k catalog_products table can exceed
+// the statement/gateway timeout and come back as `count: null` — the old helper
+// turned that into a silent 0, which is exactly why the report showed total=0
+// (and all uk fields=0) while the small translations table still counted fine.
+// We now try exact first, fall back to the planner estimate (fast, never scans),
+// and only return 0 when BOTH are unavailable — logging so it is diagnosable.
+async function countResilient(
+  make: (mode: CountMode) => PromiseLike<{ count: number | null; error: unknown }>,
+  label: string,
+): Promise<number> {
+  try {
+    const { count, error } = await make('exact')
+    if (!error && count != null) return count
+  } catch { /* fall through to estimate */ }
+  try {
+    const { count } = await make('planned')
+    if (count != null) return count
+  } catch { /* fall through */ }
+  console.warn(`[seo-batch-report] count unavailable for ${label} (exact + planned both failed)`)
+  return 0
+}
+
+// Defensive assembly: `total` can never be lower than any populated-field count
+// or the complete count (a field cannot be present on more rows than exist). If
+// the exact total failed while field counts have data, floor total to that max
+// so the endpoint never returns impossible data like total=0 with metaTitle>0.
+function assembleCoverage(
+  c: { total: number; metaTitle: number; metaDescription: number; longDescription: number; complete: number },
+  locale: string,
+): ProductCoverage {
+  const floor = Math.max(c.metaTitle, c.metaDescription, c.longDescription, c.complete)
+  const total = Math.max(c.total, floor)
+  if (total !== c.total) {
+    console.warn(`[seo-batch-report] ${locale} total floored ${c.total} → ${total} (field counts exceeded the reported total — exact total likely timed out)`)
+  }
+  return {
+    total,
+    metaTitle: c.metaTitle,
+    metaDescription: c.metaDescription,
+    longDescription: c.longDescription,
+    complete: c.complete,
+    backlog: Math.max(0, total - c.complete),
+  }
 }
 
 // Current product SEO coverage for a locale.
@@ -72,39 +115,40 @@ async function count(build: () => PromiseLike<{ count: number | null; error: unk
 //        description_ua).
 //   ru → the RU row in catalog_product_translations.
 // "complete" = all three text fields present, which is exactly what the AI
-// backlog counts, so Backlog AI = total − complete.
+// backlog counts, so Backlog AI = total − complete. `total` is the published
+// catalog_products count for BOTH locales, so uk and ru report a consistent base.
 export async function productCoverage(locale: string): Promise<ProductCoverage> {
   const client = getAdminClient()
   const isUk = locale === 'uk' || locale === 'ua'
+  // Published-product total — the same base for every locale.
+  const pub = (mode: CountMode) => client.from('catalog_products').select('id', { count: mode, head: true }).eq('status', 'published')
 
   if (isUk) {
-    const P = () => client.from('catalog_products').select('id', { count: 'exact', head: true }).eq('status', 'published')
-    const [total, metaTitle, metaDescription, longDescription] = await Promise.all([
-      count(P),
-      count(() => P().not('meta_title', 'is', null).neq('meta_title', '')),
-      count(() => P().not('meta_description', 'is', null).neq('meta_description', '')),
-      count(() => P().not('description_ua', 'is', null).neq('description_ua', '')),
-    ])
-    const complete = await count(() =>
-      P().not('meta_title', 'is', null).neq('meta_title', '')
+    const [total, metaTitle, metaDescription, longDescription, complete] = await Promise.all([
+      countResilient(pub, 'uk.total'),
+      countResilient((m) => pub(m).not('meta_title', 'is', null).neq('meta_title', ''), 'uk.metaTitle'),
+      countResilient((m) => pub(m).not('meta_description', 'is', null).neq('meta_description', ''), 'uk.metaDescription'),
+      countResilient((m) => pub(m).not('description_ua', 'is', null).neq('description_ua', ''), 'uk.longDescription'),
+      countResilient((m) => pub(m)
+        .not('meta_title', 'is', null).neq('meta_title', '')
         .not('meta_description', 'is', null).neq('meta_description', '')
-        .not('description_ua', 'is', null).neq('description_ua', ''))
-    return { total, metaTitle, metaDescription, longDescription, complete, backlog: Math.max(0, total - complete) }
+        .not('description_ua', 'is', null).neq('description_ua', ''), 'uk.complete'),
+    ])
+    return assembleCoverage({ total, metaTitle, metaDescription, longDescription, complete }, 'uk')
   }
 
-  const P = () => client.from('catalog_products').select('id', { count: 'exact', head: true }).eq('status', 'published')
-  const T = () => client.from('catalog_product_translations').select('id', { count: 'exact', head: true }).eq('locale', locale)
-  const [total, metaTitle, metaDescription, longDescription] = await Promise.all([
-    count(P),
-    count(() => T().not('meta_title', 'is', null).neq('meta_title', '')),
-    count(() => T().not('meta_description', 'is', null).neq('meta_description', '')),
-    count(() => T().not('description', 'is', null).neq('description', '')),
-  ])
-  const complete = await count(() =>
-    T().not('meta_title', 'is', null).neq('meta_title', '')
+  const T = (mode: CountMode) => client.from('catalog_product_translations').select('id', { count: mode, head: true }).eq('locale', locale)
+  const [total, metaTitle, metaDescription, longDescription, complete] = await Promise.all([
+    countResilient(pub, `${locale}.total`),
+    countResilient((m) => T(m).not('meta_title', 'is', null).neq('meta_title', ''), `${locale}.metaTitle`),
+    countResilient((m) => T(m).not('meta_description', 'is', null).neq('meta_description', ''), `${locale}.metaDescription`),
+    countResilient((m) => T(m).not('description', 'is', null).neq('description', ''), `${locale}.longDescription`),
+    countResilient((m) => T(m)
+      .not('meta_title', 'is', null).neq('meta_title', '')
       .not('meta_description', 'is', null).neq('meta_description', '')
-      .not('description', 'is', null).neq('description', ''))
-  return { total, metaTitle, metaDescription, longDescription, complete, backlog: Math.max(0, total - complete) }
+      .not('description', 'is', null).neq('description', ''), `${locale}.complete`),
+  ])
+  return assembleCoverage({ total, metaTitle, metaDescription, longDescription, complete }, locale)
 }
 
 // ── Notification formatting ───────────────────────────────────────────────────
