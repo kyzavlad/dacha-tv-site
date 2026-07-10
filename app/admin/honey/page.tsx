@@ -15,7 +15,12 @@ const INPUT = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:
 const LABEL = 'block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5'
 const VARIETIES = ['Акація', 'Липа', 'Сонях', "Різнотрав'я", 'Сади', 'Ліс']
 
-export default async function AdminHoneyPage() {
+export default async function AdminHoneyPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ saveError?: string; saveWarning?: string }>
+}) {
+  const { saveError, saveWarning } = (await searchParams) ?? {}
   let products: HoneyProduct[] = []
   try {
     const client = getAdminClient()
@@ -31,6 +36,19 @@ export default async function AdminHoneyPage() {
           <p className="text-sm text-gray-500 mt-0.5">{products.length} позицій</p>
         )}
       </div>
+
+      {saveError && (
+        <div className="mb-6 bg-red-50 border border-red-200 rounded-xl p-4 max-w-2xl">
+          <p className="font-semibold text-red-700 text-sm">Не вдалося зберегти</p>
+          <p className="text-sm text-red-600 mt-1 font-mono break-all">{saveError}</p>
+        </div>
+      )}
+      {saveWarning && (
+        <div className="mb-6 bg-amber-50 border border-amber-200 rounded-xl p-4 max-w-2xl">
+          <p className="font-semibold text-amber-800 text-sm">Збережено частково</p>
+          <p className="text-sm text-amber-700 mt-1">{saveWarning}</p>
+        </div>
+      )}
 
       {products.length === 0 && (
         <div className="bg-white border border-gray-100 rounded-xl shadow-sm text-center py-12 px-6 mb-8">

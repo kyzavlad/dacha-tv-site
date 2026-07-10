@@ -25,20 +25,52 @@ async function saveHoneyMediaSafe(id: string, items: ReturnType<typeof parseMedi
   }
 }
 
-export async function createHoneyProduct(formData: FormData) {
-  const client = getAdminClient()
-  const mediaItems = parseMediaFromForm(formData)
-  const compat = mediaToBackwardCompat(mediaItems, 'youtube_video_link')
+type Row = Record<string, unknown>
+
+// A save that writes columns beyond the minimal canonical honey_products schema
+// (status, rich content fields, gallery/video/multi-youtube) fails on a DB that
+// was provisioned from the rebuild migration, because those columns do not exist
+// there. Detect that specific error so we can gracefully fall back to the core
+// columns instead of crashing the admin.
+function isMissingColumnError(error: { code?: string | null; message?: string | null } | null): boolean {
+  if (!error) return false
+  const code = error.code ?? ''
+  const msg = (error.message ?? '').toLowerCase()
+  return (
+    code === 'PGRST204' || // PostgREST: column not found in schema cache
+    code === '42703' ||    // Postgres: undefined_column
+    msg.includes('does not exist') ||
+    msg.includes('could not find')
+  )
+}
+
+// Build the two payload halves. `core` columns exist in EVERY honey_products
+// schema version (incl. the minimal rebuild); `extended` may be absent.
+function splitHoneyPayload(formData: FormData) {
+  const compat = mediaToBackwardCompat(parseMediaFromForm(formData), 'youtube_video_link')
+  const { image_url, image_alt, youtube_video_link, gallery_images, video_url, youtube_video_urls } = compat as Row
   const packagingRaw = formData.get('packaging') as string
   const packaging = packagingRaw ? packagingRaw.split(',').map((s) => s.trim()).filter(Boolean) : null
-  const name = formData.get('name') as string
+  const priceInt = (key: string) => {
+    const raw = (formData.get(key) as string | null)?.trim()
+    if (!raw) return null
+    const n = parseInt(raw, 10)
+    return Number.isFinite(n) ? n : null
+  }
 
-  const { data, error } = await client.from('honey_products').insert({
-    name,
-    slug: autoSlug(name),
+  const core: Row = {
+    name: formData.get('name') as string,
     variety: (formData.get('variety') as string) || "Різнотрав'я",
-    short_description: (formData.get('short_description') as string) || null,
     description: (formData.get('description') as string) || null,
+    packaging,
+    price_plastic_uah: priceInt('price_plastic_uah'),
+    price_glass_uah: priceInt('price_glass_uah'),
+    is_featured: formData.get('is_featured') === 'on',
+    image_url, image_alt, youtube_video_link,
+  }
+  const extended: Row = {
+    status: (formData.get('status') as string) || 'available',
+    short_description: (formData.get('short_description') as string) || null,
     full_description: (formData.get('full_description') as string) || null,
     aroma_notes: (formData.get('aroma_notes') as string) || null,
     taste_notes: (formData.get('taste_notes') as string) || null,
@@ -46,75 +78,75 @@ export async function createHoneyProduct(formData: FormData) {
     crystallization_note: (formData.get('crystallization_note') as string) || null,
     recommended_use: (formData.get('recommended_use') as string) || null,
     packaging_note: (formData.get('packaging_note') as string) || null,
-    price_plastic_uah: formData.get('price_plastic_uah') ? parseInt(formData.get('price_plastic_uah') as string) : null,
-    price_glass_uah: formData.get('price_glass_uah') ? parseInt(formData.get('price_glass_uah') as string) : null,
-    packaging,
-    is_featured: formData.get('is_featured') === 'on',
-    status: (formData.get('status') as string) || 'available',
-    ...compat,
-  }).select('id').single()
+    gallery_images, video_url, youtube_video_urls,
+  }
+  return { core, extended }
+}
 
-  // Surface DB failures instead of silently redirecting as if the save worked —
-  // that silent no-op is exactly what read as "honey can't be created/edited".
-  if (error || !data) {
-    console.error(`[honey] create failed: ${error?.message ?? 'no row returned'}`)
-    throw new Error(`Не вдалося створити мед: ${error?.message ?? 'невідома помилка'}`)
+const SKIPPED_WARNING =
+  'Ціну та основні поля збережено. Додаткові поля (статус, детальні описи, галерея) поки НЕ збережено — застосуйте міграцію 20260702_honey_admin_columns.sql, щоб увімкнути їх.'
+
+export async function createHoneyProduct(formData: FormData) {
+  const client = getAdminClient()
+  const mediaItems = parseMediaFromForm(formData)
+  const name = formData.get('name') as string
+  const { core, extended } = splitHoneyPayload(formData)
+  const coreInsert: Row = { ...core, name, slug: autoSlug(name) }
+
+  // Try the full insert; fall back to core-only if extended columns are missing.
+  let res = await client.from('honey_products').insert({ ...coreInsert, ...extended }).select('id').single()
+  let skippedExtended = false
+  if (res.error && isMissingColumnError(res.error)) {
+    skippedExtended = true
+    res = await client.from('honey_products').insert(coreInsert).select('id').single()
   }
 
-  await saveHoneyMediaSafe(data.id, mediaItems, client)
+  if (res.error || !res.data) {
+    console.error(`[honey] create failed: ${res.error?.message ?? 'no row returned'}`)
+    redirect(`/admin/honey?saveError=${encodeURIComponent(res.error?.message ?? 'Не вдалося створити продукт')}`)
+  }
 
+  await saveHoneyMediaSafe(res.data.id as string, mediaItems, client)
   revalidatePath('/honey', 'layout')
   revalidatePath('/')
-  redirect('/admin/honey')
+  redirect(skippedExtended ? `/admin/honey?saveWarning=${encodeURIComponent(SKIPPED_WARNING)}` : '/admin/honey')
 }
 
 export async function updateHoneyProduct(id: string, formData: FormData) {
   const client = getAdminClient()
   const mediaItems = parseMediaFromForm(formData)
-  const compat = mediaToBackwardCompat(mediaItems, 'youtube_video_link')
-  const packagingRaw = formData.get('packaging') as string
-  const packaging = packagingRaw ? packagingRaw.split(',').map((s) => s.trim()).filter(Boolean) : null
-  const name = formData.get('name') as string
+  const { core, extended } = splitHoneyPayload(formData)
+  const coreUpdate: Row = { ...core, updated_at: new Date().toISOString() }
 
-  // .select() so we can tell an update that matched a row from one that silently
-  // matched nothing (bad id) or errored (e.g. a missing column in a stale DB).
-  const { data, error } = await client.from('honey_products').update({
-    name,
-    variety: (formData.get('variety') as string) || "Різнотрав'я",
-    short_description: (formData.get('short_description') as string) || null,
-    description: (formData.get('description') as string) || null,
-    full_description: (formData.get('full_description') as string) || null,
-    aroma_notes: (formData.get('aroma_notes') as string) || null,
-    taste_notes: (formData.get('taste_notes') as string) || null,
-    color_note: (formData.get('color_note') as string) || null,
-    crystallization_note: (formData.get('crystallization_note') as string) || null,
-    recommended_use: (formData.get('recommended_use') as string) || null,
-    packaging_note: (formData.get('packaging_note') as string) || null,
-    price_plastic_uah: formData.get('price_plastic_uah') ? parseInt(formData.get('price_plastic_uah') as string) : null,
-    price_glass_uah: formData.get('price_glass_uah') ? parseInt(formData.get('price_glass_uah') as string) : null,
-    packaging,
-    is_featured: formData.get('is_featured') === 'on',
-    status: (formData.get('status') as string) || 'available',
-    updated_at: new Date().toISOString(),
-    ...compat,
-  }).eq('id', id).select('id')
-
-  if (error) {
-    console.error(`[honey] update failed for ${id}: ${error.message}`)
-    throw new Error(`Не вдалося зберегти зміни: ${error.message}`)
+  // Try the full update; on a missing-column error, retry with ONLY the core
+  // columns so essential edits (price, name, description, image) always persist.
+  // .select('id') lets us tell a matched update from one that hit no row.
+  let res = await client.from('honey_products').update({ ...coreUpdate, ...extended }).eq('id', id).select('id')
+  let skippedExtended = false
+  if (res.error && isMissingColumnError(res.error)) {
+    skippedExtended = true
+    console.warn(`[honey] update ${id}: extended columns missing, saving core only — ${res.error.message}`)
+    res = await client.from('honey_products').update(coreUpdate).eq('id', id).select('id')
   }
-  if (!data || data.length === 0) {
+
+  if (res.error) {
+    // Surface a clear admin error instead of crashing the page with a generic
+    // production error. Existing media is left untouched (we never reached the
+    // media save below).
+    console.error(`[honey] update failed for ${id}: ${res.error.message}`)
+    redirect(`/admin/honey/${id}?saveError=${encodeURIComponent(res.error.message)}`)
+  }
+  if (!res.data || res.data.length === 0) {
     console.error(`[honey] update matched no row for id=${id}`)
-    throw new Error('Продукт не знайдено — зміни не збережено.')
+    redirect(`/admin/honey/${id}?saveError=${encodeURIComponent('Продукт не знайдено — зміни не збережено.')}`)
   }
 
   // Only touch media after the core row saved, so a failed update never wipes
   // the product's existing media.
   await saveHoneyMediaSafe(id, mediaItems, client)
-
   revalidatePath('/honey', 'layout')
   revalidatePath('/')
-  redirect('/admin/honey')
+  redirect(skippedExtended ? `/admin/honey/${id}?saveWarning=${encodeURIComponent(SKIPPED_WARNING)}` : '/admin/honey')
 }
 
 export async function deleteHoneyProduct(id: string) {
@@ -123,7 +155,7 @@ export async function deleteHoneyProduct(id: string) {
   const { error } = await client.from('honey_products').delete().eq('id', id)
   if (error) {
     console.error(`[honey] delete failed for ${id}: ${error.message}`)
-    throw new Error(`Не вдалося видалити продукт: ${error.message}`)
+    redirect(`/admin/honey/${id}?saveError=${encodeURIComponent(`Не вдалося видалити продукт: ${error.message}`)}`)
   }
   revalidatePath('/honey', 'layout')
   revalidatePath('/')

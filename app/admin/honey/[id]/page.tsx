@@ -9,6 +9,7 @@ import { updateHoneyProduct, deleteHoneyProduct } from '../actions'
 
 interface Props {
   params: Promise<{ id: string }>
+  searchParams?: Promise<{ saveError?: string; saveWarning?: string }>
 }
 
 export const metadata: Metadata = {
@@ -20,8 +21,9 @@ const VARIETIES = ['Акація', 'Липа', 'Сонях', "Різнотрав
 const INPUT = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400 focus:border-transparent'
 const LABEL = 'block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5'
 
-export default async function AdminHoneyEditPage({ params }: Props) {
+export default async function AdminHoneyEditPage({ params, searchParams }: Props) {
   const { id } = await params
+  const { saveError, saveWarning } = (await searchParams) ?? {}
 
   let product: Record<string, unknown> | null = null
   let loadError: string | null = null
@@ -64,6 +66,19 @@ export default async function AdminHoneyEditPage({ params }: Props) {
         <span className="text-gray-300">/</span>
         <span className="text-sm text-gray-700 font-medium truncate">{String(p.name)}</span>
       </div>
+
+      {saveError && (
+        <div className="mb-4 bg-red-50 border border-red-200 rounded-xl p-4">
+          <p className="font-semibold text-red-700 text-sm">Не вдалося зберегти</p>
+          <p className="text-sm text-red-600 mt-1 font-mono break-all">{saveError}</p>
+        </div>
+      )}
+      {saveWarning && (
+        <div className="mb-4 bg-amber-50 border border-amber-200 rounded-xl p-4">
+          <p className="font-semibold text-amber-800 text-sm">Збережено частково</p>
+          <p className="text-sm text-amber-700 mt-1">{saveWarning}</p>
+        </div>
+      )}
 
       <form action={updateWithId} className="bg-white border border-gray-100 rounded-xl shadow-sm p-6 space-y-5">
         <h1 className="text-base font-semibold text-gray-900">Редагувати мед</h1>

@@ -22,13 +22,16 @@ const STATUS_FILTERS = [
 // "Бронювання" as a main type tab here. Legacy booking-classified inquiry rows
 // (if any old ones exist) are hidden from the default view but remain reachable
 // via the direct ?type=booking URL, where they are clearly labelled as legacy.
+// Only two real tabs. There is no "Всі типи": the page defaults to orders (see
+// safeType below), and legacy bookings remain reachable via the direct
+// ?type=booking URL without being a chip here.
 const TYPE_FILTERS = [
-  { value: 'all', label: 'Всі типи' },
   { value: 'order', label: '🛒 Замовлення' },
   { value: 'inquiry', label: '📋 Заявки' },
 ]
 
 const VALID_STATUSES = ['new', 'contacted', 'completed', 'cancelled']
+// booking stays valid (legacy direct-URL view) but is not a chip.
 const VALID_TYPES = ['booking', 'order', 'inquiry']
 
 interface AdminPageProps {
@@ -67,9 +70,11 @@ function buildAdminUrl(status: string, type: string): string {
 }
 
 export default async function AdminPage({ searchParams }: AdminPageProps) {
-  const { status = 'all', type = 'all' } = await searchParams
+  const { status = 'all', type } = await searchParams
   const safeStatus = VALID_STATUSES.includes(status) ? status : 'all'
-  const safeType = VALID_TYPES.includes(type) ? type : 'all'
+  // No "Всі типи": a missing/invalid type defaults to "order" so /admin/orders
+  // behaves like /admin/orders?type=order and shows real orders first.
+  const safeType = type && VALID_TYPES.includes(type) ? type : 'order'
 
   let inquiries: Inquiry[] = []
   let error: string | null = null
@@ -187,9 +192,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
       {/* Type filter */}
       <div className="flex flex-wrap gap-2 mb-3">
         {TYPE_FILTERS.map(({ value, label }) => {
-          const count = value === 'all'
-            ? typeCounts.order + typeCounts.inquiry
-            : typeCounts[value as keyof typeof typeCounts]
+          const count = typeCounts[value as keyof typeof typeCounts]
           return (
             <a
               key={value}
