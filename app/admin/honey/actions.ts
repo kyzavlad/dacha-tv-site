@@ -15,6 +15,16 @@ function autoSlug(name: string): string {
   return slug || `honey-${Date.now()}`
 }
 
+// Media is secondary to the core product row: a media failure must never abort
+// the whole save (and must never run when the row write itself failed).
+async function saveHoneyMediaSafe(id: string, items: ReturnType<typeof parseMediaFromForm>, client: ReturnType<typeof getAdminClient>) {
+  try {
+    await saveProductMedia('honey', id, items, client)
+  } catch (e) {
+    console.error(`[honey] media save failed for ${id}: ${e instanceof Error ? e.message : String(e)}`)
+  }
+}
+
 export async function createHoneyProduct(formData: FormData) {
   const client = getAdminClient()
   const mediaItems = parseMediaFromForm(formData)
@@ -44,9 +54,14 @@ export async function createHoneyProduct(formData: FormData) {
     ...compat,
   }).select('id').single()
 
-  if (!error && data) {
-    await saveProductMedia('honey', data.id, mediaItems, client)
+  // Surface DB failures instead of silently redirecting as if the save worked —
+  // that silent no-op is exactly what read as "honey can't be created/edited".
+  if (error || !data) {
+    console.error(`[honey] create failed: ${error?.message ?? 'no row returned'}`)
+    throw new Error(`Не вдалося створити мед: ${error?.message ?? 'невідома помилка'}`)
   }
+
+  await saveHoneyMediaSafe(data.id, mediaItems, client)
 
   revalidatePath('/honey', 'layout')
   revalidatePath('/')
@@ -61,7 +76,9 @@ export async function updateHoneyProduct(id: string, formData: FormData) {
   const packaging = packagingRaw ? packagingRaw.split(',').map((s) => s.trim()).filter(Boolean) : null
   const name = formData.get('name') as string
 
-  await client.from('honey_products').update({
+  // .select() so we can tell an update that matched a row from one that silently
+  // matched nothing (bad id) or errored (e.g. a missing column in a stale DB).
+  const { data, error } = await client.from('honey_products').update({
     name,
     variety: (formData.get('variety') as string) || "Різнотрав'я",
     short_description: (formData.get('short_description') as string) || null,
@@ -80,9 +97,20 @@ export async function updateHoneyProduct(id: string, formData: FormData) {
     status: (formData.get('status') as string) || 'available',
     updated_at: new Date().toISOString(),
     ...compat,
-  }).eq('id', id)
+  }).eq('id', id).select('id')
 
-  await saveProductMedia('honey', id, mediaItems, client)
+  if (error) {
+    console.error(`[honey] update failed for ${id}: ${error.message}`)
+    throw new Error(`Не вдалося зберегти зміни: ${error.message}`)
+  }
+  if (!data || data.length === 0) {
+    console.error(`[honey] update matched no row for id=${id}`)
+    throw new Error('Продукт не знайдено — зміни не збережено.')
+  }
+
+  // Only touch media after the core row saved, so a failed update never wipes
+  // the product's existing media.
+  await saveHoneyMediaSafe(id, mediaItems, client)
 
   revalidatePath('/honey', 'layout')
   revalidatePath('/')
@@ -91,8 +119,12 @@ export async function updateHoneyProduct(id: string, formData: FormData) {
 
 export async function deleteHoneyProduct(id: string) {
   const client = getAdminClient()
-  await saveProductMedia('honey', id, [], client)
-  await client.from('honey_products').delete().eq('id', id)
+  await saveHoneyMediaSafe(id, [], client)
+  const { error } = await client.from('honey_products').delete().eq('id', id)
+  if (error) {
+    console.error(`[honey] delete failed for ${id}: ${error.message}`)
+    throw new Error(`Не вдалося видалити продукт: ${error.message}`)
+  }
   revalidatePath('/honey', 'layout')
   revalidatePath('/')
   redirect('/admin/honey')

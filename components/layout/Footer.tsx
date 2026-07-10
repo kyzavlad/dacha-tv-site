@@ -200,7 +200,7 @@ export function Footer({ siteSettings }: FooterProps) {
         <div className="border-t border-gray-100 pt-8 space-y-2">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
             <p className="text-xs text-gray-400">
-              © {currentYear} Дача TV. ФОП Кузьменко Владислав Сергійович · Коротич, Харківська обл.
+              © {currentYear} Дача TV. ФОП Кузьменко Владислав Сергійович · Україна
             </p>
             <div className="flex items-center gap-4">
               <Link href="/delivery" className="text-xs text-gray-400 hover:text-bark transition-colors">
@@ -214,9 +214,6 @@ export function Footer({ siteSettings }: FooterProps) {
           <div className="pt-1">
             <LanguageSwitcher />
           </div>
-          <p className="text-xs text-gray-300">
-            Оплата після підтвердження · IBAN UA383220010000026002350058954 · Претензії за контактним номером
-          </p>
         </div>
       </div>
     </footer>

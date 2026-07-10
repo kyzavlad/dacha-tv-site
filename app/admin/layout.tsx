@@ -1,13 +1,12 @@
 import Link from 'next/link'
 
 // Operational tabs first. Бронювання = lavender/service bookings;
-// Вхідні = checkout fallback orders + general inquiries (/api/inquiries).
-// The legacy /admin/orders tab is intentionally hidden for now: real checkout
-// fallback orders currently arrive in /admin as inquiries, so the orders page
-// is empty and confusing. The route still exists and direct URLs keep working.
+// Замовлення = real checkout orders (orders table) + any legacy fallback orders
+// and general inquiries, all managed on /admin/orders. The bare /admin route
+// redirects there, so there is no separate empty "Вхідні" tab any more.
 const NAV_LINKS = [
   { href: '/admin/bookings', label: 'Бронювання' },
-  { href: '/admin', label: 'Вхідні' },
+  { href: '/admin/orders', label: 'Замовлення' },
   { href: '/admin/catalog', label: 'Каталог' },
   { href: '/admin/catalog/pipeline', label: 'Пайплайн' },
   { href: '/admin/apiary', label: 'Продукти пасіки' },
