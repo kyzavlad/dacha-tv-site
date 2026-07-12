@@ -25,6 +25,8 @@ interface Props {
 const CAT_STRINGS: Record<Locale, {
   home: string; catalog: string; noProducts: string
   products: (n: number) => string; page: (p: number, t: number) => string
+  found: (n: number) => string; showing: (from: number, to: number, total: number) => string
+  prev: string; next: string; pageOf: (page: number, total: number) => string
   introFallback: (name: string) => string; about: (name: string) => string
   buyableFilter: string
   photoFilter: string
@@ -32,6 +34,9 @@ const CAT_STRINGS: Record<Locale, {
   uk: {
     home: 'Головна', catalog: 'Каталог', noProducts: 'У цій категорії поки немає товарів.',
     products: (n) => `${n} товарів`, page: (p, t) => ` · сторінка ${p} з ${t}`,
+    found: (n) => `Знайдено: ${n.toLocaleString('uk-UA')} товарів`,
+    showing: (from, to, total) => `Показано ${from}–${to} з ${total.toLocaleString('uk-UA')}`,
+    prev: 'Попередня', next: 'Наступна', pageOf: (page, total) => `Сторінка ${page} з ${total}`,
     introFallback: (name) => `${name} — замовляйте з доставкою по Україні. Оплата після підтвердження замовлення.`,
     about: (name) => `Про категорію «${name}»`,
     buyableFilter: 'Тільки з ціною',
@@ -40,6 +45,9 @@ const CAT_STRINGS: Record<Locale, {
   ru: {
     home: 'Главная', catalog: 'Каталог', noProducts: 'В этой категории пока нет товаров.',
     products: (n) => `${n} товаров`, page: (p, t) => ` · страница ${p} из ${t}`,
+    found: (n) => `Найдено: ${n.toLocaleString('ru-RU')} товаров`,
+    showing: (from, to, total) => `Показано ${from}–${to} из ${total.toLocaleString('ru-RU')}`,
+    prev: 'Предыдущая', next: 'Следующая', pageOf: (page, total) => `Страница ${page} из ${total}`,
     introFallback: (name) => `${name} — заказывайте с доставкой по Украине. Оплата после подтверждения заказа.`,
     about: (name) => `О категории «${name}»`,
     buyableFilter: 'Только с ценой',
@@ -48,6 +56,9 @@ const CAT_STRINGS: Record<Locale, {
   en: {
     home: 'Home', catalog: 'Catalog', noProducts: 'No products in this category yet.',
     products: (n) => `${n} products`, page: (p, t) => ` · page ${p} of ${t}`,
+    found: (n) => `Found: ${n.toLocaleString('en-US')} products`,
+    showing: (from, to, total) => `Showing ${from}–${to} of ${total.toLocaleString('en-US')}`,
+    prev: 'Previous', next: 'Next', pageOf: (page, total) => `Page ${page} of ${total}`,
     introFallback: (name) => `${name} — order with delivery across Ukraine. Payment after order confirmation.`,
     about: (name) => `About “${name}”`,
     buyableFilter: 'With price only',
@@ -100,6 +111,8 @@ export default async function CategoryPage({ params, searchParams }: Props) {
   const st = CAT_STRINGS[locale]
   const displayName = categoryDisplayName(cat.name_ua)
   const totalPages = Math.ceil(total / CATALOG_PAGE_SIZE)
+  const rangeFrom = (page - 1) * CATALOG_PAGE_SIZE + 1
+  const rangeTo = (page - 1) * CATALOG_PAGE_SIZE + products.length
   // Short intro (description) above the grid; longer SEO body (description_ua)
   // below it. Both are DB-driven and only render when present — never spammy.
   const intro = (cat.description ?? '').trim()
@@ -161,9 +174,17 @@ export default async function CategoryPage({ params, searchParams }: Props) {
           if (!(products.length > 0 || buyable || withImage)) return null
           return (
             <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
-              <div className="flex flex-wrap items-center gap-2">
-                {chip(buyable, filterUrl({ buyable: !buyable, withImage }), st.buyableFilter)}
-                {chip(withImage, filterUrl({ buyable, withImage: !withImage }), st.photoFilter)}
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
+                {total > 0 && (
+                  <div>
+                    <p className="text-sm font-semibold text-bark">{st.found(total)}</p>
+                    <p className="text-xs text-gray-500 mt-0.5">{st.showing(rangeFrom, rangeTo, total)}</p>
+                  </div>
+                )}
+                <div className="flex flex-wrap items-center gap-2">
+                  {chip(buyable, filterUrl({ buyable: !buyable, withImage }), st.buyableFilter)}
+                  {chip(withImage, filterUrl({ buyable, withImage: !withImage }), st.photoFilter)}
+                </div>
               </div>
               {total > CATALOG_PAGE_SIZE / 4 && <CatalogSortSelect value={sort} />}
             </div>
@@ -180,7 +201,13 @@ export default async function CategoryPage({ params, searchParams }: Props) {
                 <CatalogProductCard key={product.id} product={product} categorySlug={slug} locale={locale} />
               ))}
             </div>
-            <Pagination page={page} total={total} baseHref={localizedPath(locale, `/catalog/${slug}`)} params={{ sort: sort === 'featured' ? undefined : sort, buyable: buyable ? '1' : undefined, photo: withImage ? '1' : undefined }} />
+            <Pagination
+              page={page}
+              total={total}
+              baseHref={localizedPath(locale, `/catalog/${slug}`)}
+              params={{ sort: sort === 'featured' ? undefined : sort, buyable: buyable ? '1' : undefined, photo: withImage ? '1' : undefined }}
+              labels={{ prev: st.prev, next: st.next, pageOf: st.pageOf }}
+            />
           </>
         )}
 

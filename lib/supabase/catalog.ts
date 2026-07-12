@@ -821,9 +821,15 @@ export async function searchPublishedCatalogProducts(
   // Each token must appear (AND) in name_ua / name (RU supplier) / supplier_sku /
   // category_slug. This is the exact query that worked before; the category-intent
   // step below is layered on SEPARATELY so it can never break this path.
+  // count:'exact' returns the size of the text-match set in the SAME ranged
+  // request (via the Content-Range header — no extra round-trip). This is the
+  // authoritative "how many products match your search" figure that drives the
+  // result-count + numbered pagination. The merged SKU/category branches below
+  // only re-rank/supplement a page, so a page-full heuristic still governs the
+  // Next link; see the returned `total` note.
   let base = client
     .from('catalog_products')
-    .select('*')
+    .select('*', { count: 'exact' })
     .eq('status', 'published')
     .or(EXCLUDE_NATURAL_OR)
   for (const tok of tokens) {
@@ -834,6 +840,7 @@ export async function searchPublishedCatalogProducts(
   const textRes = await applyCatalogSort(base, sort).range(from, to)
   if (textRes.error) console.warn(`[search] product text query failed for "${term}": ${textRes.error.message}`)
   const textProducts = (textRes.data ?? []) as CatalogProduct[]
+  const textCount = textRes.count ?? null
 
   // ── (b+c) Category intent — resolved + fetched SEPARATELY via a plain .in() ──
   // No category_slug.in(...) is ever injected into the .or() groups above (that
@@ -893,9 +900,13 @@ export async function searchPublishedCatalogProducts(
   const ranked = rankByRelevanceThenAds(entries)
   debugLogRanking('catalog-search', term, ranked)
   const products = ranked.slice(0, CATALOG_PAGE_SIZE).map((e) => e.product)
-  // total is unknown without a count; report the page length so callers that
-  // only need "is there a full page → maybe a next page" keep working.
-  return { products, total: products.length }
+  // Report the text-match count as the result total (the meaningful "products
+  // found" number, driving the count line + numbered pagination). Floor it at the
+  // absolute index through this page so "Показано A–B з X" is never inconsistent;
+  // the caller still shows a Next link whenever the page came back full, covering
+  // the rare case where category-intent matches extend results past textCount.
+  const total = textCount != null ? Math.max(textCount, from + products.length) : products.length
+  return { products, total }
 }
 
 export interface CatalogSuggestion {
