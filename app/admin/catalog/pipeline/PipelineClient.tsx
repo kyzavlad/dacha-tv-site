@@ -2,6 +2,7 @@
 
 import { useState, useTransition, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import {
   syncApiProductsAction,
   runProductSeoAction,
@@ -712,6 +713,58 @@ export function PipelineClient({
         </div>
       </div>
 
+      {/* Quick links — this page is maintenance-only; daily work lives elsewhere. */}
+      <div className="bg-white rounded-xl border border-gray-200 p-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+        <Link href="/admin/catalog" className="font-medium text-gray-600 hover:text-gray-900">← Каталог</Link>
+        <Link href="/admin/catalog/search-insights" className="font-medium text-honey-700 hover:underline">🔍 Пошукові запити</Link>
+        <span className="text-xs text-gray-400 sm:ml-auto">Технічне обслуговування каталогу. Щоденний імпорт працює автоматично за розкладом.</span>
+      </div>
+
+      {/* ════════════════════ MANUAL CATALOG (owner-relevant) ════════════════════ */}
+      <SectionHeader title="Ручний каталог" hint="Мед-шоколад, масло на замовлення, подарункові набори, натуральні продукти, олії, метал. Окремо від постачальника — імпорт постачальника їх не перезаписує." />
+
+      <StepCard
+        title="Заповнити ручний каталог"
+        description="Створює/оновлює ручні категорії та товари. Безпечно повторювати — нічого не дублюється."
+        buttonLabel="▶ Заповнити"
+        accent={blockSeed ? 'border-red-300' : undefined}
+        pending={pManual}
+        disabled={anyPending || blockSeed}
+        onRun={() => run(sManual, seedManualCatalogAction, setRManual)}
+        result={rManual}
+        note={blockSeed ? migHint('Відсутні колонки ручного каталогу (міграції 051–055).') : undefined}
+      />
+
+      {/* ════════════════════ SEO COVERAGE SUMMARY (owner-relevant) ════════════════════ */}
+      <SectionHeader title="SEO — покриття" hint="Скільки категорій і товарів мають SEO. Кнопки генерації — у розширених інструментах." />
+
+      <div className="bg-white rounded-xl border border-gray-200 p-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-2 text-xs">
+          <Stat label="Категорій без SEO" value={(seo?.categoriesMissing ?? 0).toLocaleString('uk-UA')} tone={seo && seo.categoriesMissing > 0 ? 'amber' : 'green'} />
+          <Stat label="Товарів без SEO" value={(seo?.productsMissing ?? 0).toLocaleString('uk-UA')} tone={seo && seo.productsMissing > 0 ? 'amber' : 'green'} />
+          <Stat label="AI згенеровано" value={(seo?.aiGenerated ?? 0).toLocaleString('uk-UA')} tone="green" />
+          <Stat label="Шаблон (базове)" value={(seo?.templateGenerated ?? 0).toLocaleString('uk-UA')} tone="green" />
+          <Stat label="Legacy fallback" value={(seo?.legacyFallback ?? 0).toLocaleString('uk-UA')} />
+          <Stat label="Ручний замок" value={(seo?.manualLocked ?? 0).toLocaleString('uk-UA')} />
+          <Stat label="n8n webhook" value={n8nSeoConfigured ? 'OK' : '—'} tone={n8nSeoConfigured ? 'green' : 'red'} />
+        </div>
+        {!n8nSeoConfigured && (
+          <p className="text-xs text-red-600 mt-3 pt-3 border-t border-gray-100">
+            ⚠ N8N_SEO_WEBHOOK_URL не встановлено — додайте env var у Vercel, щоб увімкнути генерацію SEO.
+          </p>
+        )}
+      </div>
+
+      {/* ════════════════════ ADVANCED TECHNICAL TOOLS (collapsed by default) ════════════════════ */}
+      <details className="rounded-xl border border-gray-200 bg-gray-50/60">
+        <summary className="cursor-pointer select-none px-4 py-3 text-sm font-semibold text-gray-600 hover:text-gray-900">
+          ⚙️ Розширені технічні інструменти
+          <span className="block text-xs font-normal text-gray-400 mt-0.5">
+            Синхронізація постачальника, ремонт категорій, генерація SEO, імпорт з таблиць, діагностика. Рідкісне технічне обслуговування — не потрібне для щоденної роботи.
+          </span>
+        </summary>
+        <div className="space-y-3 p-3 pt-0">
+
       <MigrationDiagnosticsBlock diag={diag} pending={pMigDiag} onRefresh={loadDiagnostics} />
       <HealthBlock envStatus={envStatus} lastRuns={autoStatus.lastRuns} />
 
@@ -924,44 +977,11 @@ export function PipelineClient({
         note={blockBackfill ? migHint('Потрібна функція backfill_category_slugs() (міграція 052).') : undefined}
       />
 
-      {/* ════════════════════ D. MANUAL CATALOG ════════════════════ */}
-      <SectionHeader title="Ручний каталог / метал" hint="Металева категорія (в /catalog) + натуральні продукти (в /products) — окремо від постачальника" />
-
-      <StepCard
-        title="Заповнити ручний каталог"
-        description="Створює/оновлює ручні категорії та товари (натуральні продукти, олії, металопрофіль). Безпечно повторювати — нічого не дублюється; постачальницький імпорт ці товари не перезаписує."
-        buttonLabel="▶ Заповнити"
-        accent={blockSeed ? 'border-red-300' : undefined}
-        pending={pManual}
-        disabled={anyPending || blockSeed}
-        onRun={() => run(sManual, seedManualCatalogAction, setRManual)}
-        result={rManual}
-        note={blockSeed ? migHint('Відсутні колонки ручного каталогу (міграція 051/052).') : undefined}
-      />
-
-      {/* ════════════════════ E. SEO ════════════════════ */}
+      {/* ════════════════════ E. SEO GENERATION ════════════════════ */}
       <SectionHeader
-        title="SEO"
+        title="SEO — генерація"
         hint="Джерело правди — каталог Supabase. Генерація через n8n (AI). Ручні описи із замком не перезаписуються."
       />
-
-      {/* SEO status counts */}
-      <div className="bg-white rounded-xl border border-gray-200 p-4">
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-2 text-xs">
-          <Stat label="Категорій без SEO" value={(seo?.categoriesMissing ?? 0).toLocaleString('uk-UA')} tone={seo && seo.categoriesMissing > 0 ? 'amber' : 'green'} />
-          <Stat label="Товарів без SEO" value={(seo?.productsMissing ?? 0).toLocaleString('uk-UA')} tone={seo && seo.productsMissing > 0 ? 'amber' : 'green'} />
-          <Stat label="AI згенеровано" value={(seo?.aiGenerated ?? 0).toLocaleString('uk-UA')} tone="green" />
-          <Stat label="Шаблон (базове)" value={(seo?.templateGenerated ?? 0).toLocaleString('uk-UA')} tone="green" />
-          <Stat label="Legacy fallback" value={(seo?.legacyFallback ?? 0).toLocaleString('uk-UA')} />
-          <Stat label="Ручний замок" value={(seo?.manualLocked ?? 0).toLocaleString('uk-UA')} />
-          <Stat label="n8n webhook" value={n8nSeoConfigured ? 'OK' : '—'} tone={n8nSeoConfigured ? 'green' : 'red'} />
-        </div>
-        {!n8nSeoConfigured && (
-          <p className="text-xs text-red-600 mt-3 pt-3 border-t border-gray-100">
-            ⚠ N8N_SEO_WEBHOOK_URL не встановлено — додайте env var у Vercel, щоб увімкнути генерацію SEO.
-          </p>
-        )}
-      </div>
 
       <StepCard
         step={1}
@@ -1102,6 +1122,9 @@ export function PipelineClient({
           >
             <EnvUrlDisplay url={productSeoUrl} label="PRODUCT_SEO_CSV_URL" />
           </StepCard>
+        </div>
+      </details>
+
         </div>
       </details>
 

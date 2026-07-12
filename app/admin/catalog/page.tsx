@@ -89,6 +89,9 @@ export default async function AdminCatalogPage({ searchParams }: PageProps) {
             <Link href="/admin/catalog/search-insights" className="text-xs font-medium text-honey-700 hover:underline">
               🔍 Пошукові запити →
             </Link>
+            <Link href="/admin/catalog/pipeline" className="text-xs font-medium text-gray-400 hover:text-gray-700 hover:underline">
+              🛠 Технічне обслуговування каталогу →
+            </Link>
           </div>
           <p className="text-sm text-gray-500 mt-0.5">
             {publishedCount} опублікованих · {draftCount} у чернетці · {totalCount} всього

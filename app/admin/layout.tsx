@@ -8,7 +8,6 @@ const NAV_LINKS = [
   { href: '/admin/bookings', label: 'Бронювання' },
   { href: '/admin/orders', label: 'Замовлення' },
   { href: '/admin/catalog', label: 'Каталог' },
-  { href: '/admin/catalog/pipeline', label: 'Пайплайн' },
   { href: '/admin/apiary', label: 'Продукти пасіки' },
   { href: '/admin/honey', label: 'Мед' },
   { href: '/admin/flowers', label: 'Квіти' },

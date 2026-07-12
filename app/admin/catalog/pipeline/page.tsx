@@ -50,9 +50,9 @@ export default async function PipelinePage() {
   return (
     <div className="max-w-2xl mx-auto py-6 px-4">
       <div className="mb-5">
-        <h1 className="text-xl font-bold text-bark font-serif">Пайплайн публікації</h1>
+        <h1 className="text-xl font-bold text-bark font-serif">Технічне обслуговування каталогу</h1>
         <p className="text-xs text-gray-500 mt-1">
-          Щодня автоматично: 01:00 категорії → 02:00 SEO категорій → 03:00 API → 04:00 імпорт → 05:00 публікація → 06:00 SEO товарів.{' '}
+          Імпорт постачальника працює автоматично щодня (01:00→06:00). Ця сторінка потрібна лише для ручного каталогу та рідкісного технічного обслуговування — не для щоденної роботи.{' '}
           <Link href="/admin/catalog/setup" className="underline hover:text-gray-800">Разове налаштування</Link>
         </p>
       </div>
