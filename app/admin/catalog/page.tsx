@@ -84,7 +84,12 @@ export default async function AdminCatalogPage({ searchParams }: PageProps) {
     <div className="px-4 sm:px-6 py-8">
       <div className="mb-6 flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-xl font-bold text-gray-900">Публічний каталог</h1>
+          <div className="flex items-center gap-3 flex-wrap">
+            <h1 className="text-xl font-bold text-gray-900">Публічний каталог</h1>
+            <Link href="/admin/catalog/search-insights" className="text-xs font-medium text-honey-700 hover:underline">
+              🔍 Пошукові запити →
+            </Link>
+          </div>
           <p className="text-sm text-gray-500 mt-0.5">
             {publishedCount} опублікованих · {draftCount} у чернетці · {totalCount} всього
             {query && <> · знайдено {listCount} за «{query}»</>}

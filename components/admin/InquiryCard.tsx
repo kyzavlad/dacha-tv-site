@@ -6,6 +6,7 @@ import { formatPhoneTel, formatPhoneDisplay } from '@/lib/utils'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { StatusToggle } from './StatusToggle'
 import { supplierStatusView, SUPPLIER_SEVERITY_BADGE } from '@/lib/supplier/status'
+import { SourceBadges } from '@/components/admin/SourceBadges'
 import type { Inquiry } from '@/types'
 
 interface InquiryCardProps {
@@ -309,8 +310,9 @@ export function InquiryCard({ inquiry }: InquiryCardProps) {
               </div>
             )}
             {inquiry.source && (
-              <div>
-                <span className="font-medium text-bark/50">Джерело:</span> {inquiry.source}
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="font-medium text-bark/50">Джерело:</span>
+                <SourceBadges source={inquiry.source} />
               </div>
             )}
           </div>
@@ -325,9 +327,9 @@ export function InquiryCard({ inquiry }: InquiryCardProps) {
             </div>
           )}
           {inquiry.source && (
-            <div>
-              <span className="font-medium text-bark/50">Джерело:</span>{' '}
-              {inquiry.source}
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="font-medium text-bark/50">Джерело:</span>
+              <SourceBadges source={inquiry.source} />
             </div>
           )}
           {inquiry.message && (

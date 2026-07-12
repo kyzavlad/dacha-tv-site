@@ -6,11 +6,12 @@ import { searchPublishedCatalogProducts, normalizeSort, CATALOG_PAGE_SIZE } from
 import { CatalogProductCard } from '@/components/catalog/CatalogProductCard'
 import { CatalogSortSelect } from '@/components/catalog/CatalogSortSelect'
 import { TrackSearch } from '@/components/analytics/TrackEvent'
+import { SearchLogger } from '@/components/analytics/SearchLogger'
 import { getRequestLocale, localizedPath, type Locale } from '@/lib/i18n'
 import { buildAlternates } from '@/lib/seo'
 
 interface Props {
-  searchParams: Promise<{ q?: string; page?: string; sort?: string; buyable?: string }>
+  searchParams: Promise<{ q?: string; page?: string; sort?: string; buyable?: string; photo?: string }>
 }
 
 const STRINGS: Record<Locale, {
@@ -23,6 +24,7 @@ const STRINGS: Record<Locale, {
   prev: string
   next: string
   buyableFilter: string
+  photoFilter: string
 }> = {
   uk: {
     title: 'Пошук товарів',
@@ -34,6 +36,7 @@ const STRINGS: Record<Locale, {
     prev: '← Попередня',
     next: 'Наступна →',
     buyableFilter: 'Тільки з ціною',
+    photoFilter: 'Тільки з фото',
   },
   ru: {
     title: 'Поиск товаров',
@@ -45,6 +48,7 @@ const STRINGS: Record<Locale, {
     prev: '← Предыдущая',
     next: 'Следующая →',
     buyableFilter: 'Только с ценой',
+    photoFilter: 'Только с фото',
   },
   en: {
     title: 'Product search',
@@ -56,6 +60,7 @@ const STRINGS: Record<Locale, {
     prev: '← Previous',
     next: 'Next →',
     buyableFilter: 'With price only',
+    photoFilter: 'With photo only',
   },
 }
 
@@ -72,42 +77,53 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function SearchPage({ searchParams }: Props) {
-  const { q, page: pageRaw, sort: sortRaw, buyable: buyableRaw } = await searchParams
+  const { q, page: pageRaw, sort: sortRaw, buyable: buyableRaw, photo: photoRaw } = await searchParams
   const query = (q ?? '').trim()
   const sort = normalizeSort(sortRaw)
   const page = Math.max(1, Number(pageRaw) || 1)
   const buyable = buyableRaw === '1'
+  const withImage = photoRaw === '1'
   const locale = await getRequestLocale()
   const t = STRINGS[locale]
   const searchBase = localizedPath(locale, '/search')
   const contactHref = localizedPath(locale, '/contact')
 
   const { products } = query.length >= 2
-    ? await searchPublishedCatalogProducts(query, page, sort, buyable).catch(() => ({ products: [], total: 0 }))
+    ? await searchPublishedCatalogProducts(query, page, sort, buyable, withImage).catch(() => ({ products: [], total: 0 }))
     : { products: [] }
   const fullPage = products.length >= CATALOG_PAGE_SIZE
   const sortQs = sort === 'featured' ? '' : `&sort=${sort}`
   const buyableQs = buyable ? '&buyable=1' : ''
-  const pageHref = (p: number) => `${searchBase}?q=${encodeURIComponent(query)}&page=${p}${sortQs}${buyableQs}`
-  // Toggle link for the "Тільки з ціною" chip — preserves q + sort, flips buyable.
-  const buyableToggleHref = `${searchBase}?q=${encodeURIComponent(query)}${sortQs}${buyable ? '' : '&buyable=1'}`
-  const buyableChip = (
+  const photoQs = withImage ? '&photo=1' : ''
+  const pageHref = (p: number) => `${searchBase}?q=${encodeURIComponent(query)}&page=${p}${sortQs}${buyableQs}${photoQs}`
+  // Toggle links preserve q + sort + the OTHER filter, flipping one.
+  const chipBase = `${searchBase}?q=${encodeURIComponent(query)}${sortQs}`
+  const chip = (active: boolean, href: string, label: string) => (
     <Link
-      href={buyableToggleHref}
+      href={href}
       scroll={false}
-      aria-pressed={buyable}
+      aria-pressed={active}
       className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${
-        buyable ? 'bg-honey-600 text-white border-honey-600' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
+        active ? 'bg-honey-600 text-white border-honey-600' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
       }`}
     >
-      {buyable && <span aria-hidden="true">✓</span>}
-      {t.buyableFilter}
+      {active && <span aria-hidden="true">✓</span>}
+      {label}
     </Link>
+  )
+  const filterChips = (
+    <div className="flex flex-wrap items-center gap-2">
+      {chip(buyable, `${chipBase}${buyable ? '' : '&buyable=1'}${photoQs}`, t.buyableFilter)}
+      {chip(withImage, `${chipBase}${buyableQs}${withImage ? '' : '&photo=1'}`, t.photoFilter)}
+    </div>
   )
 
   return (
     <div className="bg-cream min-h-screen">
       {query.length >= 2 && <TrackSearch term={query} resultCount={products.length} />}
+      {query.length >= 2 && (
+        <SearchLogger query={query} locale={locale} resultCount={products.length} path={`/search?q=${encodeURIComponent(query)}`} />
+      )}
       <div className="bg-white border-b border-gray-100 py-8 md:py-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <h1 className="font-serif text-2xl md:text-3xl font-bold text-bark">{t.title}</h1>
@@ -123,7 +139,7 @@ export default async function SearchPage({ searchParams }: Props) {
             <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
               <div className="flex flex-wrap items-center gap-3">
                 <p className="text-sm text-gray-500">{t.onPage(products.length)}{fullPage ? '+' : ''}</p>
-                {buyableChip}
+                {filterChips}
               </div>
               {(products.length > 1 || page > 1) && <CatalogSortSelect value={sort} />}
             </div>
@@ -146,7 +162,7 @@ export default async function SearchPage({ searchParams }: Props) {
         ) : (
           <div className="max-w-xl py-8">
             {/* If the buyable filter produced 0 results, let the user turn it off. */}
-            {buyable && <div className="mb-4">{buyableChip}</div>}
+            {(buyable || withImage) && <div className="mb-4">{filterChips}</div>}
             <p className="text-bark font-medium mb-4">{t.empty}</p>
             <Link
               href={contactHref}

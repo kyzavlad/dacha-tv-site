@@ -10,7 +10,7 @@ import {
 } from '@/lib/supplier/order'
 import { normalizeUkrainianPhone, isValidUkrainianPhone } from '@/lib/utils'
 import { cookies } from 'next/headers'
-import { formatAttribution, buildStoredSource, ATTRIBUTION_COOKIE } from '@/lib/analytics/attribution'
+import { formatAttribution, buildStoredSource, attributionNotificationLine, ATTRIBUTION_COOKIE } from '@/lib/analytics/attribution'
 
 const orderItemSchema = z.object({
   id: z.string(),
@@ -242,6 +242,12 @@ export async function submitProductOrder(
     ? `Нова Пошта: ${d.warehouseName}`
     : `Відділення ID: ${d.warehouseId}`
 
+  // Compact marketing attribution line for the order alert (empty for direct/
+  // organic orders so it adds no noise). Read from the existing attribution
+  // cookie; never blocks the notification.
+  let attributionLine = ''
+  try { attributionLine = attributionNotificationLine((await cookies()).get(ATTRIBUTION_COOKIE)?.value) } catch { /* ignore */ }
+
   const primaryNotifyText = [
     isTestOrder ? '🧪 ТЕСТОВЕ/СЛУЖБОВЕ ЗАМОВЛЕННЯ — постачальнику НЕ надсилалось' : '🛒 НОВЕ ЗАМОВЛЕННЯ З САЙТУ',
     '',
@@ -255,6 +261,7 @@ export async function submitProductOrder(
     `Сума: ${totalUah} ₴`,
     d.comment ? `Коментар: ${d.comment}` : null,
     d.source ? `Сторінка: ${d.source}` : null,
+    attributionLine ? `📊 ${attributionLine}` : null,
   ].filter(Boolean).join('\n')
 
   console.info(`[checkout-submit ${trace}] primary order notification queued`)
@@ -461,6 +468,7 @@ export async function submitProductOrder(
           `Сума: ${totalUah} ₴`,
           d.comment ? `Коментар: ${d.comment}` : null,
           d.source ? `Сторінка: ${d.source}` : null,
+          attributionLine ? `📊 ${attributionLine}` : null,
         ].filter(Boolean).join('\n')
 
         await notifyProductOrder({

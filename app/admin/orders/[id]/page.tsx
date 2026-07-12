@@ -7,6 +7,7 @@ import { getAdminClient } from '@/lib/supabase/admin'
 import { OrderStatusForm } from '../OrderStatusForm'
 import { SupplierTestButton } from '../SupplierTestButton'
 import { supplierStatusView, SUPPLIER_SEVERITY_BADGE } from '@/lib/supplier/status'
+import { SourceBadges } from '@/components/admin/SourceBadges'
 import type { Order, OrderItem, OrderStatus } from '@/types'
 
 export const metadata: Metadata = { title: 'Адмін: Замовлення', robots: 'noindex, nofollow' }
@@ -150,8 +151,8 @@ export default async function AdminOrderDetailPage({ params }: PageProps) {
             )}
             {order.source && (
               <div>
-                <dt className="text-gray-400 text-xs mb-0.5">Сторінка</dt>
-                <dd className="text-gray-600 text-xs font-mono">{order.source}</dd>
+                <dt className="text-gray-400 text-xs mb-1">Джерело / атрибуція</dt>
+                <dd><SourceBadges source={order.source} /></dd>
               </div>
             )}
           </dl>

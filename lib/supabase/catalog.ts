@@ -480,6 +480,9 @@ export async function getPublishedProductsByCategory(
   // suspicious price (mirrors hasDisplayablePrice at the DB level so pagination
   // counts stay correct). Off by default — behaviour is unchanged.
   buyable = false,
+  // Optional "Тільки з фото" filter: keep only products with an image source
+  // (main_image_url OR the images[] jsonb — the same sources the card resolves).
+  withImage = false,
 ): Promise<{ products: CatalogProduct[]; total: number }> {
   const client = getClient()
   if (!client) return { products: [], total: 0 }
@@ -492,6 +495,9 @@ export async function getPublishedProductsByCategory(
     .eq('category_slug', categorySlug)
   if (buyable) {
     base = base.gte('price_uah', MIN_VALID_PRICE_UAH).not('is_price_suspicious', 'is', true)
+  }
+  if (withImage) {
+    base = base.or('main_image_url.not.is.null,images.not.is.null')
   }
   const { data, count } = await applyCatalogSort(base, sort).range(from, to)
   const products = ((data ?? []) as CatalogProduct[]).filter(isPublicListableProduct)
@@ -793,6 +799,9 @@ export async function searchPublishedCatalogProducts(
   // products with a real, non-suspicious price. Exact-SKU matches are left
   // unfiltered so a precise code always surfaces. Off by default.
   buyable = false,
+  // Optional "Тільки з фото" filter — narrows text + category matches to rows
+  // with an image source (main_image_url OR images[]). SKU matches unfiltered.
+  withImage = false,
 ): Promise<{ products: CatalogProduct[]; total: number }> {
   const client = getClient()
   const term = q.trim()
@@ -821,6 +830,7 @@ export async function searchPublishedCatalogProducts(
     base = base.or(`name_ua.ilike.%${tok}%,name.ilike.%${tok}%,supplier_sku.ilike.%${tok}%,category_slug.ilike.%${tok}%`)
   }
   if (buyable) base = base.gte('price_uah', MIN_VALID_PRICE_UAH).not('is_price_suspicious', 'is', true)
+  if (withImage) base = base.or('main_image_url.not.is.null,images.not.is.null')
   const textRes = await applyCatalogSort(base, sort).range(from, to)
   if (textRes.error) console.warn(`[search] product text query failed for "${term}": ${textRes.error.message}`)
   const textProducts = (textRes.data ?? []) as CatalogProduct[]
@@ -839,6 +849,7 @@ export async function searchPublishedCatalogProducts(
         .or(EXCLUDE_NATURAL_OR)
         .in('category_slug', matchedSlugs)
       if (buyable) catBase = catBase.gte('price_uah', MIN_VALID_PRICE_UAH).not('is_price_suspicious', 'is', true)
+      if (withImage) catBase = catBase.or('main_image_url.not.is.null,images.not.is.null')
       const catRes = await applyCatalogSort(catBase, sort).range(from, to)
       if (catRes.error) console.warn(`[search] category products query failed for "${term}": ${catRes.error.message}`)
       else catProducts = (catRes.data ?? []) as CatalogProduct[]

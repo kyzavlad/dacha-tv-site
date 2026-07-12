@@ -62,3 +62,39 @@ export function buildStoredSource(pagePath: string | null | undefined, attributi
   const combined = [pagePath, attribution].filter(Boolean).join(' · ')
   return combined || null
 }
+
+// ── Reading a stored `source` back for admin display / notifications ──────────
+export interface ParsedSource {
+  page: string | null   // the page path the form sent (e.g. /checkout)
+  utm: string | null    // "source/medium/campaign/..." (raw joined)
+  ref: string | null    // referrer host
+  lp: string | null     // landing page path
+  raw: string
+}
+
+// Parse a stored `source` value (page · utm: … · ref: … · lp: …) into parts so
+// the admin can show attribution cleanly instead of one long string. Pure.
+export function parseStoredSource(source: string | null | undefined): ParsedSource {
+  const raw = (source ?? '').trim()
+  const out: ParsedSource = { page: null, utm: null, ref: null, lp: null, raw }
+  if (!raw) return out
+  for (const part of raw.split(' · ')) {
+    const p = part.trim()
+    if (p.startsWith('utm: ')) out.utm = p.slice(5).trim() || null
+    else if (p.startsWith('ref: ')) out.ref = p.slice(5).trim() || null
+    else if (p.startsWith('lp: ')) out.lp = p.slice(4).trim() || null
+    else if (!out.page) out.page = p || null
+  }
+  return out
+}
+
+// Compact one-line attribution for a Telegram/notification message, e.g.
+// "Source: google / cpc / campaign-name · LP: /catalog/...". Empty when there is
+// no UTM/landing info (so a direct/organic order adds no noise).
+export function attributionNotificationLine(cookieValue: string | undefined | null): string {
+  const parsed = parseStoredSource(formatAttribution(cookieValue))
+  const bits: string[] = []
+  if (parsed.utm) bits.push(`Source: ${parsed.utm.split('/').join(' / ')}`)
+  if (parsed.lp) bits.push(`LP: ${parsed.lp}`)
+  return bits.join(' · ')
+}

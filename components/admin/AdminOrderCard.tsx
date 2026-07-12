@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { formatDate, formatPhoneTel, formatPhoneDisplay } from '@/lib/utils'
 import { supplierStatusView, SUPPLIER_SEVERITY_BADGE } from '@/lib/supplier/status'
+import { SourceBadges } from '@/components/admin/SourceBadges'
 import type { Order, OrderStatus } from '@/types'
 
 // Compact list card for a real row from the `orders` table (the primary
@@ -116,8 +117,9 @@ export function AdminOrderCard({ order }: AdminOrderCardProps) {
           </div>
         )}
         {order.source && (
-          <div>
-            <span className="font-medium text-bark/50">Джерело:</span> {order.source}
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="font-medium text-bark/50">Джерело:</span>
+            <SourceBadges source={order.source} />
           </div>
         )}
       </div>

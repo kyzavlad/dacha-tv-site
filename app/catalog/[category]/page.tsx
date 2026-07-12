@@ -17,7 +17,7 @@ import { resolveCategorySeo } from '@/lib/catalog/localized-seo'
 
 interface Props {
   params: Promise<{ category: string }>
-  searchParams: Promise<{ page?: string; sort?: string; buyable?: string }>
+  searchParams: Promise<{ page?: string; sort?: string; buyable?: string; photo?: string }>
 }
 
 // Locale-only UI copy. Products/query are locale-independent — locale never
@@ -27,6 +27,7 @@ const CAT_STRINGS: Record<Locale, {
   products: (n: number) => string; page: (p: number, t: number) => string
   introFallback: (name: string) => string; about: (name: string) => string
   buyableFilter: string
+  photoFilter: string
 }> = {
   uk: {
     home: 'Головна', catalog: 'Каталог', noProducts: 'У цій категорії поки немає товарів.',
@@ -34,6 +35,7 @@ const CAT_STRINGS: Record<Locale, {
     introFallback: (name) => `${name} — замовляйте з доставкою по Україні. Оплата після підтвердження замовлення.`,
     about: (name) => `Про категорію «${name}»`,
     buyableFilter: 'Тільки з ціною',
+    photoFilter: 'Тільки з фото',
   },
   ru: {
     home: 'Главная', catalog: 'Каталог', noProducts: 'В этой категории пока нет товаров.',
@@ -41,6 +43,7 @@ const CAT_STRINGS: Record<Locale, {
     introFallback: (name) => `${name} — заказывайте с доставкой по Украине. Оплата после подтверждения заказа.`,
     about: (name) => `О категории «${name}»`,
     buyableFilter: 'Только с ценой',
+    photoFilter: 'Только с фото',
   },
   en: {
     home: 'Home', catalog: 'Catalog', noProducts: 'No products in this category yet.',
@@ -48,6 +51,7 @@ const CAT_STRINGS: Record<Locale, {
     introFallback: (name) => `${name} — order with delivery across Ukraine. Payment after order confirmation.`,
     about: (name) => `About “${name}”`,
     buyableFilter: 'With price only',
+    photoFilter: 'With photo only',
   },
 }
 
@@ -79,14 +83,15 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 export default async function CategoryPage({ params, searchParams }: Props) {
   const { category: slug } = await params
-  const { page: pageStr, sort: sortStr, buyable: buyableStr } = await searchParams
+  const { page: pageStr, sort: sortStr, buyable: buyableStr, photo: photoStr } = await searchParams
   const page = Math.max(1, parseInt(pageStr ?? '1', 10) || 1)
   const sort = normalizeSort(sortStr)
   const buyable = buyableStr === '1'
+  const withImage = photoStr === '1'
 
   const [cat, { products, total }] = await Promise.all([
     getCategoryBySlug(slug).catch(() => null),
-    getPublishedProductsByCategory(slug, page, sort, buyable).catch(() => ({ products: [], total: 0 })),
+    getPublishedProductsByCategory(slug, page, sort, buyable, withImage).catch(() => ({ products: [], total: 0 })),
   ])
 
   if (!cat) notFound()
@@ -130,27 +135,40 @@ export default async function CategoryPage({ params, searchParams }: Props) {
         {/* Filter/sort bar — shown when the category has products OR the buyable
             filter is active (so a filter that yields 0 results can still be
             toggled off). "Тільки з ціною" links preserve sort; default is off. */}
-        {(products.length > 0 || buyable) && (
-          <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+        {(() => {
+          // Build a category URL preserving sort + the OTHER filter, toggling one.
+          const filterUrl = (next: { buyable: boolean; withImage: boolean }) => {
+            const params = new URLSearchParams()
+            if (sort !== 'featured') params.set('sort', sort)
+            if (next.buyable) params.set('buyable', '1')
+            if (next.withImage) params.set('photo', '1')
+            const qs = params.toString()
+            return `${localizedPath(locale, `/catalog/${slug}`)}${qs ? `?${qs}` : ''}`
+          }
+          const chip = (active: boolean, href: string, label: string) => (
             <Link
-              href={`${localizedPath(locale, `/catalog/${slug}`)}?${new URLSearchParams({
-                ...(sort !== 'featured' ? { sort } : {}),
-                ...(buyable ? {} : { buyable: '1' }),
-              }).toString()}`}
+              href={href}
               scroll={false}
+              aria-pressed={active}
               className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${
-                buyable
-                  ? 'bg-honey-600 text-white border-honey-600'
-                  : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
+                active ? 'bg-honey-600 text-white border-honey-600' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
               }`}
-              aria-pressed={buyable}
             >
-              {buyable && <span aria-hidden="true">✓</span>}
-              {st.buyableFilter}
+              {active && <span aria-hidden="true">✓</span>}
+              {label}
             </Link>
-            {total > CATALOG_PAGE_SIZE / 4 && <CatalogSortSelect value={sort} />}
-          </div>
-        )}
+          )
+          if (!(products.length > 0 || buyable || withImage)) return null
+          return (
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+              <div className="flex flex-wrap items-center gap-2">
+                {chip(buyable, filterUrl({ buyable: !buyable, withImage }), st.buyableFilter)}
+                {chip(withImage, filterUrl({ buyable, withImage: !withImage }), st.photoFilter)}
+              </div>
+              {total > CATALOG_PAGE_SIZE / 4 && <CatalogSortSelect value={sort} />}
+            </div>
+          )
+        })()}
         {products.length === 0 ? (
           <div className="text-center py-16">
             <p className="text-bark/40 text-sm">{st.noProducts}</p>
@@ -162,7 +180,7 @@ export default async function CategoryPage({ params, searchParams }: Props) {
                 <CatalogProductCard key={product.id} product={product} categorySlug={slug} locale={locale} />
               ))}
             </div>
-            <Pagination page={page} total={total} baseHref={localizedPath(locale, `/catalog/${slug}`)} params={{ sort: sort === 'featured' ? undefined : sort, buyable: buyable ? '1' : undefined }} />
+            <Pagination page={page} total={total} baseHref={localizedPath(locale, `/catalog/${slug}`)} params={{ sort: sort === 'featured' ? undefined : sort, buyable: buyable ? '1' : undefined, photo: withImage ? '1' : undefined }} />
           </>
         )}
 
