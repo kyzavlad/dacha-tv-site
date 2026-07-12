@@ -7,6 +7,7 @@ import { getSiteSettings } from '@/lib/supabase/queries'
 import { CartProvider } from '@/lib/cart/CartContext'
 import { CartDrawer } from '@/components/cart/CartDrawer'
 import { Analytics } from '@/components/analytics/Analytics'
+import { AttributionCapture } from '@/components/analytics/AttributionCapture'
 
 const inter = Inter({
   variable: '--font-inter',
@@ -48,6 +49,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       </head>
       <body className="min-h-full flex flex-col bg-cream text-bark overflow-x-hidden">
         <CartProvider>
+          <AttributionCapture />
           <Header siteSettings={siteSettings} />
           <CartDrawer />
           <main className="flex-1">{children}</main>

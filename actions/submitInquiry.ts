@@ -1,12 +1,22 @@
 'use server'
 
 import { z } from 'zod'
+import { cookies } from 'next/headers'
 import { getSupabaseClient } from '@/lib/supabase/client'
 import { sendTelegramNotification } from '@/lib/notifications/telegram'
 import { sendEmailNotification } from '@/lib/notifications/email'
+import { formatAttribution, buildStoredSource, ATTRIBUTION_COOKIE } from '@/lib/analytics/attribution'
 import type { InquiryData } from '@/types'
 
 const ukrainianPhone = /^(\+380|0)\d{9}$/
+
+// Fold UTM/referrer attribution (captured on landing) into the existing `source`
+// column — no schema change, never throws.
+async function attributedSource(pageSource: string | null | undefined): Promise<string | null> {
+  let attribution = ''
+  try { attribution = formatAttribution((await cookies()).get(ATTRIBUTION_COOKIE)?.value) } catch { /* ignore */ }
+  return buildStoredSource(pageSource ?? null, attribution)
+}
 
 const honeyOrderSchema = z.object({
   name: z.string().min(2, "Ім'я має містити щонайменше 2 символи"),
@@ -91,7 +101,7 @@ export async function submitHoneyOrder(formData: FormData): Promise<ActionResult
       packaging: inquiryData.packaging ?? null,
       quantity: inquiryData.quantity ?? null,
       message: inquiryData.message ?? null,
-      source: inquiryData.source ?? null,
+      source: await attributedSource(inquiryData.source),
     })
 
     if (error) {
@@ -154,7 +164,7 @@ export async function submitBeekeeperInquiry(formData: FormData): Promise<Action
       quantity: inquiryData.quantity ?? null,
       timing: inquiryData.timing ?? null,
       message: inquiryData.message ?? null,
-      source: inquiryData.source ?? null,
+      source: await attributedSource(inquiryData.source),
     })
 
     if (error) {
@@ -205,7 +215,7 @@ export async function submitGeneralContact(formData: FormData): Promise<ActionRe
       name: inquiryData.name,
       phone: inquiryData.phone,
       message: inquiryData.message ?? null,
-      source: inquiryData.source ?? null,
+      source: await attributedSource(inquiryData.source),
     })
 
     if (error) {
@@ -270,7 +280,7 @@ export async function submitFlowerInquiry(formData: FormData): Promise<ActionRes
       phone: inquiryData.phone,
       product: inquiryData.product ?? null,
       message: inquiryData.message ?? null,
-      source: inquiryData.source ?? null,
+      source: await attributedSource(inquiryData.source),
     })
 
     if (error) {

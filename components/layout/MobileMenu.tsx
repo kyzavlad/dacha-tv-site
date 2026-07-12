@@ -6,6 +6,7 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname } from 'next/navigation'
 import { cn, formatPhoneDisplay, formatPhoneTel } from '@/lib/utils'
+import { trackPhoneClick } from '@/lib/analytics/gtag'
 import { PRIMARY_NAV } from '@/lib/navigation'
 import {
   LAUNCH_PHONE,
@@ -123,14 +124,14 @@ export function MobileMenu({ phone, phoneSecondary, siteSettings, logoPath }: Mo
       <div className="flex-shrink-0 px-5 pt-4 pb-6 border-t border-gray-100 space-y-4 bg-white"
         style={{ paddingBottom: 'max(1.5rem, env(safe-area-inset-bottom))' }}>
         <div className="flex flex-col gap-2">
-          <a href={`tel:${formatPhoneTel(resolvedPhone)}`} className="flex items-center gap-2.5 h-11 text-bark font-semibold text-[0.9375rem]">
+          <a href={`tel:${formatPhoneTel(resolvedPhone)}`} onClick={() => trackPhoneClick(formatPhoneTel(resolvedPhone), 'mobile-menu')} className="flex items-center gap-2.5 h-11 text-bark font-semibold text-[0.9375rem]">
             <svg className="w-4 h-4 text-honey-700 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
               <path strokeLinecap="round" strokeLinejoin="round" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
             </svg>
             {formatPhoneDisplay(resolvedPhone)}
           </a>
           {resolvedPhoneSecondary && resolvedPhoneSecondary !== resolvedPhone && (
-            <a href={`tel:${formatPhoneTel(resolvedPhoneSecondary)}`} className="flex items-center gap-2.5 h-11 text-bark font-semibold text-[0.9375rem]">
+            <a href={`tel:${formatPhoneTel(resolvedPhoneSecondary)}`} onClick={() => trackPhoneClick(formatPhoneTel(resolvedPhoneSecondary), 'mobile-menu')} className="flex items-center gap-2.5 h-11 text-bark font-semibold text-[0.9375rem]">
               <svg className="w-4 h-4 text-honey-700 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
               </svg>

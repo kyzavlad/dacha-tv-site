@@ -476,16 +476,23 @@ export async function getPublishedProductsByCategory(
   categorySlug: string,
   page: number,
   sort: CatalogSort = 'featured',
+  // Optional "Тільки з ціною" filter: keep only products with a real, non-
+  // suspicious price (mirrors hasDisplayablePrice at the DB level so pagination
+  // counts stay correct). Off by default — behaviour is unchanged.
+  buyable = false,
 ): Promise<{ products: CatalogProduct[]; total: number }> {
   const client = getClient()
   if (!client) return { products: [], total: 0 }
   const from = (page - 1) * CATALOG_PAGE_SIZE
   const to = from + CATALOG_PAGE_SIZE - 1
-  const base = client
+  let base = client
     .from('catalog_products')
     .select('*', { count: 'exact' })
     .eq('status', 'published')
     .eq('category_slug', categorySlug)
+  if (buyable) {
+    base = base.gte('price_uah', MIN_VALID_PRICE_UAH).not('is_price_suspicious', 'is', true)
+  }
   const { data, count } = await applyCatalogSort(base, sort).range(from, to)
   const products = ((data ?? []) as CatalogProduct[]).filter(isPublicListableProduct)
   return { products, total: count ?? 0 }
@@ -782,6 +789,10 @@ export async function searchPublishedCatalogProducts(
   q: string,
   page = 1,
   sort: CatalogSort = 'featured',
+  // Optional "Тільки з ціною" filter — narrows the text + category matches to
+  // products with a real, non-suspicious price. Exact-SKU matches are left
+  // unfiltered so a precise code always surfaces. Off by default.
+  buyable = false,
 ): Promise<{ products: CatalogProduct[]; total: number }> {
   const client = getClient()
   const term = q.trim()
@@ -809,6 +820,7 @@ export async function searchPublishedCatalogProducts(
   for (const tok of tokens) {
     base = base.or(`name_ua.ilike.%${tok}%,name.ilike.%${tok}%,supplier_sku.ilike.%${tok}%,category_slug.ilike.%${tok}%`)
   }
+  if (buyable) base = base.gte('price_uah', MIN_VALID_PRICE_UAH).not('is_price_suspicious', 'is', true)
   const textRes = await applyCatalogSort(base, sort).range(from, to)
   if (textRes.error) console.warn(`[search] product text query failed for "${term}": ${textRes.error.message}`)
   const textProducts = (textRes.data ?? []) as CatalogProduct[]
@@ -820,12 +832,13 @@ export async function searchPublishedCatalogProducts(
   try {
     const matchedSlugs = await findCategorySlugsForQuery(client, tokens)
     if (matchedSlugs.length > 0) {
-      const catBase = client
+      let catBase = client
         .from('catalog_products')
         .select('*')
         .eq('status', 'published')
         .or(EXCLUDE_NATURAL_OR)
         .in('category_slug', matchedSlugs)
+      if (buyable) catBase = catBase.gte('price_uah', MIN_VALID_PRICE_UAH).not('is_price_suspicious', 'is', true)
       const catRes = await applyCatalogSort(catBase, sort).range(from, to)
       if (catRes.error) console.warn(`[search] category products query failed for "${term}": ${catRes.error.message}`)
       else catProducts = (catRes.data ?? []) as CatalogProduct[]

@@ -9,6 +9,8 @@ import {
   detectTestOrderMarker,
 } from '@/lib/supplier/order'
 import { normalizeUkrainianPhone, isValidUkrainianPhone } from '@/lib/utils'
+import { cookies } from 'next/headers'
+import { formatAttribution, buildStoredSource, ATTRIBUTION_COOKIE } from '@/lib/analytics/attribution'
 
 const orderItemSchema = z.object({
   id: z.string(),
@@ -324,6 +326,12 @@ export async function submitProductOrder(
       `[checkout-submit ${trace}] items resolved — supplier=${supplierLineItems.length} manual=${hasManualItems ? d.items.length - supplierLineItems.length : 0} mixed=${isMixedOrder}`,
     )
 
+    // Marketing attribution (UTM/referrer captured on landing) folded into the
+    // existing `source` column — no schema change. Never blocks checkout.
+    let attribution = ''
+    try { attribution = formatAttribution((await cookies()).get(ATTRIBUTION_COOKIE)?.value) } catch { /* ignore */ }
+    const storedSource = buildStoredSource(d.source ?? null, attribution)
+
     // ── Step 4: insert the local order (the customer's order MUST be saved) ────
     const { data: order, error: orderError } = await client
       .from('orders')
@@ -334,7 +342,7 @@ export async function submitProductOrder(
         delivery_notes: d.warehouseName ?? d.warehouseId,
         status: 'new',
         total_uah: totalUah,
-        source: d.source ?? null,
+        source: storedSource,
         order_source: 'website',
         // Supplier-specific fields
         receiver_first_name: d.firstName,
@@ -528,7 +536,7 @@ export async function submitProductOrder(
         product: 'Замовлення з кошика',
         message: fbMessage,
         notes: fbNotes,
-        source: d.source ?? null,
+        source: storedSource,
         status: 'new',
       })
 

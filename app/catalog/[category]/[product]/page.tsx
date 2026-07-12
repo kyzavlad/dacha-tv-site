@@ -26,6 +26,7 @@ import { CatalogProductCard } from '@/components/catalog/CatalogProductCard'
 import { AddToCartButton } from '@/components/cart/AddToCartButton'
 import { BuyNowButton } from '@/components/cart/BuyNowButton'
 import { TrackViewItem } from '@/components/analytics/TrackEvent'
+import { TrackedPhoneLink } from '@/components/shared/TrackedPhoneLink'
 import { ProductOptions } from '@/components/catalog/ProductOptions'
 import { ManualLeadForm } from '@/components/catalog/ManualLeadForm'
 import type { ManualLeadType } from '@/types'
@@ -262,9 +263,9 @@ export default async function ProductPage({ params }: Props) {
             {product.lead_type === 'metal' && (
               <div className="rounded-xl border border-honey-200 bg-honey-50/60 p-4 mb-6 text-sm">
                 <div className="font-semibold text-bark mb-1">Замовлення та консультація</div>
-                <a href="tel:+380996480485" className="text-honey-700 font-bold text-lg hover:underline">
+                <TrackedPhoneLink phone="+380996480485" location="product-metal" className="text-honey-700 font-bold text-lg hover:underline">
                   +380 99 648 04 85
-                </a>
+                </TrackedPhoneLink>
                 <p className="text-bark/70 mt-2 text-xs leading-relaxed">
                   Доставка по Харківській та Полтавській областях — за домовленістю.
                   Інші регіони — індивідуально після підтвердження.
