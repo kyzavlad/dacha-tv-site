@@ -6,9 +6,10 @@ import { HoneyCard } from '@/components/honey/HoneyCard'
 import { ProductCard } from '@/components/products/ProductCard'
 import { CatalogProductCard } from '@/components/catalog/CatalogProductCard'
 
-type Tab = 'all' | 'honey' | 'apiary' | 'natural' | 'saplings' | 'gifts'
+type Tab = 'all' | 'honey' | 'apiary' | 'oils' | 'gifts' | 'natural' | 'saplings'
 
 const GIFT_SET_CATEGORY = 'podarunkovi-nabory'
+const OIL_CATEGORY = 'zhyvi-olii-holodnogo-vidzhymu'
 
 function isSapling(p: CatalogProduct): boolean {
   return /саджан/i.test(p.name_ua)
@@ -16,6 +17,10 @@ function isSapling(p: CatalogProduct): boolean {
 
 function isGiftSet(p: CatalogProduct): boolean {
   return p.category_slug === GIFT_SET_CATEGORY
+}
+
+function isOil(p: CatalogProduct): boolean {
+  return p.category_slug === OIL_CATEGORY
 }
 
 interface Props {
@@ -33,14 +38,18 @@ export function ProductsCatalog({ honey, apiary, natural }: Props) {
 
   const saplings = natural.filter(isSapling)
   const giftSets = natural.filter(isGiftSet)
-  const naturalOnly = natural.filter((p) => !isSapling(p) && !isGiftSet(p))
+  const oils = natural.filter(isOil)
+  const naturalOnly = natural.filter((p) => !isSapling(p) && !isGiftSet(p) && !isOil(p))
+
+  const totalVisible = honey.length + apiary.length + natural.length
 
   const allTabs: { id: Tab; label: string; count: number }[] = [
-    { id: 'all', label: 'Усі', count: honey.length + apiary.length + natural.length },
+    { id: 'all', label: 'Усі', count: totalVisible },
     { id: 'honey', label: 'Мед', count: honey.length },
     { id: 'apiary', label: 'Продукти пасіки', count: apiary.length },
-    { id: 'natural', label: 'Натуральні продукти', count: naturalOnly.length },
+    { id: 'oils', label: 'Олії', count: oils.length },
     { id: 'gifts', label: 'Подарункові набори', count: giftSets.length },
+    { id: 'natural', label: 'Натуральні продукти', count: naturalOnly.length },
     { id: 'saplings', label: 'Саджанці', count: saplings.length },
   ]
   const tabs = allTabs.filter((t) => t.id === 'all' || t.count > 0)
@@ -50,6 +59,7 @@ export function ProductsCatalog({ honey, apiary, natural }: Props) {
   const naturalToShow =
     tab === 'all' ? natural
       : tab === 'natural' ? naturalOnly
+      : tab === 'oils' ? oils
       : tab === 'saplings' ? saplings
       : tab === 'gifts' ? giftSets
       : []
@@ -58,6 +68,12 @@ export function ProductsCatalog({ honey, apiary, natural }: Props) {
 
   return (
     <div>
+      {/* Available-now count */}
+      <p className="text-sm text-bark/60 mb-4">
+        Доступно зараз: <span className="font-semibold text-bark">{totalVisible}</span>{' '}
+        {totalVisible === 1 ? 'товар' : totalVisible >= 2 && totalVisible <= 4 ? 'товари' : 'товарів'}
+      </p>
+
       {/* Tabs */}
       <div className="flex flex-wrap gap-2 mb-8" role="tablist" aria-label="Категорії продуктів">
         {tabs.map((t) => (

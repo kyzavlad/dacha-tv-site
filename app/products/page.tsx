@@ -24,12 +24,26 @@ export const metadata: Metadata = {
   },
 }
 
+// A product is shown on the public storefront only when it is orderable right
+// now. Honey and apiary rows carry an explicit status; anything archived or
+// out-of-stock is hidden from /products (the row stays in the DB and on its own
+// detail page). Natural manual products come from getNaturalProducts() already
+// filtered to status='published' — they are the curated current offer.
+const ORDERABLE_STATUS = new Set(['available', 'preorder'])
+
 export default async function ProductsPage() {
-  const [honey, apiary, natural] = await Promise.all([
+  const [honeyAll, apiaryAll, natural] = await Promise.all([
     getAllHoneyProducts().catch(() => []),
     getAllApiaryProducts().catch(() => []),
     getNaturalProducts().catch(() => []),
   ])
+
+  // Prefer the canonical manual catalog product over any legacy apiary row that
+  // shares a slug (e.g. медовий шоколад lives in both apiary and manual data —
+  // show only the manual one). Also drop honey/apiary that are not orderable now.
+  const naturalSlugs = new Set(natural.map((p) => p.slug))
+  const honey = honeyAll.filter((p) => ORDERABLE_STATUS.has(p.status))
+  const apiary = apiaryAll.filter((p) => ORDERABLE_STATUS.has(p.status) && !naturalSlugs.has(p.slug))
 
   return (
     <div className="bg-cream min-h-screen">

@@ -173,7 +173,7 @@ export async function seedManualCatalog(): Promise<ManualSeedResult> {
       ok: true,
       categoriesUpserted: catResult.count,
       productsUpserted: prodResult.count,
-      message: `Створено/оновлено ${catResult.count} категорій та ${prodResult.count} товарів ручного каталогу`,
+      message: `Створено/оновлено ${catResult.count} категорій та ${prodResult.count} товарів ручного каталогу. Вони зʼявляться на публічній сторінці /products (мед-шоколад, масло на замовлення, подарункові набори, олії).`,
     }
   } catch (e) {
     return {
