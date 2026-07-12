@@ -23,9 +23,18 @@ interface HoneyPriceInput {
   price_glass_uah?: number | null
 }
 
-// Canonical honey price (UAH / 1 L). Matches by slug, then by variety keyword,
-// then falls back to the flat "other sorts" price.
+// Canonical single honey price (UAH / 1 L). The admin-entered DB price is
+// authoritative — honey now has ONE price, written to both legacy price fields,
+// so display and cart never drift. When both fields are set they are equal; we
+// still prefer the plastic (base) field, then glass, for backward compatibility
+// with older rows. Only when no DB price exists do we fall back to the legacy
+// slug/variety map and the flat default.
 export function honeyUnitPriceUah(product: HoneyPriceInput): number {
+  const plastic = typeof product.price_plastic_uah === 'number' ? product.price_plastic_uah : null
+  const glass = typeof product.price_glass_uah === 'number' ? product.price_glass_uah : null
+  const dbPrice = plastic != null && plastic > 0 ? plastic : glass != null && glass > 0 ? glass : null
+  if (dbPrice != null) return dbPrice
+
   if (product.slug && HONEY_PRICE_BY_SLUG[product.slug] != null) {
     return HONEY_PRICE_BY_SLUG[product.slug]
   }

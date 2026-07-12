@@ -99,15 +99,9 @@ export default async function AdminHoneyPage({
             <input name="name" type="text" required className={INPUT} />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className={LABEL}>Ціна пластик (грн)</label>
-              <input name="price_plastic_uah" type="number" className={INPUT} />
-            </div>
-            <div>
-              <label className={LABEL}>Ціна скло (грн)</label>
-              <input name="price_glass_uah" type="number" className={INPUT} />
-            </div>
+          <div>
+            <label className={LABEL}>Ціна, грн</label>
+            <input name="price_uah" type="number" min="0" className={INPUT} />
           </div>
 
           <div>

@@ -87,15 +87,9 @@ export default async function AdminHoneyEditPage({ params, searchParams }: Props
           <input name="name" type="text" required defaultValue={String(p.name ?? '')} className={INPUT} />
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className={LABEL}>Ціна пластик (грн)</label>
-            <input name="price_plastic_uah" type="number" defaultValue={String(p.price_plastic_uah ?? '')} className={INPUT} />
-          </div>
-          <div>
-            <label className={LABEL}>Ціна скло (грн)</label>
-            <input name="price_glass_uah" type="number" defaultValue={String(p.price_glass_uah ?? '')} className={INPUT} />
-          </div>
+        <div>
+          <label className={LABEL}>Ціна, грн</label>
+          <input name="price_uah" type="number" min="0" defaultValue={String(p.price_plastic_uah ?? p.price_glass_uah ?? '')} className={INPUT} />
         </div>
 
         <div>

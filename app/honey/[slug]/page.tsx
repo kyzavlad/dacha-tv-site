@@ -312,15 +312,35 @@ export default async function HoneyProductPage({ params }: Props) {
               </div>
             ))}
 
-            {/* Cart / CTA section */}
+            {/* Cart / CTA section — single price, one "До кошика" button */}
             <HoneyCartWidget
               productSlug={product.slug}
               productName={product.name}
-              pricePlastic={product.price_plastic_uah}
-              priceGlass={product.price_glass_uah}
+              price={honeyUnitPriceUah(product)}
               imageUrl={product.image_url}
               status={product.status}
             />
+
+            {/* Packaging + shipping trust block. Calm, low-key, matches the
+                honey/cream palette — no loud guarantees beyond the exact copy. */}
+            <div className="mt-5 rounded-xl border border-honey-100 bg-honey-50/50 p-4 space-y-3">
+              <div className="flex items-start gap-2.5">
+                <svg className="w-4 h-4 mt-0.5 text-honey-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                </svg>
+                <p className="text-sm text-bark/75 leading-relaxed">
+                  Доступна упаковка: пластикове відро, скляна банка або подарункова упаковка за домовленістю.
+                </p>
+              </div>
+              <div className="flex items-start gap-2.5">
+                <svg className="w-4 h-4 mt-0.5 text-honey-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                </svg>
+                <p className="text-sm text-bark/75 leading-relaxed">
+                  Відправляємо Новою Поштою зі страхуванням. Якщо під час доставки мед пошкодився або розбився — не забирайте посилку, оформіть повернення, і ми відправимо нову.
+                </p>
+              </div>
+            </div>
           </div>
         </div>
 

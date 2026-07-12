@@ -57,6 +57,10 @@ function splitHoneyPayload(formData: FormData) {
     const n = parseInt(raw, 10)
     return Number.isFinite(n) ? n : null
   }
+  // Honey now has ONE price. The form sends `price_uah`; we write the same value
+  // to BOTH legacy price columns (no schema change, no plastic/glass split, no
+  // derived discount). Older forms sending price_plastic_uah are still honoured.
+  const singlePrice = priceInt('price_uah') ?? priceInt('price_plastic_uah') ?? priceInt('price_glass_uah')
 
   // NOTE: `variety` is intentionally NOT part of the editable payload. The admin
   // UI no longer exposes a variety dropdown and the public pages never derive the
@@ -66,8 +70,8 @@ function splitHoneyPayload(formData: FormData) {
     name: formData.get('name') as string,
     description: (formData.get('description') as string) || null,
     packaging,
-    price_plastic_uah: priceInt('price_plastic_uah'),
-    price_glass_uah: priceInt('price_glass_uah'),
+    price_plastic_uah: singlePrice,
+    price_glass_uah: singlePrice,
     is_featured: formData.get('is_featured') === 'on',
     image_url, image_alt, youtube_video_link,
   }
