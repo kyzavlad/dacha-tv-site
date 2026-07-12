@@ -10,14 +10,9 @@ interface HoneyCardProps {
 const BLUR_DATA_URL =
   'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjQwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmJiZjI0Ii8+PC9zdmc+'
 
-const VARIETY_FALLBACK: Record<string, string> = {
-  Акація: 'Ніжний смак, кристалізується повільно',
-  Липа: 'Класичний аромат, традиційний',
-  Сонях: 'Насичений, золотий, кристалізується швидко',
-  "Різнотрав'я": 'Складний характер, кожна партія унікальна',
-  Сади: 'Ніжний квітковий мед із садових культур',
-  Ліс: 'Темний, комплексний, мінеральні нотки',
-}
+// Neutral brand placeholder label — never a specific honey variety (e.g.
+// "Акація"), so custom honey products don't inherit a fixed variety visual.
+const HONEY_PLACEHOLDER_LABEL = 'Мед Дача TV'
 
 function resolveImage(product: HoneyProduct): { src: string; alt: string } | null {
   const media = product.media ?? []
@@ -28,10 +23,9 @@ function resolveImage(product: HoneyProduct): { src: string; alt: string } | nul
 }
 
 export function HoneyCard({ product }: HoneyCardProps) {
-  const shortDesc =
-    product.short_description ||
-    VARIETY_FALLBACK[product.variety] ||
-    `Натуральний мед ${product.variety.toLowerCase()}`
+  // Description no longer derives from `variety` — use the product's own copy,
+  // else a neutral brand line.
+  const shortDesc = product.short_description || 'Натуральний мед від пасіки Дача TV'
   const img = resolveImage(product)
 
   const price = honeyUnitPriceUah(product)
@@ -53,7 +47,7 @@ export function HoneyCard({ product }: HoneyCardProps) {
         ) : (
           <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-honey-50 to-honey-200">
             <span className="text-honey-600 font-serif font-bold text-2xl text-center px-4">
-              {product.variety}
+              {HONEY_PLACEHOLDER_LABEL}
             </span>
           </div>
         )}

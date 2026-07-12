@@ -13,7 +13,6 @@ export const metadata: Metadata = {
 
 const INPUT = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400 focus:border-transparent'
 const LABEL = 'block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5'
-const VARIETIES = ['Акація', 'Липа', 'Сонях', "Різнотрав'я", 'Сади', 'Ліс']
 
 export default async function AdminHoneyPage({
   searchParams,
@@ -98,13 +97,6 @@ export default async function AdminHoneyPage({
           <div>
             <label className={LABEL}>Назва</label>
             <input name="name" type="text" required className={INPUT} />
-          </div>
-
-          <div>
-            <label className={LABEL}>Сорт</label>
-            <select name="variety" className={INPUT}>
-              {VARIETIES.map((v) => <option key={v} value={v}>{v}</option>)}
-            </select>
           </div>
 
           <div className="grid grid-cols-2 gap-4">

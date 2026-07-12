@@ -184,8 +184,8 @@ export default async function HoneyProductPage({ params }: Props) {
             featuredBadgeClass="bg-honey-600"
           >
             <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-honey-100 to-honey-300">
-              <span className="text-honey-700 font-serif font-bold text-3xl">
-                {product.variety}
+              <span className="text-honey-700 font-serif font-bold text-3xl text-center px-4">
+                Мед Дача TV
               </span>
             </div>
           </ProductGallery>
@@ -301,7 +301,7 @@ export default async function HoneyProductPage({ params }: Props) {
                 </p>
                 <YouTubeFacade
                   videoId={youtubeId}
-                  title={`Дивіться як ми збираємо ${product.variety.toLowerCase()} мед`}
+                  title={`Дивіться відео про ${product.name}`}
                 />
               </div>
             )}

@@ -58,9 +58,12 @@ function splitHoneyPayload(formData: FormData) {
     return Number.isFinite(n) ? n : null
   }
 
+  // NOTE: `variety` is intentionally NOT part of the editable payload. The admin
+  // UI no longer exposes a variety dropdown and the public pages never derive the
+  // visual/placeholder from it. On UPDATE we leave the legacy value untouched; on
+  // CREATE we supply a neutral default only to satisfy the NOT NULL column.
   const core: Row = {
     name: formData.get('name') as string,
-    variety: (formData.get('variety') as string) || "Різнотрав'я",
     description: (formData.get('description') as string) || null,
     packaging,
     price_plastic_uah: priceInt('price_plastic_uah'),
@@ -91,7 +94,9 @@ export async function createHoneyProduct(formData: FormData) {
   const mediaItems = parseMediaFromForm(formData)
   const name = formData.get('name') as string
   const { core, extended } = splitHoneyPayload(formData)
-  const coreInsert: Row = { ...core, name, slug: autoSlug(name) }
+  // `variety` is a legacy NOT NULL column no longer shown in the UI — supply a
+  // neutral default for new rows (it never drives the public visual).
+  const coreInsert: Row = { ...core, name, slug: autoSlug(name), variety: 'Мед' }
 
   // Try the full insert; fall back to core-only if extended columns are missing.
   let res = await client.from('honey_products').insert({ ...coreInsert, ...extended }).select('id').single()
