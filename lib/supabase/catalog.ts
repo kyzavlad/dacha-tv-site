@@ -60,7 +60,7 @@ export const SITEMAP_PRODUCTS_PER_CHUNK = 1000
 // Their products are presented under /products ("Продукти пасіки") instead. We
 // exclude by category_slug (always present) so the public catalog never depends
 // on a possibly-unmigrated column.
-export const NATURAL_CATEGORY_SLUGS = ['naturalni-produkty', 'zhyvi-olii-holodnogo-vidzhymu']
+export const NATURAL_CATEGORY_SLUGS = ['naturalni-produkty', 'zhyvi-olii-holodnogo-vidzhymu', 'podarunkovi-nabory']
 
 // PostgREST `or` filter: keep null-category products (the /catalog/all catch-all)
 // but drop products in the natural categories. `NOT IN` alone would also drop

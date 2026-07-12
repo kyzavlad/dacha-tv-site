@@ -6,10 +6,16 @@ import { HoneyCard } from '@/components/honey/HoneyCard'
 import { ProductCard } from '@/components/products/ProductCard'
 import { CatalogProductCard } from '@/components/catalog/CatalogProductCard'
 
-type Tab = 'all' | 'honey' | 'apiary' | 'natural' | 'saplings'
+type Tab = 'all' | 'honey' | 'apiary' | 'natural' | 'saplings' | 'gifts'
+
+const GIFT_SET_CATEGORY = 'podarunkovi-nabory'
 
 function isSapling(p: CatalogProduct): boolean {
   return /саджан/i.test(p.name_ua)
+}
+
+function isGiftSet(p: CatalogProduct): boolean {
+  return p.category_slug === GIFT_SET_CATEGORY
 }
 
 interface Props {
@@ -26,13 +32,15 @@ export function ProductsCatalog({ honey, apiary, natural }: Props) {
   const [tab, setTab] = useState<Tab>('all')
 
   const saplings = natural.filter(isSapling)
-  const naturalOnly = natural.filter((p) => !isSapling(p))
+  const giftSets = natural.filter(isGiftSet)
+  const naturalOnly = natural.filter((p) => !isSapling(p) && !isGiftSet(p))
 
   const allTabs: { id: Tab; label: string; count: number }[] = [
     { id: 'all', label: 'Усі', count: honey.length + apiary.length + natural.length },
     { id: 'honey', label: 'Мед', count: honey.length },
     { id: 'apiary', label: 'Продукти пасіки', count: apiary.length },
     { id: 'natural', label: 'Натуральні продукти', count: naturalOnly.length },
+    { id: 'gifts', label: 'Подарункові набори', count: giftSets.length },
     { id: 'saplings', label: 'Саджанці', count: saplings.length },
   ]
   const tabs = allTabs.filter((t) => t.id === 'all' || t.count > 0)
@@ -40,7 +48,11 @@ export function ProductsCatalog({ honey, apiary, natural }: Props) {
   const showHoney = tab === 'all' || tab === 'honey'
   const showApiary = tab === 'all' || tab === 'apiary'
   const naturalToShow =
-    tab === 'all' ? natural : tab === 'natural' ? naturalOnly : tab === 'saplings' ? saplings : []
+    tab === 'all' ? natural
+      : tab === 'natural' ? naturalOnly
+      : tab === 'saplings' ? saplings
+      : tab === 'gifts' ? giftSets
+      : []
 
   const empty = (!showHoney || honey.length === 0) && (!showApiary || apiary.length === 0) && naturalToShow.length === 0
 

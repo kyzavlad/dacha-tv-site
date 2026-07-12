@@ -4,7 +4,19 @@ import type { Metadata } from 'next'
 import type { BeekeeperProduct } from '@/types'
 import { BeekeeperCard } from '@/components/beekeeper/BeekeeperCard'
 import { BeekeeperInquiryForm } from '@/components/forms/BeekeeperInquiryForm'
+import { PhoneLink } from '@/components/shared/PhoneLink'
 import { getAllBeekeeperProducts } from '@/lib/supabase/queries'
+import { LAUNCH_PHONE } from '@/lib/launch-defaults'
+
+// High-ticket beekeeper offering, presented as a compact block (not mixed into
+// the general products grid). Відводки and ППУ вулики have no dedicated product
+// rows yet, so they live here and route to the inquiry form / phone.
+const BEEKEEPER_OFFERS: { title: string; note: string }[] = [
+  { title: "Бджолосімʼї", note: 'Сильні сімʼї від власної пасіки, з урахуванням сезону та породи.' },
+  { title: 'Відводки', note: 'Відводки на замовлення — уточнюйте наявність та терміни.' },
+  { title: 'Вулики ППУ', note: 'Вулики з пінополіуретану — легкі, теплі. Наявність за запитом.' },
+  { title: 'Консультація / підбір', note: 'Допоможемо підібрати рішення під вашу пасіку.' },
+]
 
 export const metadata: Metadata = {
   title: 'Для пасічників',
@@ -80,6 +92,37 @@ export default async function BeekeeperPage() {
 
           {/* Product catalog */}
           <div className="lg:col-span-2 space-y-14">
+
+            {/* Offering block — бджолосімʼї / відводки / ППУ вулики / консультація.
+                Kept out of the generic grid; routes to the inquiry form / phone. */}
+            <section aria-labelledby="offers-heading" className="bg-white rounded-2xl p-6 border border-forest-100">
+              <h2 id="offers-heading" className="font-serif text-2xl font-bold text-bark mb-1">
+                Що пропонуємо пасічникам
+              </h2>
+              <p className="text-bark/60 text-sm mb-5">
+                Напряму від пасічника. Наявність і ціни залежать від сезону — уточнюйте.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {BEEKEEPER_OFFERS.map((o) => (
+                  <div key={o.title} className="rounded-xl border border-forest-100 bg-forest-50/40 p-4">
+                    <h3 className="font-semibold text-bark mb-1">{o.title}</h3>
+                    <p className="text-bark/70 text-sm leading-relaxed">{o.note}</p>
+                  </div>
+                ))}
+              </div>
+              <div className="flex flex-wrap items-center gap-3 mt-5">
+                <a
+                  href="#inquiry-form"
+                  className="inline-flex items-center justify-center rounded-lg bg-forest-700 text-white text-sm font-semibold px-5 py-2.5 hover:bg-forest-800 transition-colors"
+                >
+                  Залишити заявку
+                </a>
+                <span className="text-sm text-bark/60">
+                  або зателефонуйте:{' '}
+                  <PhoneLink phone={LAUNCH_PHONE} showIcon location="beekeeper-offers" className="text-sm" />
+                </span>
+              </div>
+            </section>
 
             {activeTypes.length === 0 ? (
               <div className="bg-white rounded-2xl p-8 border border-forest-100 text-center">

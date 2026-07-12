@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { Hero } from '@/components/home/Hero'
+import { AvailableNow } from '@/components/home/AvailableNow'
 import { EcosystemSections } from '@/components/home/EcosystemSections'
 import { BrandStory } from '@/components/home/BrandStory'
 import { YouTubeSection } from '@/components/home/YouTubeSection'
@@ -75,6 +76,8 @@ export default async function HomePage() {
       />
 
       <EcosystemSections />
+
+      <AvailableNow />
 
       <BrandStory />
 

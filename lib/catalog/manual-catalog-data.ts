@@ -94,6 +94,20 @@ export const MANUAL_CATEGORIES: ManualCategorySeed[] = [
     is_published: false,
   },
   {
+    slug: 'podarunkovi-nabory',
+    name_ua: 'Подарункові набори',
+    description:
+      'Подарункові набори з наших продуктів: липовий мед, шоколад на меду та масло холодного віджиму. ' +
+      'Склад і пакування узгоджуємо під ваше замовлення.',
+    meta_title: 'Подарункові набори — мед, шоколад на меду, масло',
+    meta_description:
+      'Подарункові набори від господарства Дача TV: мед + шоколад, мед + масло, мед + шоколад + масло. Склад і пакування під замовлення.',
+    lead_type: 'natural_products',
+    display_order: 3,
+    sort_order: 4,
+    is_published: false,
+  },
+  {
     slug: 'metaloprofil-pokrivlia-komplektuiuchi',
     name_ua: 'Металопрофіль, покрівля та комплектуючі',
     description:
@@ -236,23 +250,25 @@ const NATURAL_PRODUCTS: ManualProductSeed[] = [
   {
     slug: 'medovyi-shokolad',
     category_slug: 'naturalni-produkty',
-    name_ua: 'Медовий шоколад',
-    short_description: 'Натуральний медовий шоколад — солодощі на основі меду.',
+    name_ua: 'Шоколад на меду',
+    short_description: 'Натуральний шоколад на меду, без цукру — готуємо на замовлення.',
     description:
-      'Натуральний медовий шоколад — приготований на основі меду. ' +
-      'Може бути приємною частиною щоденного раціону та гарним подарунком.\n\n' +
-      'Напишіть нам, щоб уточнити актуальну ціну, смаки та наявність.\n\n' +
+      'Натуральний шоколад на основі какао та меду з власної пасіки, без цукру. ' +
+      'Готуємо на замовлення — з різними наповнювачами: сухофрукти, ягоди, горіхи (склад узгоджуємо).\n\n' +
+      'Ціна — 250 грн за плитку. Може бути приємною частиною щоденного раціону та гарним подарунком.\n\n' +
       NOT_MEDICINE,
-    meta_title: 'Медовий шоколад — натуральні солодощі на меду',
+    meta_title: 'Шоколад на меду — натуральний шоколад без цукру, 250 грн',
     meta_description:
-      'Натуральний медовий шоколад на основі меду. Приємні натуральні солодощі від господарства. Уточнюйте смаки, ціну та наявність.',
-    price_uah: null,
+      'Натуральний шоколад на меду з власної пасіки, без цукру — 250 грн за плитку. Готуємо на замовлення з різними наповнювачами. Доставка по Україні.',
+    price_uah: 250,
     price_prefix: null,
-    unit_label: null,
-    inquiry_only: true,
+    unit_label: 'грн',
+    inquiry_only: false,
     lead_type: 'natural_products',
     options: {
-      'Основа': 'Натуральний мед',
+      'Основа': 'Какао та мед з власної пасіки, без цукру',
+      'Наповнювачі': 'Сухофрукти, ягоди, горіхи — за домовленістю',
+      'Виготовлення': 'Під замовлення',
     },
     display_order: 6,
   },
@@ -298,7 +314,47 @@ function oil(
   }
 }
 
+// Flagship made-to-order positioning entry for the cold-pressed oil offering.
+// Distinct from the priced 250-ml bottles below: this is the "на замовлення"
+// card that carries the USP (wooden press, no metal contact, any seed) and an
+// «від 500 грн / 1 л» orientation price. Inquiry-only → the detail page shows the
+// natural-products lead form ("Замовити / Уточнити наявність").
+const OIL_ON_ORDER: ManualProductSeed = {
+  slug: 'maslo-holodnogo-vidzhymu-na-zamovlennia',
+  category_slug: 'zhyvi-olii-holodnogo-vidzhymu',
+  name_ua: 'Масло холодного віджиму на замовлення',
+  short_description:
+    'Віджимаємо на деревʼяному пресі, без контакту з металом. Різні види насіння, під замовлення.',
+  description:
+    'Масло (олія) холодного віджиму, яке ми віджимаємо під замовлення.\n\n' +
+    '• Віджимаємо на деревʼяному пресі\n' +
+    '• Без контакту з металом\n' +
+    '• Можна з різних видів насіння\n' +
+    '• Робимо під замовлення\n' +
+    '• Ціна залежить від насіння та обʼєму\n' +
+    '• Орієнтир: від 500 грн / 1 л\n\n' +
+    'Напишіть або зателефонуйте — уточнимо вид насіння, обʼєм і наявність.\n\n' +
+    NOT_MEDICINE,
+  meta_title: 'Масло холодного віджиму на замовлення — деревʼяний прес',
+  meta_description:
+    'Масло холодного віджиму на замовлення: віджимаємо на деревʼяному пресі, без контакту з металом, з різних видів насіння. Орієнтир — від 500 грн / 1 л.',
+  price_uah: 500,
+  price_prefix: 'від',
+  unit_label: 'грн/л',
+  inquiry_only: true,
+  lead_type: 'natural_products',
+  options: {
+    'Технологія': 'Холодний віджим на деревʼяному пресі',
+    'Без контакту з металом': 'Так',
+    'Насіння': 'Різні види — за вашим вибором',
+    'Виготовлення': 'Під замовлення',
+    'Ціна': 'Залежить від насіння та обʼєму, орієнтир — від 500 грн / 1 л',
+  },
+  display_order: 0,
+}
+
 const OIL_PRODUCTS: ManualProductSeed[] = [
+  OIL_ON_ORDER,
   oil('harbuzova-oliia', 'Гарбузова олія', 400, 1),
   oil('konopliana-oliia', 'Конопляна олія', 400, 2),
   oil('ryzhiieva-oliia', 'Рижієва олія', 450, 3),
@@ -543,8 +599,53 @@ const METAL_PRODUCTS: ManualProductSeed[] = [
   },
 ]
 
+// ─── Gift sets ───────────────────────────────────────────────────────────────
+// Combinations of honey / honey-chocolate / cold-pressed oil. Prices vary by the
+// chosen honey sort, oil seed and packaging, so these are inquiry-only (price
+// null → the card shows "Уточнити ціну" and the detail page shows the natural-
+// products lead form). Copy makes the "уточнити набір" intent explicit.
+function giftSet(
+  slug: string,
+  name: string,
+  contents: string,
+  order: number,
+): ManualProductSeed {
+  return {
+    slug,
+    category_slug: 'podarunkovi-nabory',
+    name_ua: name,
+    short_description: `Подарунковий набір: ${contents}. Склад і пакування — під замовлення.`,
+    description:
+      `Подарунковий набір «${contents}» від нашого господарства.\n\n` +
+      'Збираємо набір під замовлення: узгоджуємо сорт меду, наповнення шоколаду / вид олії та подарункове пакування. ' +
+      'Напишіть або зателефонуйте — зберемо набір під ваш бюджет і уточнимо вартість та наявність.\n\n' +
+      NOT_MEDICINE,
+    meta_title: `${name} — подарунковий набір від Дача TV`,
+    meta_description:
+      `Подарунковий набір «${contents}» від господарства Дача TV. Склад і пакування під замовлення. Уточнюйте склад набору, вартість та наявність.`,
+    price_uah: null,
+    price_prefix: null,
+    unit_label: null,
+    inquiry_only: true,
+    lead_type: 'natural_products',
+    options: {
+      'Склад': contents,
+      'Пакування': 'Подарункове, за домовленістю',
+      'Виготовлення': 'Збираємо під замовлення',
+    },
+    display_order: order,
+  }
+}
+
+const GIFT_SETS: ManualProductSeed[] = [
+  giftSet('podarunkovyi-nabir-med-shokolad', 'Подарунковий набір «Мед + шоколад»', 'липовий мед + шоколад на меду', 1),
+  giftSet('podarunkovyi-nabir-med-maslo', 'Подарунковий набір «Мед + масло»', 'липовий мед + масло холодного віджиму', 2),
+  giftSet('podarunkovyi-nabir-med-shokolad-maslo', 'Подарунковий набір «Мед + шоколад + масло»', 'липовий мед + шоколад на меду + масло холодного віджиму', 3),
+]
+
 export const MANUAL_PRODUCTS: ManualProductSeed[] = [
   ...NATURAL_PRODUCTS,
   ...OIL_PRODUCTS,
+  ...GIFT_SETS,
   ...METAL_PRODUCTS,
 ]
