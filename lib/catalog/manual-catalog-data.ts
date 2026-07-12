@@ -639,8 +639,8 @@ function giftSet(
 
 const GIFT_SETS: ManualProductSeed[] = [
   giftSet('podarunkovyi-nabir-med-shokolad', 'Подарунковий набір «Мед + шоколад»', 'липовий мед + шоколад на меду', 1),
-  giftSet('podarunkovyi-nabir-med-maslo', 'Подарунковий набір «Мед + масло»', 'липовий мед + масло холодного віджиму', 2),
-  giftSet('podarunkovyi-nabir-med-shokolad-maslo', 'Подарунковий набір «Мед + шоколад + масло»', 'липовий мед + шоколад на меду + масло холодного віджиму', 3),
+  giftSet('podarunkovyi-nabir-med-oliia', 'Подарунковий набір «Мед + олія»', 'липовий мед + масло холодного віджиму', 2),
+  giftSet('podarunkovyi-nabir-med-shokolad-oliia', 'Подарунковий набір «Мед + шоколад + олія»', 'липовий мед + шоколад на меду + масло холодного віджиму', 3),
 ]
 
 export const MANUAL_PRODUCTS: ManualProductSeed[] = [

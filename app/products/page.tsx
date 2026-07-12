@@ -24,26 +24,46 @@ export const metadata: Metadata = {
   },
 }
 
-// A product is shown on the public storefront only when it is orderable right
-// now. Honey and apiary rows carry an explicit status; anything archived or
-// out-of-stock is hidden from /products (the row stays in the DB and on its own
-// detail page). Natural manual products come from getNaturalProducts() already
-// filtered to status='published' — they are the curated current offer.
+// /products is the CURRENT offer, not an archive. Inclusion is therefore by
+// explicit allowlist — NOT merely by DB status, because many legacy apiary and
+// natural rows are still marked available/published. Nothing is deleted: hidden
+// rows stay in the DB and on their own detail pages, just off this storefront.
+
+// Consumer bee products that are part of the current offer. Everything else in
+// apiary_products (swarm lure, wax foundation, dried herbs, old syrups, the
+// legacy chocolate duplicate, etc.) is hidden here. Edit to curate bee products.
+const CURATED_APIARY_SLUGS = new Set(['flower-pollen', 'propolis', 'nuts-in-honey'])
+
+// Manual-catalog categories shown in full — their products ARE the current offer.
+const CURRENT_MANUAL_CATEGORIES = new Set(['zhyvi-olii-holodnogo-vidzhymu', 'podarunkovi-nabory'])
+// Individually allowlisted products from the mixed "naturalni-produkty" category,
+// so чай / часник / жимолость / саджанці stay off the storefront until curated in.
+const CURATED_NATURAL_SLUGS = new Set(['medovyi-shokolad'])
+
 const ORDERABLE_STATUS = new Set(['available', 'preorder'])
 
 export default async function ProductsPage() {
-  const [honeyAll, apiaryAll, natural] = await Promise.all([
+  const [honeyAll, apiaryAll, naturalAll] = await Promise.all([
     getAllHoneyProducts().catch(() => []),
     getAllApiaryProducts().catch(() => []),
     getNaturalProducts().catch(() => []),
   ])
 
-  // Prefer the canonical manual catalog product over any legacy apiary row that
-  // shares a slug (e.g. медовий шоколад lives in both apiary and manual data —
-  // show only the manual one). Also drop honey/apiary that are not orderable now.
-  const naturalSlugs = new Set(natural.map((p) => p.slug))
+  // Honey: currently orderable rows only.
   const honey = honeyAll.filter((p) => ORDERABLE_STATUS.has(p.status))
-  const apiary = apiaryAll.filter((p) => ORDERABLE_STATUS.has(p.status) && !naturalSlugs.has(p.slug))
+
+  // Natural manual products: whole current categories (oils, gift sets) plus the
+  // explicitly allowlisted single products (chocolate) from the mixed natural
+  // category. This is what makes gift sets / oil / chocolate appear once seeded
+  // while keeping garlic / herbs / berries / saplings off the storefront.
+  const natural = naturalAll.filter(
+    (p) => CURRENT_MANUAL_CATEGORIES.has(p.category_slug ?? '') || CURATED_NATURAL_SLUGS.has(p.slug),
+  )
+
+  // Apiary: allowlisted current bee products only, and never a slug already
+  // covered by a manual product (prefer the canonical manual one).
+  const naturalSlugs = new Set(natural.map((p) => p.slug))
+  const apiary = apiaryAll.filter((p) => CURATED_APIARY_SLUGS.has(p.slug) && !naturalSlugs.has(p.slug))
 
   return (
     <div className="bg-cream min-h-screen">

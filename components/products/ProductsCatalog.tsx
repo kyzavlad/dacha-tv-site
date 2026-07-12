@@ -46,9 +46,9 @@ export function ProductsCatalog({ honey, apiary, natural }: Props) {
   const allTabs: { id: Tab; label: string; count: number }[] = [
     { id: 'all', label: 'Усі', count: totalVisible },
     { id: 'honey', label: 'Мед', count: honey.length },
-    { id: 'apiary', label: 'Продукти пасіки', count: apiary.length },
     { id: 'oils', label: 'Олії', count: oils.length },
     { id: 'gifts', label: 'Подарункові набори', count: giftSets.length },
+    { id: 'apiary', label: 'Продукти пасіки', count: apiary.length },
     { id: 'natural', label: 'Натуральні продукти', count: naturalOnly.length },
     { id: 'saplings', label: 'Саджанці', count: saplings.length },
   ]
