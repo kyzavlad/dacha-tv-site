@@ -1,82 +1,108 @@
 import { getAdminClient } from '@/lib/supabase/admin'
 import { MANUAL_CATEGORIES, MANUAL_PRODUCTS } from '@/lib/catalog/manual-catalog-data'
 
+// A fully plain, serializable error record. No raw Error or Supabase response
+// object ever crosses a Server Component / route boundary — only these fields do.
+export interface ManualSeedError {
+  scope: string
+  slug?: string
+  code?: string
+  message: string
+  details?: string
+  hint?: string
+}
+
+// The canonical serializable result. Every field is a primitive/array of plain
+// objects, so JSON-serializing it (route response, or a client fetch) can never
+// throw and can never surface the generic "Server Components render" error.
 export interface ManualSeedResult {
   ok: boolean
-  categoriesUpserted: number
-  productsUpserted: number
-  message: string
+  createdCategories: number
+  updatedCategories: number
+  createdProducts: number
+  updatedProducts: number
+  visibleProductsPath: string
+  errors?: ManualSeedError[]
 }
 
 type AdminClient = ReturnType<typeof getAdminClient>
 
-// Turn a Supabase/PostgREST error into a clear, admin-friendly Ukrainian message.
-// Raw codes / stack traces never reach the seed card — the owner sees an action.
-function friendlyDbError(context: string, e: unknown): string {
-  const err = e as { code?: string; message?: string } | null | undefined
+// Convert ANY error (Supabase PostgrestError, thrown Error, string) into a plain
+// ManualSeedError with a friendly Ukrainian hint. Supabase errors already expose
+// { code, message, details, hint }; we copy those and add a hint when we can map
+// the code to an actionable migration step.
+function toSeedError(scope: string, slug: string | undefined, e: unknown): ManualSeedError {
+  const err = e as { code?: string; message?: string; details?: string | null; hint?: string | null } | null | undefined
   const code = err?.code
-  const raw = (err?.message ?? (e instanceof Error ? e.message : String(e ?? ''))).trim()
-  if (code === '42703' || /column .* does not exist/i.test(raw)) {
-    return `${context}: у базі бракує колонки ручного каталогу — застосуйте міграції 051–055 у Supabase → SQL editor.`
+  const message =
+    (err?.message ?? (e instanceof Error ? e.message : String(e ?? ''))).trim() || 'Невідома помилка'
+  const details = err?.details != null ? String(err.details) : undefined
+  let hint = err?.hint != null ? String(err.hint) : undefined
+  if (!hint) {
+    if (code === '42703' || /column .* does not exist/i.test(message)) {
+      hint = 'Застосуйте міграції 051–055 у Supabase → SQL editor, після чого повторіть.'
+    } else if (code === '42P01' || /relation .* does not exist/i.test(message)) {
+      hint = 'Застосуйте міграції каталогу (048–055).'
+    } else if (code === '42P10') {
+      hint = 'Застосуйте міграцію 052_pipeline_safety.sql.'
+    }
   }
-  if (code === '42P01' || /relation .* does not exist/i.test(raw)) {
-    return `${context}: таблиця каталогу не існує — застосуйте міграції каталогу (048–055).`
-  }
-  if (code === '42P10') {
-    return `${context}: конфлікт унікального індексу — застосуйте міграцію 052_pipeline_safety.sql.`
-  }
-  return `${context}: ${raw || 'невідома помилка бази даних'}`
+  return { scope, slug, code, message, details, hint }
 }
 
-// Idempotent upsert keyed by `slug` WITHOUT relying on a Postgres ON CONFLICT
-// target. The original implementation used `.upsert(..., { onConflict: 'slug' })`,
-// which requires a UNIQUE index on slug. That index never existed before migration
-// 052, and 052 only creates it when no duplicate slugs are present — so on a
-// production catalog full of slug collisions the upsert failed hard with PostgREST
-// 42P10 ("no unique or exclusion constraint matching the ON CONFLICT
-// specification"). Combined with a non-serializable value crossing the RSC
-// boundary, that surfaced in the admin UI as the opaque "An error occurred in the
-// Server Components render…" message inside the manual-seed card.
-//
-// Select-then-update/insert works regardless of whether the unique index exists.
-// Crucially the existing-row lookup is scoped to `source = 'manual'`, so a manual
-// slug that happens to collide with a supplier product's slug can never cause this
-// seed to overwrite (and mis-tag) a supplier row. The manual set is tiny
-// (~4 categories + ~30 products) so the per-row writes are cheap.
-async function upsertBySlug(
+// Idempotent upsert keyed by `slug` WITHOUT a Postgres ON CONFLICT target. The
+// original code used `.upsert(..., { onConflict: 'slug' })`, which requires a
+// UNIQUE index on slug that may not exist (it is created only by migration 052,
+// and only when there are no duplicate slugs). On production that failed hard with
+// PostgREST 42P10 — which, combined with a non-serializable value crossing the RSC
+// boundary, produced the opaque "An error occurred in the Server Components
+// render" 500 on the pipeline route. Select-then-update/insert avoids the index
+// entirely; the lookup is scoped to source='manual' so a manual slug can never
+// overwrite a supplier row. Per-row errors are collected (never thrown) so one bad
+// row does not abort the rest.
+async function upsertRows(
   client: AdminClient,
   table: 'catalog_categories' | 'catalog_products',
   rows: Array<Record<string, unknown>>,
-): Promise<{ ok: boolean; count: number; error?: string }> {
+  scope: string,
+): Promise<{ created: number; updated: number; errors: ManualSeedError[] }> {
+  const errors: ManualSeedError[] = []
+  let created = 0
+  let updated = 0
+
   const slugs = rows.map((r) => r.slug as string)
   const { data: existing, error: selErr } = await client
     .from(table)
     .select('id, slug')
     .eq('source', 'manual')
     .in('slug', slugs)
-  if (selErr) return { ok: false, count: 0, error: friendlyDbError('Читання', selErr) }
+  if (selErr) {
+    errors.push(toSeedError(scope, undefined, selErr))
+    return { created, updated, errors }
+  }
 
   const idBySlug = new Map((existing ?? []).map((r) => [r.slug as string, r.id as string]))
-  let count = 0
   for (const row of rows) {
-    const id = idBySlug.get(row.slug as string)
+    const slug = row.slug as string
+    const id = idBySlug.get(slug)
     if (id) {
       const { error } = await client.from(table).update(row).eq('id', id)
-      if (error) return { ok: false, count, error: friendlyDbError('Оновлення', error) }
+      if (error) errors.push(toSeedError(scope, slug, error))
+      else updated++
     } else {
       const { error } = await client.from(table).insert(row)
-      if (error) return { ok: false, count, error: friendlyDbError('Вставка', error) }
+      if (error) errors.push(toSeedError(scope, slug, error))
+      else created++
     }
-    count++
   }
-  return { ok: true, count }
+  return { created, updated, errors }
 }
 
 // Probe every column the seed actually writes (not just a subset). A partially
 // migrated DB — e.g. the manual-catalog columns from 051 exist but the
 // shop-structure columns (product_group, sort_order) from 055 do not — would
 // otherwise pass a narrow precheck and then fail mid-write with a cryptic error.
-async function missingColumns(client: AdminClient): Promise<boolean> {
+async function missingColumns(client: AdminClient): Promise<ManualSeedError | null> {
   const [{ error: prodProbe }, { error: catProbe }] = await Promise.all([
     client
       .from('catalog_products')
@@ -87,26 +113,29 @@ async function missingColumns(client: AdminClient): Promise<boolean> {
       .select('source, lead_type, sort_order, meta_auto_generated', { head: true })
       .limit(1),
   ])
-  const missing = (e: unknown) => (e as { code?: string } | null)?.code === '42703'
-  return missing(prodProbe) || missing(catProbe)
+  const hit = (e: unknown) => ((e as { code?: string } | null)?.code === '42703' ? e : null)
+  const bad = hit(prodProbe) ?? hit(catProbe)
+  return bad ? toSeedError('schema', undefined, bad) : null
 }
 
-// Idempotently create/update the manual catalog categories and products. Never
-// throws: any failure is returned as { ok: false, message } so the calling server
-// action (and the admin card) render a clear message instead of crashing.
+const EMPTY: ManualSeedResult = {
+  ok: false,
+  createdCategories: 0,
+  updatedCategories: 0,
+  createdProducts: 0,
+  updatedProducts: 0,
+  visibleProductsPath: '/products',
+}
+
+// Idempotently create/update the manual catalog categories and products. NEVER
+// throws and ALWAYS returns a plain ManualSeedResult — safe to JSON-serialize into
+// a route response or a client fetch. Re-running never duplicates (upsert by slug).
 export async function seedManualCatalog(): Promise<ManualSeedResult> {
   try {
     const client = getAdminClient()
 
-    if (await missingColumns(client)) {
-      return {
-        ok: false,
-        categoriesUpserted: 0,
-        productsUpserted: 0,
-        message:
-          'Відсутні колонки ручного каталогу — застосуйте міграції 051–055 у Supabase → SQL editor, після чого повторіть.',
-      }
-    }
+    const schemaError = await missingColumns(client)
+    if (schemaError) return { ...EMPTY, errors: [schemaError] }
 
     // ── Categories ──────────────────────────────────────────────────────────
     const categoryRows = MANUAL_CATEGORIES.map((c) => ({
@@ -123,11 +152,7 @@ export async function seedManualCatalog(): Promise<ManualSeedResult> {
       lead_type: c.lead_type,
       meta_auto_generated: false,
     }))
-
-    const catResult = await upsertBySlug(client, 'catalog_categories', categoryRows)
-    if (!catResult.ok) {
-      return { ok: false, categoriesUpserted: 0, productsUpserted: 0, message: `Категорії — ${catResult.error}` }
-    }
+    const cat = await upsertRows(client, 'catalog_categories', categoryRows, 'categories')
 
     // ── Products ────────────────────────────────────────────────────────────
     const productRows = MANUAL_PRODUCTS.map((p) => ({
@@ -158,29 +183,19 @@ export async function seedManualCatalog(): Promise<ManualSeedResult> {
       sort_order: p.display_order,
       product_group: p.lead_type === 'metal' ? 'metal' : 'natural',
     }))
+    const prod = await upsertRows(client, 'catalog_products', productRows, 'products')
 
-    const prodResult = await upsertBySlug(client, 'catalog_products', productRows)
-    if (!prodResult.ok) {
-      return {
-        ok: false,
-        categoriesUpserted: catResult.count,
-        productsUpserted: 0,
-        message: `Товари — ${prodResult.error}`,
-      }
-    }
-
+    const errors = [...cat.errors, ...prod.errors]
     return {
-      ok: true,
-      categoriesUpserted: catResult.count,
-      productsUpserted: prodResult.count,
-      message: `Створено/оновлено ${catResult.count} категорій та ${prodResult.count} товарів ручного каталогу. Вони зʼявляться на публічній сторінці /products (мед-шоколад, масло на замовлення, подарункові набори, олії).`,
+      ok: errors.length === 0,
+      createdCategories: cat.created,
+      updatedCategories: cat.updated,
+      createdProducts: prod.created,
+      updatedProducts: prod.updated,
+      visibleProductsPath: '/products',
+      errors: errors.length ? errors : undefined,
     }
   } catch (e) {
-    return {
-      ok: false,
-      categoriesUpserted: 0,
-      productsUpserted: 0,
-      message: friendlyDbError('Ручний каталог', e),
-    }
+    return { ...EMPTY, errors: [toSeedError('seed', undefined, e)] }
   }
 }

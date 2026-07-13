@@ -13,7 +13,6 @@ import {
   extractSupplierImages,
   importSeoSheetPriorityProducts,
 } from '@/lib/catalog/pipeline'
-import { seedManualCatalog } from '@/lib/catalog/manual-seed'
 import { getCatalogDiagnostics, type CatalogDiagnostics } from '@/lib/catalog/diagnostics'
 export type { CatalogDiagnostics }
 import {
@@ -228,14 +227,10 @@ export async function backfillCategorySlugsAction(): Promise<ActionResult> {
 }
 
 // ─── D. Manual catalog ──────────────────────────────────────────────────────
-
-export async function seedManualCatalogAction(): Promise<ActionResult> {
-  return safeAction(
-    'Ручний каталог',
-    () => seedManualCatalog(),
-    ['/admin/catalog/pipeline', '/catalog', '/catalog/all'],
-  )
-}
+// The manual-catalog seed is intentionally NOT a Server Action. It runs via a
+// client fetch to POST /api/admin/catalog/seed-manual (see PipelineClient) so its
+// plain-JSON result never crosses the RSC action boundary — which is what
+// produced the generic "Server Components render" 500 on this route.
 
 // ─── E. SEO ─────────────────────────────────────────────────────────────────
 

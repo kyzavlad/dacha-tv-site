@@ -14,7 +14,6 @@ import {
   backfillCategorySlugsAction,
   repairCategoryNamesAction,
   normalizeAndFinalizeCategoriesAction,
-  seedManualCatalogAction,
   inspectSupplierFeedsAction,
   getCatalogDiagnosticsAction,
   getSeoCountsAction,
@@ -35,6 +34,7 @@ import {
   seoSheetPriorityImportAction,
 } from './actions'
 import type { ActionResult, FeedDiagResult, CatalogDiagnostics, SeoCounts } from './actions'
+import type { ManualSeedResult } from '@/lib/catalog/manual-seed'
 import type { PipelineStats } from '@/lib/catalog/pipeline'
 import type { AutomationStatus, AutomationLastRun } from '@/lib/catalog/automation'
 import { AUTOMATION_MAX_PUBLISHED, AUTOMATION_BATCH_SIZE } from '@/lib/catalog/automation-config'
@@ -537,7 +537,6 @@ export function PipelineClient({
   const [rBackfill, setRBackfill] = usePersistedResult('pipeline_r_backfill')
   const [rRepair,   setRRepair]   = usePersistedResult('pipeline_r_repair')
   const [rFinalize, setRFinalize] = usePersistedResult('pipeline_r_finalize')
-  const [rManual,   setRManual]   = usePersistedResult('pipeline_r_manual')
   const [rSeoCat,   setRSeoCat]   = usePersistedResult('pipeline_r_seo_cat')
   const [rSeoProd,  setRSeoProd]  = usePersistedResult('pipeline_r_seo_prod')
   const [rSeoTplPrev, setRSeoTplPrev] = usePersistedResult('pipeline_r_seo_tpl_prev')
@@ -570,7 +569,6 @@ export function PipelineClient({
   const [pBackfill, sBackfill] = useTransition()
   const [pRepair,   sRepair]   = useTransition()
   const [pFinalize, sFinalize] = useTransition()
-  const [pManual,   sManual]   = useTransition()
   const [pDiag,     sDiag]     = useTransition()
   const [pMigDiag,  sMigDiag]  = useTransition()
   const [pSeoCat,   sSeoCat]   = useTransition()
@@ -589,7 +587,12 @@ export function PipelineClient({
   const [pSeoPriDry,   sSeoPriDry]   = useTransition()
   const [pSeoPriApply, sSeoPriApply] = useTransition()
 
-  const anyPending = pProducts || pImportDry || pImport || pImportFull || pSeo || pPublish || pBackfill || pRepair || pFinalize || pManual || pDiag || pMigDiag || pSeoCat || pSeoProd || pSeoTplPrev || pSeoTpl || pSeoFb || pShProdPrev || pShProd || pShCatPrev || pShCat || pOrphanDiag || pOrphanFix || pImgDry || pImgApply || pSeoPriDry || pSeoPriApply || refreshing
+  // Manual-catalog seed runs via a plain client fetch to the API route (NOT a
+  // Server Action), so its JSON result never crosses the RSC action boundary.
+  const [seedPending, setSeedPending] = useState(false)
+  const [seedResult, setSeedResult] = useState<ManualSeedResult | null>(null)
+
+  const anyPending = pProducts || pImportDry || pImport || pImportFull || pSeo || pPublish || pBackfill || pRepair || pFinalize || seedPending || pDiag || pMigDiag || pSeoCat || pSeoProd || pSeoTplPrev || pSeoTpl || pSeoFb || pShProdPrev || pShProd || pShCatPrev || pShCat || pOrphanDiag || pOrphanFix || pImgDry || pImgApply || pSeoPriDry || pSeoPriApply || refreshing
 
   const loadDiagnostics = useCallback(() => {
     sMigDiag(async () => {
@@ -641,6 +644,38 @@ export function PipelineClient({
         setRDiag({ error: e instanceof Error ? e.message : 'Помилка діагностики' })
       }
     })
+  }
+
+  // Seed the manual catalog via a plain fetch to the API route. The route always
+  // replies with clean JSON (ManualSeedResult), so nothing here can trigger the
+  // generic "Server Components render" error. Errors are shown inline.
+  const seedFail = (message: string): ManualSeedResult => ({
+    ok: false, createdCategories: 0, updatedCategories: 0, createdProducts: 0, updatedProducts: 0,
+    visibleProductsPath: '/products', errors: [{ scope: 'network', message }],
+  })
+  async function runSeed() {
+    if (anyPending || blockSeed) return
+    setSeedPending(true)
+    setSeedResult(null)
+    try {
+      const res = await fetch('/api/admin/catalog/seed-manual', {
+        method: 'POST',
+        headers: { 'x-requested-with': 'fetch' },
+      })
+      if (res.status === 401) {
+        setSeedResult(seedFail('Не авторизовано. Увійдіть в адмінку та повторіть.'))
+      } else {
+        const json = (await res.json().catch(() => null)) as ManualSeedResult | null
+        setSeedResult(json && typeof json.ok === 'boolean'
+          ? json
+          : seedFail(`Неочікувана відповідь сервера (HTTP ${res.status}).`))
+      }
+    } catch (e) {
+      setSeedResult(seedFail(e instanceof Error ? e.message : 'Помилка мережі.'))
+    } finally {
+      setSeedPending(false)
+      try { router.refresh() } catch { /* ignore */ }
+    }
   }
 
   const runsByType = new Map(autoStatus.lastRuns.map((r) => [r.sync_type, r]))
@@ -723,17 +758,26 @@ export function PipelineClient({
       {/* ════════════════════ MANUAL CATALOG (owner-relevant) ════════════════════ */}
       <SectionHeader title="Ручний каталог" hint="Мед-шоколад, масло на замовлення, подарункові набори, натуральні продукти, олії, метал. Окремо від постачальника — імпорт постачальника їх не перезаписує." />
 
-      <StepCard
-        title="Заповнити ручний каталог"
-        description="Створює/оновлює ручні категорії та товари. Безпечно повторювати — нічого не дублюється."
-        buttonLabel="▶ Заповнити"
-        accent={blockSeed ? 'border-red-300' : undefined}
-        pending={pManual}
-        disabled={anyPending || blockSeed}
-        onRun={() => run(sManual, seedManualCatalogAction, setRManual)}
-        result={rManual}
-        note={blockSeed ? migHint('Відсутні колонки ручного каталогу (міграції 051–055).') : undefined}
-      />
+      <div className={`bg-white rounded-xl border p-4 ${blockSeed ? 'border-red-300' : 'border-gray-200'}`}>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h3 className="font-semibold text-bark text-sm">Заповнити ручний каталог</h3>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Створює/оновлює ручні категорії та товари (шоколад на меду, масло на замовлення, подарункові набори, олії). Безпечно повторювати — нічого не дублюється.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={runSeed}
+            disabled={anyPending || blockSeed}
+            className={`${BTN_GRAY} shrink-0`}
+          >
+            {seedPending ? <><Spinner /> Заповнення…</> : '▶ Заповнити'}
+          </button>
+        </div>
+        {blockSeed && migHint('Відсутні колонки ручного каталогу (міграції 051–055).')}
+        {seedResult && <ManualSeedResultBox result={seedResult} />}
+      </div>
 
       {/* ════════════════════ SEO COVERAGE SUMMARY (owner-relevant) ════════════════════ */}
       <SectionHeader title="SEO — покриття" hint="Скільки категорій і товарів мають SEO. Кнопки генерації — у розширених інструментах." />
@@ -1128,6 +1172,56 @@ export function PipelineClient({
         </div>
       </details>
 
+    </div>
+  )
+}
+
+// Inline result for the manual-catalog seed. Green = success (counts + direct
+// links to the seeded products); red = sanitized error list. Never a generic RSC
+// error — it renders a plain ManualSeedResult received from the API route.
+const SEED_LINKS: { href: string; label: string }[] = [
+  { href: '/products', label: 'Відкрити /products' },
+  { href: '/catalog/naturalni-produkty/medovyi-shokolad', label: 'Шоколад на меду' },
+  { href: '/catalog/zhyvi-olii-holodnogo-vidzhymu/maslo-holodnogo-vidzhymu-na-zamovlennia', label: 'Масло на замовлення' },
+  { href: '/catalog/podarunkovi-nabory/podarunkovyi-nabir-med-shokolad', label: 'Набір: мед + шоколад' },
+  { href: '/catalog/podarunkovi-nabory/podarunkovyi-nabir-med-oliia', label: 'Набір: мед + олія' },
+  { href: '/catalog/podarunkovi-nabory/podarunkovyi-nabir-med-shokolad-oliia', label: 'Набір: мед + шоколад + олія' },
+]
+
+function ManualSeedResultBox({ result }: { result: ManualSeedResult }) {
+  if (result.ok) {
+    return (
+      <div className="mt-3 rounded-lg border border-green-200 bg-green-50 p-3">
+        <p className="text-sm font-semibold text-green-800">✓ Готово — ручний каталог заповнено</p>
+        <p className="text-xs text-green-700 mt-1">
+          Категорії: +{result.createdCategories} нових, {result.updatedCategories} оновлено ·
+          {' '}Товари: +{result.createdProducts} нових, {result.updatedProducts} оновлено.
+          {' '}Видно на <code className="font-mono">{result.visibleProductsPath}</code>.
+        </p>
+        <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2">
+          {SEED_LINKS.map((l) => (
+            <a key={l.href} href={l.href} target="_blank" rel="noopener noreferrer" className="text-xs font-medium text-green-800 underline hover:text-green-900">
+              {l.label} ↗
+            </a>
+          ))}
+        </div>
+      </div>
+    )
+  }
+  return (
+    <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3">
+      <p className="text-sm font-semibold text-red-800">✕ Помилка заповнення ручного каталогу</p>
+      <ul className="mt-1.5 space-y-1.5">
+        {(result.errors ?? [{ scope: 'seed', message: 'Невідома помилка' }]).map((e, i) => (
+          <li key={i} className="text-xs text-red-700">
+            <span className="font-medium">[{e.scope}{e.slug ? `: ${e.slug}` : ''}]</span> {e.message}
+            {e.code && <span className="text-red-500"> (код {e.code})</span>}
+            {e.details && <span className="block text-red-500/80 font-mono break-all">{e.details}</span>}
+            {e.hint && <span className="block text-red-700 font-medium mt-0.5">→ {e.hint}</span>}
+          </li>
+        ))}
+      </ul>
+      <p className="text-xs text-red-600 mt-2">Дані не змінено або змінено частково. Виправте причину вище та натисніть «Заповнити» ще раз.</p>
     </div>
   )
 }
