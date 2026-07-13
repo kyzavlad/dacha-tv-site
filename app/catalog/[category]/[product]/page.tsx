@@ -91,6 +91,16 @@ export default async function ProductPage({ params }: Props) {
   const priceOk = hasDisplayablePrice(product)
   const buyable = canAddToCart(product)
   const priceLabel = formatCatalogPrice(product)
+
+  // For made-to-order manual products that show a "від" price, explain that the
+  // figure is a starting point so the price isn't read as final.
+  const fromPriceNote = buyable
+    ? null
+    : product.category_slug === 'podarunkovi-nabory'
+      ? 'Це базова ціна «від». Остаточна сума залежить від сорту меду, виду олії, наповнення та подарункової упаковки.'
+      : product.slug === 'maslo-holodnogo-vidzhymu-na-zamovlennia'
+        ? 'Ціна залежить від виду насіння та обʼєму. Орієнтир — від 500 грн/л.'
+        : null
   const hasDiscount =
     priceOk && product.compare_price_uah != null && product.price_uah != null && product.compare_price_uah > product.price_uah
 
@@ -201,6 +211,10 @@ export default async function ProductPage({ params }: Props) {
                 <span className="text-xl font-semibold text-honey-700">Ціна за запитом</span>
               )}
             </div>
+
+            {fromPriceNote && (
+              <p className="text-sm text-bark/60 leading-relaxed -mt-3 mb-6">{fromPriceNote}</p>
+            )}
 
             {product.short_description && (
               <p className="text-gray-600 text-base leading-relaxed mb-6">

@@ -600,36 +600,40 @@ const METAL_PRODUCTS: ManualProductSeed[] = [
 ]
 
 // ─── Gift sets ───────────────────────────────────────────────────────────────
-// Combinations of honey / honey-chocolate / cold-pressed oil. Prices vary by the
-// chosen honey sort, oil seed and packaging, so these are inquiry-only (price
-// null → the card shows "Уточнити ціну" and the detail page shows the natural-
-// products lead form). Copy makes the "уточнити набір" intent explicit.
+// Combinations of honey / honey-chocolate / cold-pressed oil. Final price varies
+// by the chosen honey sort, oil seed, filling and packaging, so these stay
+// inquiry-only (never add-to-cart). We DO seed a minimum "from" price (price_uah
+// + price_prefix 'від') so the card and detail page show "від X грн" instead of a
+// generic price request — better for conversion — while the lead form stays.
 function giftSet(
   slug: string,
   name: string,
   contents: string,
+  minPrice: number,
   order: number,
 ): ManualProductSeed {
   return {
     slug,
     category_slug: 'podarunkovi-nabory',
     name_ua: name,
-    short_description: `Подарунковий набір: ${contents}. Склад і пакування — під замовлення.`,
+    short_description: `Подарунковий набір: ${contents}. Базова ціна — від ${minPrice} грн; склад і пакування узгоджуємо.`,
     description:
       `Подарунковий набір «${contents}» від нашого господарства.\n\n` +
       'Збираємо набір під замовлення: узгоджуємо сорт меду, наповнення шоколаду / вид олії та подарункове пакування. ' +
       'Напишіть або зателефонуйте — зберемо набір під ваш бюджет і уточнимо вартість та наявність.\n\n' +
+      `Це базова ціна «від ${minPrice} грн». Остаточна сума залежить від сорту меду, виду олії, наповнення та подарункової упаковки.\n\n` +
       NOT_MEDICINE,
-    meta_title: `${name} — подарунковий набір від Дача TV`,
+    meta_title: `${name} — подарунковий набір від Дача TV, від ${minPrice} грн`,
     meta_description:
-      `Подарунковий набір «${contents}» від господарства Дача TV. Склад і пакування під замовлення. Уточнюйте склад набору, вартість та наявність.`,
-    price_uah: null,
-    price_prefix: null,
+      `Подарунковий набір «${contents}» від господарства Дача TV — від ${minPrice} грн. Склад і пакування під замовлення. Уточнюйте склад набору та наявність.`,
+    price_uah: minPrice,
+    price_prefix: 'від',
     unit_label: null,
     inquiry_only: true,
     lead_type: 'natural_products',
     options: {
       'Склад': contents,
+      'Орієнтовна ціна': `від ${minPrice} грн`,
       'Пакування': 'Подарункове, за домовленістю',
       'Виготовлення': 'Збираємо під замовлення',
     },
@@ -638,9 +642,9 @@ function giftSet(
 }
 
 const GIFT_SETS: ManualProductSeed[] = [
-  giftSet('podarunkovyi-nabir-med-shokolad', 'Подарунковий набір «Мед + шоколад»', 'липовий мед + шоколад на меду', 1),
-  giftSet('podarunkovyi-nabir-med-oliia', 'Подарунковий набір «Мед + олія»', 'липовий мед + масло холодного віджиму', 2),
-  giftSet('podarunkovyi-nabir-med-shokolad-oliia', 'Подарунковий набір «Мед + шоколад + олія»', 'липовий мед + шоколад на меду + масло холодного віджиму', 3),
+  giftSet('podarunkovyi-nabir-med-shokolad', 'Подарунковий набір «Мед + шоколад»', 'липовий мед + шоколад на меду', 850, 1),
+  giftSet('podarunkovyi-nabir-med-oliia', 'Подарунковий набір «Мед + олія»', 'липовий мед + масло холодного віджиму', 1100, 2),
+  giftSet('podarunkovyi-nabir-med-shokolad-oliia', 'Подарунковий набір «Мед + шоколад + олія»', 'липовий мед + шоколад на меду + масло холодного віджиму', 1350, 3),
 ]
 
 export const MANUAL_PRODUCTS: ManualProductSeed[] = [

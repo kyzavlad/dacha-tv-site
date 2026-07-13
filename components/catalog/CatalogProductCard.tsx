@@ -12,6 +12,16 @@ interface CatalogProductCardProps {
   locale?: string
 }
 
+// Label for the inquiry CTA on manual products that have a "від" price but are
+// ordered by contact (gift sets, made-to-order oil). Falls back to the neutral
+// "Уточнити ціну" for everything else (supplier catalog is unaffected — those
+// buyable products never reach this branch).
+function inquiryCtaLabel(product: CatalogProduct): string {
+  if (product.category_slug === 'podarunkovi-nabory') return 'Замовити набір'
+  if (product.category_slug === 'zhyvi-olii-holodnogo-vidzhymu') return 'Замовити олію'
+  return 'Уточнити ціну'
+}
+
 export function CatalogProductCard({ product, categorySlug, locale }: CatalogProductCardProps) {
   const href = `/catalog/${categorySlug}/${product.slug}`
   const imageUrl = getCatalogProductImage(product)
@@ -102,7 +112,7 @@ export function CatalogProductCard({ product, categorySlug, locale }: CatalogPro
               href={href}
               className="flex items-center justify-center w-full py-2.5 px-4 text-sm font-semibold rounded-xl border border-honey-300 text-honey-700 hover:bg-honey-50 transition-colors"
             >
-              Уточнити ціну
+              {inquiryCtaLabel(product)}
             </Link>
           ) : (
             <div className="text-xs text-gray-400 text-center py-2">Немає в наявності</div>
