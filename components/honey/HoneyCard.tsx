@@ -2,6 +2,7 @@ import Link from 'next/link'
 import Image from 'next/image'
 import type { HoneyProduct } from '@/types'
 import { honeyUnitPriceUah } from '@/lib/honey-pricing'
+import { AddToCartButton } from '@/components/cart/AddToCartButton'
 
 interface HoneyCardProps {
   product: HoneyProduct
@@ -29,6 +30,10 @@ export function HoneyCard({ product }: HoneyCardProps) {
   const img = resolveImage(product)
 
   const price = honeyUnitPriceUah(product)
+  // Buyable directly from the card when there is a valid price and the product is
+  // orderable — same conditions the honey detail widget uses. Honey has a single
+  // canonical unit price (1 л); no plastic/glass selector.
+  const buyable = price != null && price > 0 && (product.status === 'available' || product.status === 'preorder')
 
   return (
     <article className="group bg-white rounded-2xl overflow-hidden border border-gray-100 hover:border-bark/20 hover:shadow-xl transition-all duration-300 flex flex-col">
@@ -101,16 +106,42 @@ export function HoneyCard({ product }: HoneyCardProps) {
           </div>
         )}
 
-        <Link
-          href={`/honey/${product.slug}`}
-          className="inline-flex items-center justify-center gap-1.5 w-full px-4 py-3 bg-bark text-white font-semibold text-sm rounded-full transition-colors hover:bg-bark-light min-h-[44px] group-hover:bg-honey-700"
-          aria-label={`Детальніше про ${product.name}`}
-        >
-          Детальніше
-          <svg className="w-4 h-4 transition-transform group-hover:translate-x-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-          </svg>
-        </Link>
+        {buyable ? (
+          // Primary "До кошика" (reuses the shared cart button + honey item
+          // shape from the detail-page widget: one price, unit "1 л"), with
+          // "Детальніше" kept as a secondary link.
+          <div className="space-y-2">
+            <AddToCartButton
+              item={{
+                id: `honey-${product.slug}`,
+                productType: 'honey' as const,
+                productSlug: product.slug,
+                name: product.name,
+                price,
+                imageUrl: img?.src ?? undefined,
+                variant: '1 л',
+              }}
+            />
+            <Link
+              href={`/honey/${product.slug}`}
+              className="block text-center text-sm font-medium text-bark/50 hover:text-bark transition-colors"
+              aria-label={`Детальніше про ${product.name}`}
+            >
+              Детальніше →
+            </Link>
+          </div>
+        ) : (
+          <Link
+            href={`/honey/${product.slug}`}
+            className="inline-flex items-center justify-center gap-1.5 w-full px-4 py-3 bg-bark text-white font-semibold text-sm rounded-full transition-colors hover:bg-bark-light min-h-[44px] group-hover:bg-honey-700"
+            aria-label={`Детальніше про ${product.name}`}
+          >
+            Детальніше
+            <svg className="w-4 h-4 transition-transform group-hover:translate-x-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+            </svg>
+          </Link>
+        )}
       </div>
     </article>
   )
