@@ -147,5 +147,6 @@ export function trackPhoneClick(phone?: string, location?: string): void {
   gaEvent('phone_click', {
     ...(phone ? { phone_number: phone } : {}),
     ...(location ? { location } : {}),
+    ...(typeof window !== 'undefined' ? { page_path: window.location.pathname } : {}),
   })
 }

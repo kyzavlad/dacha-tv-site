@@ -403,9 +403,17 @@ export async function getLandingCategories(limit = 80): Promise<CatalogCategory[
     .order('name_ua', { ascending: true })
     .limit(fetchCount)
   const rows = (data ?? []) as CatalogCategory[]
-  // Drop technical/slug-like names, then pin manual categories (metal, natural,
-  // oils) first — same order intent as getPublishedCategories — and cap.
-  const usable = rows.filter((c) => !isUnusableCategoryName(c.name_ua))
+  // Drop technical/slug-like names AND manual Dacha TV product categories (honey,
+  // natural products, oils, gift sets, bee products) — those live on /products,
+  // not in the supplier shop. Filtering by source (not is_published) keeps them
+  // off /catalog even if a "publish all categories" run flips their published
+  // flag. The one manual category that DOES belong in /catalog is the metal
+  // profile category, so it is explicitly kept.
+  const usable = rows.filter(
+    (c) =>
+      !isUnusableCategoryName(c.name_ua) &&
+      !(c.source === 'manual' && c.slug !== METAL_CATEGORY_SLUG),
+  )
   usable.sort((a, b) => {
     const am = a.source === 'manual' ? 0 : 1
     const bm = b.source === 'manual' ? 0 : 1
