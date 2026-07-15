@@ -18,7 +18,8 @@ export async function GET(req: Request) {
   try {
     const r = await getRuProductAiCandidates(limit)
     // Log throughput diagnostics so a low-yield run explains itself in the logs.
-    console.info(`[seo-ru-candidates] limit=${r.limit} count=${r.count} fresh=${r.diagnostics.fresh_found} partial=${r.diagnostics.partial_found} usedPartial=${r.diagnostics.used_partial} scanned=${r.diagnostics.scanned} pages=${r.diagnostics.pages} reachedEnd=${r.diagnostics.reached_end} scanCapped=${r.diagnostics.scan_capped} — ${r.message}`)
+    const d = r.diagnostics
+    console.info(`[seo-ru-candidates] req=${d.requested_limit} returned=${d.returned} scanned=${d.scanned} pages=${d.pages} missing=${d.missing_translation_found} partial=${d.partial_found} invalid=${d.invalid_found} locked=${d.locked_skipped} dup=${d.duplicate_skipped} complete=${d.complete_skipped} end=${d.reached_end} capped=${d.scan_capped} — ${r.message}`)
     return Response.json({ ok: r.ok, locale: 'ru', count: r.count, limit: r.limit, message: r.message, diagnostics: r.diagnostics, targets: RU_PRODUCT_TARGETS, candidates: r.candidates }, { status: r.ok ? 200 : 500 })
   } catch (e) {
     return Response.json({ ok: false, message: e instanceof Error ? e.message : String(e) }, { status: 200 })

@@ -179,46 +179,66 @@ const RU_PRODUCT_SRC_COLS =
   'id, slug, supplier_sku, name_ua, name, category_slug, price_uah, price_prefix, unit_label, main_image_url, images, meta_title, meta_description, description_ua'
 
 export interface RuCandidateDiagnostics {
+  requested_limit: number
+  returned: number
   scanned: number
   pages: number
-  fresh_found: number   // products with NO RU row yet (never attempted)
-  partial_found: number // products with a RU row that is still incomplete
-  used_partial: number  // partial rows included because fresh ran out
-  reached_end: boolean  // scanned to the end of the eligible catalog
-  scan_capped: boolean  // stopped at the page ceiling before filling `limit`
+  missing_translation_found: number // (a) products with NO RU translation row
+  partial_found: number             // (b) RU row exists, incomplete, not seo_status='ai'
+  invalid_found: number             // (c) RU row exists, incomplete, seo_status='ai' (regen)
+  locked_skipped: number
+  duplicate_skipped: number
+  complete_skipped: number
+  reached_end: boolean
+  scan_capped: boolean
 }
 
 export async function getRuProductAiCandidates(limit = 100): Promise<{ ok: boolean; count: number; limit: number; candidates: RuProductCandidate[]; message: string; diagnostics: RuCandidateDiagnostics }> {
-  const capped = clamp(Math.floor(limit) || 100, 1, 1000)
+  // Requirement 1: `limit` is the requested result size, capped at a safe max 100.
+  const requested = clamp(Math.floor(limit) || 100, 1, 100)
   const client = getAdminClient()
   const PAGE = 1000
-  // Prefer NEVER-ATTEMPTED products (no RU translation row). Because apply always
-  // writes a RU row for every served product, the fresh frontier advances by id
-  // each run — spreading RU coverage across the whole catalog instead of
-  // re-serving the same low-id rows (the old id-ordered scan wedged here: a row
-  // whose description kept failing validation stayed a candidate forever and
-  // blocked the 100k+ untouched products beyond the small scan window).
-  // Partial rows (RU row exists but incomplete) are a rotation-ordered FALLBACK,
-  // used only when no fresh products remain in the scanned window. Bounded to
-  // MAX_PAGES so one run never processes the whole catalog (requirement 7).
-  const MAX_PAGES = 20
+
+  // ROOT-CAUSE FIX.
+  // RU eligibility ("RU translation incomplete") lives in a SEPARATE table
+  // (catalog_product_translations), so — unlike the UA endpoint, which filters
+  // UA fields inline in the products query — it can only be checked per row in JS.
+  // The previous implementation compounded that with two over-restrictions:
+  //   (1) it required image + price>0 + category on the SOURCE product, which
+  //       excludes most of the ~85k RU backlog (many need RU SEO but lack a price
+  //       or image); and
+  //   (2) it capped the blind scan at 20 pages and stopped as soon as `fresh`
+  //       (never-attempted) filled, so a window full of already-complete rows
+  //       returned only 4–16.
+  // Now: eligibility matches the spec (published + safely matchable real name;
+  // NOT image/price/category), and the scan continues until `requested` unique
+  // candidates are collected or the eligible set is genuinely exhausted.
+  const MAX_PAGES = 200 // safety ceiling (~200k rows); the loop early-stops when filled
+
   const fresh: { p: CatalogProduct; needs: string[] }[] = []
   const partial: { p: CatalogProduct; tx: ProductTx; needs: string[] }[] = []
+  const invalid: { p: CatalogProduct; tx: ProductTx; needs: string[] }[] = []
+  const seenIds = new Set<string>()
+  const seenSkus = new Set<string>()
   let from = 0
   let scanned = 0
   let pages = 0
+  let lockedSkipped = 0
+  let completeSkipped = 0
+  let duplicateSkipped = 0
   let reachedEnd = false
 
+  const collected = () => fresh.length + partial.length + invalid.length
+
   try {
-    while (fresh.length < capped && pages < MAX_PAGES) {
+    while (collected() < requested && pages < MAX_PAGES) {
       const { data, error } = await client
         .from('catalog_products')
         .select(RU_PRODUCT_SRC_COLS)
-        // Base = real, sellable UA source products (independent of UA seo_status).
+        // Matchable, live source products only. Eligibility beyond this is the RU
+        // translation state (checked below) — NOT image/price/category, which are
+        // not part of the eligibility contract and hid most of the RU backlog.
         .eq('status', 'published')
-        .not('main_image_url', 'is', null)
-        .gt('price_uah', 0)
-        .not('category_slug', 'is', null)
         .not('name_ua', 'is', null)
         .order('id', { ascending: true })
         .range(from, from + PAGE - 1)
@@ -227,48 +247,60 @@ export async function getRuProductAiCandidates(limit = 100): Promise<{ ok: boole
       const rows = (data ?? []) as unknown as CatalogProduct[]
       pages++
       scanned += rows.length
+      // isPublicListableProduct enforces a real, safe name → "cannot be matched
+      // safely to a source product" (requirement 5) is the only extra exclusion.
       const listable = rows.filter(isPublicListableProduct)
       const txMap = await fetchRuProductTx(client, listable.map((p) => p.id))
 
       for (const p of listable) {
         const tx = txMap.get(p.id)
-        if (tx?.seo_manual_lock === true) continue // never overwrite a locked RU row
+        if (tx?.seo_manual_lock === true) { lockedSkipped++; continue }   // exclude locked
         const needs = productRuNeeds(tx)
-        if (needs.length === 0) continue
-        if (!tx) {
-          fresh.push({ p, needs })
-          if (fresh.length >= capped) break
-        } else {
-          partial.push({ p, tx, needs })
-        }
+        if (needs.length === 0) { completeSkipped++; continue }           // exclude fully complete
+        // Deduplicate by stable product id + SKU (requirement 8).
+        const skuKey = up(p.supplier_sku)
+        if (seenIds.has(p.id) || (skuKey && seenSkus.has(skuKey))) { duplicateSkipped++; continue }
+        seenIds.add(p.id)
+        if (skuKey) seenSkus.add(skuKey)
+        // Bucket by priority: (a) missing row, (b) incomplete non-AI, (c) incomplete AI.
+        if (!tx) fresh.push({ p, needs })
+        else if (tx.seo_status === 'ai') invalid.push({ p, tx, needs })
+        else partial.push({ p, tx, needs })
+        if (collected() >= requested) break
       }
       if (rows.length < PAGE) { reachedEnd = true; break }
       from += PAGE
     }
   } catch (e) {
     return {
-      ok: false, count: 0, limit: capped, candidates: [],
+      ok: false, count: 0, limit: requested, candidates: [],
       message: e instanceof Error ? e.message : String(e),
-      diagnostics: { scanned, pages, fresh_found: fresh.length, partial_found: partial.length, used_partial: 0, reached_end: reachedEnd, scan_capped: pages >= MAX_PAGES },
+      diagnostics: {
+        requested_limit: requested, returned: 0, scanned, pages,
+        missing_translation_found: fresh.length, partial_found: partial.length, invalid_found: invalid.length,
+        locked_skipped: lockedSkipped, duplicate_skipped: duplicateSkipped, complete_skipped: completeSkipped,
+        reached_end: reachedEnd, scan_capped: pages >= MAX_PAGES,
+      },
     }
   }
 
-  // Fill remaining slots with partial rows, oldest attempt first, so retries
-  // rotate through the incomplete backlog instead of hammering the same rows.
-  partial.sort((a, b) => (a.tx.seo_generated_at ?? '').localeCompare(b.tx.seo_generated_at ?? ''))
-  const usedPartial = Math.max(0, Math.min(partial.length, capped - fresh.length))
-  const picked: { p: CatalogProduct; tx?: ProductTx; needs: string[] }[] = [
+  // Merge in priority order a → b → c. Within b and c, oldest attempt first so
+  // repeated pulls rotate through the backlog and never starve a wedged row
+  // (requirement 7); id is a stable tiebreaker.
+  const byOldest = (a: { p: CatalogProduct; tx: ProductTx }, b: { p: CatalogProduct; tx: ProductTx }) =>
+    (a.tx.seo_generated_at ?? '').localeCompare(b.tx.seo_generated_at ?? '') || a.p.id.localeCompare(b.p.id)
+  partial.sort(byOldest)
+  invalid.sort(byOldest)
+  const ordered: { p: CatalogProduct; tx?: ProductTx; needs: string[] }[] = [
     ...fresh.map(({ p, needs }) => ({ p, needs })),
-    ...partial.slice(0, usedPartial),
+    ...partial.map(({ p, tx, needs }) => ({ p, tx, needs })),
+    ...invalid.map(({ p, tx, needs }) => ({ p, tx, needs })),
   ]
+  const picked = ordered.slice(0, requested)
 
-  const scanCapped = pages >= MAX_PAGES && !reachedEnd && picked.length < capped
-  const diagnostics: RuCandidateDiagnostics = {
-    scanned, pages, fresh_found: fresh.length, partial_found: partial.length,
-    used_partial: usedPartial, reached_end: reachedEnd, scan_capped: scanCapped,
-  }
+  const scanCapped = pages >= MAX_PAGES && !reachedEnd && picked.length < requested
 
-  // Resolve category display names.
+  // Resolve category display names (only for picked; category may be null now).
   const catSlugs = [...new Set(picked.map((x) => x.p.category_slug).filter(Boolean))] as string[]
   const catName = new Map<string, string>()
   for (let i = 0; i < catSlugs.length; i += 300) {
@@ -303,18 +335,45 @@ export async function getRuProductAiCandidates(limit = 100): Promise<{ ok: boole
     suggested_targets: RU_PRODUCT_TARGETS,
   }))
 
-  // Explain low yield so a stalled run is self-diagnosing (requirement 6).
-  let message: string
-  if (candidates.length === 0) {
-    message = diagnostics.scan_capped
-      ? `0 кандидатов: первые ${scanned} товаров уже имеют RU-строку; окно сканирования (${MAX_PAGES}×${PAGE}) исчерпано до фронта новых товаров.`
-      : 'Нет товаров, которым нужен RU SEO.'
-  } else {
-    message = `Найдено ${candidates.length} кандидатов (${fresh.length} новых, ${usedPartial} на повторную попытку).`
-    if (diagnostics.scan_capped) message += ` Окно сканирования исчерпано — новых товаров в первых ${scanned} строках не осталось.`
+  const diagnostics: RuCandidateDiagnostics = {
+    requested_limit: requested,
+    returned: candidates.length,
+    scanned,
+    pages,
+    missing_translation_found: fresh.length,
+    partial_found: partial.length,
+    invalid_found: invalid.length,
+    locked_skipped: lockedSkipped,
+    duplicate_skipped: duplicateSkipped,
+    complete_skipped: completeSkipped,
+    reached_end: reachedEnd,
+    scan_capped: scanCapped,
   }
 
-  return { ok: true, count: candidates.length, limit: capped, candidates, message, diagnostics }
+  // Message + under-fill guard (requirement 11): only when we returned fewer than
+  // requested do we spend the extra coverage counts to explain exactly why.
+  let message: string
+  if (candidates.length === 0) {
+    message = reachedEnd
+      ? 'Нет товаров, которым нужен RU SEO (все сопоставимые товары уже заполнены или заблокированы).'
+      : `0 кандидатов после сканирования ${scanned} товаров.`
+  } else {
+    message = `Найдено ${candidates.length} кандидатов: ${fresh.length} без RU-строки, ${partial.length} частичных, ${invalid.length} невалидных AI.`
+  }
+  if (candidates.length < requested) {
+    let backlog = 0
+    try { backlog = (await localizedProductCoverage(RU_LOCALE)).backlog } catch { /* best-effort */ }
+    if (backlog >= requested) {
+      const why = scanCapped
+        ? `окно сканирования (${MAX_PAGES}×${PAGE}) исчерпано до сбора ${requested}; подходящие товары разрежены или глубоко в каталоге`
+        : reachedEnd
+          ? `сопоставимых незаблокированных товаров с неполным RU меньше ${requested} — пропущено: заблокировано ${lockedSkipped}, полностью заполнено ${completeSkipped}; часть RU-бэклога (${backlog}) — товары без корректного имени или не в статусе published`
+          : 'сканирование остановлено до заполнения'
+      message += ` ⚠ RU-бэклог ≈ ${backlog} ≥ ${requested}, но возвращено ${candidates.length}: ${why}.`
+    }
+  }
+
+  return { ok: true, count: candidates.length, limit: requested, candidates, message, diagnostics }
 }
 
 // ─── Category RU candidates (grounded + ranked by product count) ──────────────
