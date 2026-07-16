@@ -14,6 +14,15 @@ import { categoryFaq } from '@/lib/catalog-faq'
 import { buildSocialMetadata, buildAlternates, stripBrand } from '@/lib/seo'
 import { getRequestLocale, localizedPath, type Locale } from '@/lib/i18n'
 import { resolveCategorySeo } from '@/lib/catalog/localized-seo'
+import { SCOOTER_CATEGORY_SLUG, SCOOTER_MODELS, MODEL_SLUGS } from '@/lib/moto/scooter-models'
+
+// The scooter category gets a cleaner localized H1 (its raw supplier name is
+// "На скутери"/"На скутеры") plus a "Popular models" block linking to the model
+// landing pages. Existing DB title/meta_description are kept as-is.
+const SCOOTER_H1: Record<Locale, string> = { uk: 'Запчастини для скутерів', ru: 'Запчасти для скутеров', en: 'Scooter parts' }
+const POPULAR_MODELS: Record<Locale, string> = { uk: 'Популярні моделі', ru: 'Популярные модели', en: 'Popular models' }
+const shortModelLabel = (locale: Locale, slug: keyof typeof SCOOTER_MODELS): string =>
+  SCOOTER_MODELS[slug].h1[locale === 'ru' ? 'ru' : 'uk'].replace(/^Запч[а-я]+ для /i, '')
 
 interface Props {
   params: Promise<{ category: string }>
@@ -110,6 +119,8 @@ export default async function CategoryPage({ params, searchParams }: Props) {
   const locale = await getRequestLocale()
   const st = CAT_STRINGS[locale]
   const displayName = categoryDisplayName(cat.name_ua)
+  const isScooterCategory = slug === SCOOTER_CATEGORY_SLUG
+  const h1Display = isScooterCategory ? SCOOTER_H1[locale] : displayName
   const totalPages = Math.ceil(total / CATALOG_PAGE_SIZE)
   const rangeFrom = (page - 1) * CATALOG_PAGE_SIZE + 1
   const rangeTo = (page - 1) * CATALOG_PAGE_SIZE + products.length
@@ -131,7 +142,7 @@ export default async function CategoryPage({ params, searchParams }: Props) {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <Breadcrumb crumbs={crumbs} />
           <h1 className="font-serif text-3xl md:text-4xl font-bold text-bark mt-4 mb-2">
-            {displayName}
+            {h1Display}
           </h1>
           {intro ? (
             <p className="text-gray-500 text-base max-w-2xl">{intro}</p>
@@ -145,6 +156,24 @@ export default async function CategoryPage({ params, searchParams }: Props) {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+        {/* Popular models — internal links from the scooter category to the model
+            landing pages (SEO + Ads destinations). Scooter category only. */}
+        {isScooterCategory && (
+          <section className="mb-8" aria-label={POPULAR_MODELS[locale]}>
+            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">{POPULAR_MODELS[locale]}</h2>
+            <div className="flex flex-wrap gap-2">
+              {MODEL_SLUGS.map((ms) => (
+                <Link
+                  key={ms}
+                  href={localizedPath(locale, `/moto/skutery/${ms}`)}
+                  className="inline-flex items-center rounded-full border border-honey-200 bg-white px-4 py-2 text-sm font-medium text-bark hover:border-honey-400 hover:text-honey-700 transition-colors"
+                >
+                  {shortModelLabel(locale, ms)}
+                </Link>
+              ))}
+            </div>
+          </section>
+        )}
         {/* Filter/sort bar — shown when the category has products OR the buyable
             filter is active (so a filter that yields 0 results can still be
             toggled off). "Тільки з ціною" links preserve sort; default is off. */}

@@ -89,6 +89,27 @@ export function trackViewItem(item: AnalyticsItem): void {
   })
 }
 
+// GA4 view_item_list — fired once when a model landing's product grid is shown.
+// `item_list_id`/`item_list_name` are stamped on each item so GA4 attributes the
+// downstream select_item / view_item to this list.
+export function trackViewItemList(listId: string, listName: string, items: AnalyticsItem[]): void {
+  if (items.length === 0) return
+  gaEvent('view_item_list', {
+    item_list_id: listId,
+    item_list_name: listName,
+    items: items.map((it) => ({ ...it, item_list_id: listId, item_list_name: listName })),
+  })
+}
+
+// GA4 select_item — fired when a product is clicked from a model landing list.
+export function trackSelectItem(listId: string, listName: string, item: AnalyticsItem): void {
+  gaEvent('select_item', {
+    item_list_id: listId,
+    item_list_name: listName,
+    items: [{ ...item, item_list_id: listId, item_list_name: listName }],
+  })
+}
+
 export function trackAddToCart(item: AnalyticsItem): void {
   const qty = item.quantity ?? 1
   gaEvent('add_to_cart', {

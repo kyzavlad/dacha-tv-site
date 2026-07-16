@@ -512,6 +512,73 @@ export async function getPublishedProductsByCategory(
   return { products, total: count ?? 0 }
 }
 
+// Sanitize an ilike needle so a config token can't broaden or break the pattern.
+function sanitizeNeedle(s: string): string {
+  return s.replace(/[%,()]/g, ' ').trim()
+}
+
+// ─── Scooter model landing fetch (strict) ────────────────────────────────────
+// Products in the scooter category that (a) pass the buyable rule, (b) have an
+// image, and (c) match at least one MODEL token (ilike on name_ua / name /
+// description_ua) — never merely the brand word. `modTokens` narrows further to a
+// specific modification. Paginated with an exact count so a landing paginates
+// like a normal category. Powers /moto/skutery/[model]; no hardcoded id lists.
+export async function getScooterModelProducts(
+  categorySlug: string,
+  modelTokens: string[],
+  page: number,
+  modTokens?: string[],
+): Promise<{ products: CatalogProduct[]; total: number }> {
+  const client = getClient()
+  if (!client) return { products: [], total: 0 }
+
+  const orClause = (tokens: string[]): string =>
+    [...new Set(tokens.map(sanitizeNeedle).filter((t) => t.length >= 2))]
+      .flatMap((t) => [`name_ua.ilike.%${t}%`, `name.ilike.%${t}%`, `description_ua.ilike.%${t}%`])
+      .join(',')
+
+  const modelOr = orClause(modelTokens)
+  if (!modelOr) return { products: [], total: 0 }
+
+  const from = (page - 1) * CATALOG_PAGE_SIZE
+  const to = from + CATALOG_PAGE_SIZE - 1
+  let base = client
+    .from('catalog_products')
+    .select('*', { count: 'exact' })
+    .eq('status', 'published')
+    .eq('category_slug', categorySlug)
+    // buyable rule (mirrors the catalog "Тільки з ціною" filter)
+    .gte('price_uah', MIN_VALID_PRICE_UAH)
+    .not('is_price_suspicious', 'is', true)
+    // Require a real primary image. `images.not.is.null` (the old check) also
+    // matched an empty jsonb array `[]`, letting image-less products into the
+    // count while the card rendered a placeholder — a count/display mismatch. A
+    // non-empty main_image_url is the always-resolvable primary source and keeps
+    // the DB count equal to what is shown (images[]-only edge cases are excluded
+    // on purpose for landing quality).
+    .not('main_image_url', 'is', null)
+    .neq('main_image_url', '')
+    // strict model match — separate .or() group AND-combined with the above
+    .or(modelOr)
+
+  const modOr = modTokens && modTokens.length ? orClause(modTokens) : ''
+  if (modOr) base = base.or(modOr)
+
+  const { data, count, error } = await base
+    .order('is_featured', { ascending: false })
+    .order('display_order', { ascending: true })
+    .order('name_ua', { ascending: true })
+    .range(from, to)
+  // Never mask a DB/PostgREST failure as a valid empty result — surface it so it
+  // is visible in logs and renders an error state, not a misleading "0 products".
+  if (error) {
+    console.warn(`[scooter-landing] query failed (category=${categorySlug}): ${error.message}`)
+    throw new Error(`scooter landing query failed: ${error.message}`)
+  }
+  const products = ((data ?? []) as CatalogProduct[]).filter(isPublicListableProduct)
+  return { products, total: count ?? 0 }
+}
+
 // Up to `limit` other published products in the same category, for the
 // "схожі товари" rail on a product page. Cheap: single indexed query, no counts.
 export async function getRelatedCatalogProducts(

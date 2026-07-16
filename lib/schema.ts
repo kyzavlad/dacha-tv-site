@@ -28,6 +28,25 @@ export function breadcrumbSchema(crumbs: Crumb[]): Record<string, unknown> {
   }
 }
 
+// ItemList schema for a product listing (model landing grid). Each entry links to
+// the product detail URL in listing order — a lightweight, valid signal that does
+// not duplicate the per-product Product schema on the detail pages. `url` must be
+// the already-localized path (e.g. /ru/catalog/...); `startIndex` offsets the
+// positions so paginated pages continue the global ordering (page 2 → 25, 26 …).
+export function itemListSchema(items: { name: string; url: string }[], startIndex = 0): Record<string, unknown> {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'ItemList',
+    numberOfItems: items.length,
+    itemListElement: items.map((it, i) => ({
+      '@type': 'ListItem',
+      position: startIndex + i + 1,
+      name: it.name,
+      url: abs(it.url),
+    })),
+  }
+}
+
 export interface FaqItem {
   question: string
   answer: string

@@ -8,13 +8,16 @@ const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.dachatv.com'
 // the canonical (uk, prefix-less) path. The canonical self-references the active
 // locale's URL; `languages` lists every locale plus x-default (→ uk), so each
 // localized page references itself and the others (Google hreflang requirement).
-export function buildAlternates(locale: Locale, canonicalPath: string): {
+// `locales` defaults to every supported locale (existing behaviour). Pages that
+// only exist in a subset (e.g. the moto landings, which have no EN content) pass
+// that subset so no hreflang is advertised for a locale that would 404.
+export function buildAlternates(locale: Locale, canonicalPath: string, locales: readonly Locale[] = LOCALES): {
   canonical: string
   languages: Record<string, string>
 } {
   const abs = (loc: Locale) => `${SITE_URL}${localizedPath(loc, canonicalPath)}`
   const languages: Record<string, string> = {}
-  for (const loc of LOCALES) languages[HREFLANG[loc]] = abs(loc)
+  for (const loc of locales) languages[HREFLANG[loc]] = abs(loc)
   languages['x-default'] = abs(DEFAULT_LOCALE)
   return { canonical: abs(locale), languages }
 }

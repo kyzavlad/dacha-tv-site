@@ -44,6 +44,10 @@ export default async function sitemap(props: { id: Promise<string> }): Promise<M
       { url: `${BASE_URL}/contact`, lastModified: new Date(), priority: 0.7 },
       { url: `${BASE_URL}/delivery`, lastModified: new Date(), priority: 0.6 },
       { url: `${BASE_URL}/faq`, lastModified: new Date(), priority: 0.6 },
+      // Scooter model SEO/Ads landings (canonical uk; ru mirror via hreflang).
+      { url: `${BASE_URL}/moto/skutery/honda-dio`, lastModified: new Date(), priority: 0.85 },
+      { url: `${BASE_URL}/moto/skutery/yamaha-jog`, lastModified: new Date(), priority: 0.85 },
+      { url: `${BASE_URL}/moto/skutery/suzuki-lets`, lastModified: new Date(), priority: 0.85 },
     ]
 
     const [honeySlugs, flowerSlugs, apiarySlugs, beekeeperSlugs, serviceSlugs, catalogCategories] = await Promise.all([
