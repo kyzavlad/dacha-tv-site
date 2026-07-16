@@ -6,7 +6,6 @@ import type { Metadata } from 'next'
 import { getScooterModelProducts, CATALOG_PAGE_SIZE, displayProductName, hasValidPrice } from '@/lib/supabase/catalog'
 import { CatalogProductCard } from '@/components/catalog/CatalogProductCard'
 import { Breadcrumb } from '@/components/catalog/Breadcrumb'
-import { Pagination } from '@/components/catalog/Pagination'
 import { StructuredData } from '@/components/shared/StructuredData'
 import { FaqBlock } from '@/components/shared/FaqBlock'
 import { PhoneLink } from '@/components/shared/PhoneLink'
@@ -28,10 +27,30 @@ interface Props {
 type L = 'uk' | 'ru'
 const lang = (locale: Locale): L => (locale === 'ru' ? 'ru' : 'uk')
 
+// Localized plural for "товар" — used for the honest page-1 "showing N products"
+// copy. We never claim a grand total (the query no longer computes one), so this
+// only ever pluralizes the count actually rendered on the current page.
+const ukProduct = (n: number): string => {
+  const mod100 = n % 100
+  const mod10 = n % 10
+  if (mod100 >= 11 && mod100 <= 14) return 'товарів'
+  if (mod10 === 1) return 'товар'
+  if (mod10 >= 2 && mod10 <= 4) return 'товари'
+  return 'товарів'
+}
+const ruProduct = (n: number): string => {
+  const mod100 = n % 100
+  const mod10 = n % 10
+  if (mod100 >= 11 && mod100 <= 14) return 'товаров'
+  if (mod10 === 1) return 'товар'
+  if (mod10 >= 2 && mod10 <= 4) return 'товара'
+  return 'товаров'
+}
+
 const STR: Record<L, {
   home: string; catalog: string; scooters: string
-  found: (n: number) => string; showing: (from: number, to: number, total: number) => string
-  prev: string; next: string; pageOf: (page: number, total: number) => string
+  shown: (from: number, to: number, count: number, page: number) => string
+  prev: string; next: string; pageLabel: (page: number) => string
   mods: string; allMods: string
   benefitsTitle: string; benefits: string[]
   deliveryTitle: string; delivery: string; payment: string
@@ -40,9 +59,9 @@ const STR: Record<L, {
 }> = {
   uk: {
     home: 'Головна', catalog: 'Каталог', scooters: 'Скутери',
-    found: (n) => `Знайдено: ${n.toLocaleString('uk-UA')} товарів`,
-    showing: (from, to, total) => `Показано ${from}–${to} з ${total.toLocaleString('uk-UA')}`,
-    prev: 'Попередня', next: 'Наступна', pageOf: (p, t) => `Сторінка ${p} з ${t}`,
+    shown: (from, to, count, page) =>
+      page > 1 ? `Показано товари ${from}–${to}` : `Показано ${count} ${ukProduct(count)}`,
+    prev: 'Попередня', next: 'Наступна', pageLabel: (p) => `Сторінка ${p}`,
     mods: 'Модифікації', allMods: 'Усі',
     benefitsTitle: 'Чому зручно замовляти в нас',
     benefits: ['Підбір за моделлю та рамою', 'Актуальні позиції з каталогу', 'Доставка Новою Поштою по Україні', 'Консультація щодо сумісності'],
@@ -56,9 +75,9 @@ const STR: Record<L, {
   },
   ru: {
     home: 'Главная', catalog: 'Каталог', scooters: 'Скутеры',
-    found: (n) => `Найдено: ${n.toLocaleString('ru-RU')} товаров`,
-    showing: (from, to, total) => `Показано ${from}–${to} из ${total.toLocaleString('ru-RU')}`,
-    prev: 'Предыдущая', next: 'Следующая', pageOf: (p, t) => `Страница ${p} из ${t}`,
+    shown: (from, to, count, page) =>
+      page > 1 ? `Показаны товары ${from}–${to}` : `Показано ${count} ${ruProduct(count)}`,
+    prev: 'Предыдущая', next: 'Следующая', pageLabel: (p) => `Страница ${p}`,
     mods: 'Модификации', allMods: 'Все',
     benefitsTitle: 'Почему удобно заказывать у нас',
     benefits: ['Подбор по модели и раме', 'Актуальные позиции из каталога', 'Доставка Новой Почтой по Украине', 'Консультация по совместимости'],
@@ -112,7 +131,7 @@ export default async function ScooterModelPage({ params, searchParams }: Props) 
 
   // No silent catch: a real DB/PostgREST failure must surface (500 + logs), not
   // masquerade as a valid empty product page.
-  const { products, total } = await getScooterModelProducts(
+  const { products, hasNext } = await getScooterModelProducts(
     SCOOTER_CATEGORY_SLUG,
     m.tokens,
     page,
@@ -152,6 +171,16 @@ export default async function ScooterModelPage({ params, searchParams }: Props) 
   const modHref = (modSlug: string | null) => {
     const sp = new URLSearchParams()
     if (modSlug) sp.set('mod', modSlug)
+    const qs = sp.toString()
+    return `${localizedPath(locale, basePath)}${qs ? `?${qs}` : ''}`
+  }
+
+  // Pagination hrefs — preserve the active mod filter and set the target page.
+  // page=1 is left out of the query (it is the canonical/default).
+  const pageHref = (p: number) => {
+    const sp = new URLSearchParams()
+    if (activeMod?.slug) sp.set('mod', activeMod.slug)
+    if (p > 1) sp.set('page', String(p))
     const qs = sp.toString()
     return `${localizedPath(locale, basePath)}${qs ? `?${qs}` : ''}`
   }
@@ -207,11 +236,13 @@ export default async function ScooterModelPage({ params, searchParams }: Props) 
       </div>
 
       <div id="model-products" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 scroll-mt-24">
-        {/* Result summary */}
-        {total > 0 && (
+        {/* Result summary — honest count of what is actually on this page. We no
+            longer compute an exact grand total (it caused a production statement
+            timeout), so the copy never claims one. */}
+        {products.length > 0 && (
           <div className="mb-6">
-            <p className="text-sm font-semibold text-bark">{t.found(total)}</p>
-            <p className="text-xs text-gray-500 mt-0.5">{t.showing(rangeFrom, rangeTo, total)} · {t.productsHint}</p>
+            <p className="text-sm font-semibold text-bark">{t.shown(rangeFrom, rangeTo, products.length, page)}</p>
+            <p className="text-xs text-gray-500 mt-0.5">{t.productsHint}</p>
           </div>
         )}
 
@@ -235,13 +266,36 @@ export default async function ScooterModelPage({ params, searchParams }: Props) 
                 ))}
               </div>
             </ModelListAnalytics>
-            <Pagination
-              page={page}
-              total={total}
-              baseHref={localizedPath(locale, basePath)}
-              params={{ mod: activeMod?.slug }}
-              labels={{ prev: t.prev, next: t.next, pageOf: t.pageOf }}
-            />
+            {/* Landing-specific Prev/Next — driven by `hasNext` (page-size+1
+                lookahead), not an exact total. Prev shows when page > 1, Next only
+                when another page exists. No numbered pages / total (unavailable). */}
+            {(page > 1 || hasNext) && (
+              <nav className="mt-10 flex items-center justify-between gap-4" aria-label={t.pageLabel(page)}>
+                {page > 1 ? (
+                  <Link
+                    href={pageHref(page - 1)}
+                    rel="prev"
+                    className="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-5 py-2.5 text-sm font-semibold text-bark hover:border-gray-300 transition-colors"
+                  >
+                    ← {t.prev}
+                  </Link>
+                ) : (
+                  <span aria-hidden="true" />
+                )}
+                <span className="text-sm text-gray-500">{t.pageLabel(page)}</span>
+                {hasNext ? (
+                  <Link
+                    href={pageHref(page + 1)}
+                    rel="next"
+                    className="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-5 py-2.5 text-sm font-semibold text-bark hover:border-gray-300 transition-colors"
+                  >
+                    {t.next} →
+                  </Link>
+                ) : (
+                  <span aria-hidden="true" />
+                )}
+              </nav>
+            )}
           </>
         )}
 

@@ -552,18 +552,22 @@ export async function getScooterModelProducts(
   modelTokens: string[],
   page: number,
   modTokens?: string[],
-): Promise<{ products: CatalogProduct[]; total: number }> {
+): Promise<{ products: CatalogProduct[]; hasNext: boolean }> {
   const client = getClient()
-  if (!client) return { products: [], total: 0 }
+  if (!client) return { products: [], hasNext: false }
 
   const modelFilter = buildScooterOrClause(modelTokens)
-  if (!modelFilter.clause) return { products: [], total: 0 }
+  if (!modelFilter.clause) return { products: [], hasNext: false }
 
+  // Fetch one extra row (page size + 1) ONLY to decide hasNext — no exact count.
+  // count:'exact' scanned the whole matching set on every paid-traffic request
+  // and hit the production statement timeout (57014) on a cold DB/cache; the
+  // lookahead keeps the query to a bounded LIMIT.
   const from = (page - 1) * CATALOG_PAGE_SIZE
-  const to = from + CATALOG_PAGE_SIZE - 1
+  const to = from + CATALOG_PAGE_SIZE // inclusive range → CATALOG_PAGE_SIZE + 1 rows
   let base = client
     .from('catalog_products')
-    .select('*', { count: 'exact' })
+    .select('*')
     .eq('status', 'published')
     .eq('category_slug', categorySlug)
     // buyable rule (mirrors the catalog "Тільки з ціною" filter)
@@ -583,7 +587,7 @@ export async function getScooterModelProducts(
   const modFilter = modTokens?.length ? buildScooterOrClause(modTokens) : null
   if (modFilter?.clause) base = base.or(modFilter.clause)
 
-  const { data, count, error } = await base
+  const { data, error } = await base
     .order('is_featured', { ascending: false })
     .order('display_order', { ascending: true })
     .order('name_ua', { ascending: true })
@@ -604,8 +608,11 @@ export async function getScooterModelProducts(
     })
     throw new Error(`scooter landing query failed: ${error.message}`)
   }
-  const products = ((data ?? []) as CatalogProduct[]).filter(isPublicListableProduct)
-  return { products, total: count ?? 0 }
+  const rows = (data ?? []) as CatalogProduct[]
+  // The extra (page size + 1) row only signals a next page — it is never shown.
+  const hasNext = rows.length > CATALOG_PAGE_SIZE
+  const products = rows.slice(0, CATALOG_PAGE_SIZE).filter(isPublicListableProduct)
+  return { products, hasNext }
 }
 
 // Up to `limit` other published products in the same category, for the
