@@ -512,15 +512,39 @@ export async function getPublishedProductsByCategory(
   return { products, total: count ?? 0 }
 }
 
-// Sanitize an ilike needle so a config token can't broaden or break the pattern.
-function sanitizeNeedle(s: string): string {
-  return s.replace(/[%,()]/g, ' ').trim()
+const SCOOTER_MATCH_COLUMNS = ['name_ua', 'name'] as const
+const MAX_SCOOTER_FILTER_PREDICATES = 24
+const MAX_SCOOTER_FILTER_LENGTH = 2048
+
+// Config patterns may contain `%` as an intentional separator wildcard. Commas
+// and parentheses are always removed because they are PostgREST OR grammar.
+function sanitizeModelPattern(s: string): string {
+  return s.replace(/[(),]/g, ' ').replace(/%+/g, '%').trim()
+}
+
+function buildScooterOrClause(patterns: string[]): {
+  clause: string
+  predicateCount: number
+  filterLength: number
+} {
+  const normalized = [...new Set(patterns.map(sanitizeModelPattern))]
+    .filter((pattern) => pattern.replace(/%/g, '').length >= 2)
+  const predicates = normalized.flatMap((pattern) =>
+    SCOOTER_MATCH_COLUMNS.map((column) => `${column}.ilike.%${pattern}%`),
+  )
+  const clause = predicates.join(',')
+  if (predicates.length > MAX_SCOOTER_FILTER_PREDICATES || clause.length > MAX_SCOOTER_FILTER_LENGTH) {
+    throw new Error(
+      `scooter landing filter too complex: predicates=${predicates.length}, length=${clause.length}`,
+    )
+  }
+  return { clause, predicateCount: predicates.length, filterLength: clause.length }
 }
 
 // ─── Scooter model landing fetch (strict) ────────────────────────────────────
 // Products in the scooter category that (a) pass the buyable rule, (b) have an
-// image, and (c) match at least one MODEL token (ilike on name_ua / name /
-// description_ua) — never merely the brand word. `modTokens` narrows further to a
+// image, and (c) match at least one compact MODEL pattern in a title field
+// (name_ua / name) — never merely the brand word. `modTokens` narrows further to a
 // specific modification. Paginated with an exact count so a landing paginates
 // like a normal category. Powers /moto/skutery/[model]; no hardcoded id lists.
 export async function getScooterModelProducts(
@@ -532,13 +556,8 @@ export async function getScooterModelProducts(
   const client = getClient()
   if (!client) return { products: [], total: 0 }
 
-  const orClause = (tokens: string[]): string =>
-    [...new Set(tokens.map(sanitizeNeedle).filter((t) => t.length >= 2))]
-      .flatMap((t) => [`name_ua.ilike.%${t}%`, `name.ilike.%${t}%`, `description_ua.ilike.%${t}%`])
-      .join(',')
-
-  const modelOr = orClause(modelTokens)
-  if (!modelOr) return { products: [], total: 0 }
+  const modelFilter = buildScooterOrClause(modelTokens)
+  if (!modelFilter.clause) return { products: [], total: 0 }
 
   const from = (page - 1) * CATALOG_PAGE_SIZE
   const to = from + CATALOG_PAGE_SIZE - 1
@@ -559,10 +578,10 @@ export async function getScooterModelProducts(
     .not('main_image_url', 'is', null)
     .neq('main_image_url', '')
     // strict model match — separate .or() group AND-combined with the above
-    .or(modelOr)
+    .or(modelFilter.clause)
 
-  const modOr = modTokens && modTokens.length ? orClause(modTokens) : ''
-  if (modOr) base = base.or(modOr)
+  const modFilter = modTokens?.length ? buildScooterOrClause(modTokens) : null
+  if (modFilter?.clause) base = base.or(modFilter.clause)
 
   const { data, count, error } = await base
     .order('is_featured', { ascending: false })
@@ -572,7 +591,17 @@ export async function getScooterModelProducts(
   // Never mask a DB/PostgREST failure as a valid empty result — surface it so it
   // is visible in logs and renders an error state, not a misleading "0 products".
   if (error) {
-    console.warn(`[scooter-landing] query failed (category=${categorySlug}): ${error.message}`)
+    console.warn('[scooter-landing] query failed', {
+      categorySlug,
+      code: error.code,
+      message: error.message,
+      details: error.details,
+      hint: error.hint,
+      modelPredicateCount: modelFilter.predicateCount,
+      modelFilterLength: modelFilter.filterLength,
+      modPredicateCount: modFilter?.predicateCount ?? 0,
+      modFilterLength: modFilter?.filterLength ?? 0,
+    })
     throw new Error(`scooter landing query failed: ${error.message}`)
   }
   const products = ((data ?? []) as CatalogProduct[]).filter(isPublicListableProduct)

@@ -4,10 +4,10 @@
 // is always pulled live from the catalog (see getScooterModelProducts); there are
 // NO hardcoded product id lists here.
 //
-// Matching is STRICT: a product qualifies for a model only if its text contains a
-// model token (model word or a model-specific frame code) — never merely the
-// brand word. `tokens` are ilike needles applied to name_ua / name / description_ua
-// at the DB level, so pagination counts stay correct.
+// Matching is STRICT: a product qualifies for a model only if a title contains a
+// full brand+model pattern or a model-specific frame code — never merely the
+// brand/model word. `%` inside a token represents separator variants at the DB
+// level, so the filter stays compact while pagination counts remain exact.
 
 import type { Locale } from '@/lib/i18n'
 import type { FaqItem } from '@/lib/schema'
@@ -21,7 +21,7 @@ export const MODEL_SLUGS: ModelSlug[] = ['honda-dio', 'yamaha-jog', 'suzuki-lets
 export interface ScooterMod {
   slug: string        // url-safe id used in ?mod=
   label: string       // chip label shown to the user
-  tokens: string[]    // ilike needles that identify this specific modification
+  tokens: string[]    // compact ilike patterns that identify this modification
 }
 
 export interface ScooterModel {
@@ -29,8 +29,8 @@ export interface ScooterModel {
   brand: string
   listId: string
   listName: string
-  // Full set of ilike needles that DEFINE the model (model words + frame codes,
-  // with hyphen/space variants). A product matches the model if ANY token hits.
+  // Compact ilike patterns that DEFINE the model. A product matches if ANY full
+  // brand+model pattern or exact model-specific frame code hits a title field.
   tokens: string[]
   mods: ScooterMod[]
   h1: Record<Exclude<Locale, 'en'>, string>
@@ -40,27 +40,25 @@ export interface ScooterModel {
   faq: Record<Exclude<Locale, 'en'>, FaqItem[]>
 }
 
-// Frame-code variants: "af34" also written "af-34" / "af 34" in supplier titles.
-function codeVariants(code: string): string[] {
+// A modification is already AND-restricted by the base model filter, so a compact
+// wildcard safely covers compact, hyphen and space forms: af18 / af-18 / af 18.
+function codeSeparatorPattern(code: string): string {
   const m = code.match(/^([a-z]+)(\d+)$/i)
-  if (!m) return [code]
+  if (!m) return code
   const [, letters, digits] = m
-  return [`${letters}${digits}`, `${letters}-${digits}`, `${letters} ${digits}`]
+  return `${letters}%${digits}`
 }
 
 const HONDA_DIO_CODES = ['af18', 'af25', 'af27', 'af28', 'af34', 'af35']
 const YAMAHA_JOG_CODES = ['3kj', 'sa36', 'sa39']
 
-// STRICT matching uses full brand+model PHRASES (Latin + Cyrillic, space & hyphen
-// variants) — never a standalone short model word like "dio"/"jog"/"lets", which
-// as an ILIKE %substring% would false-match unrelated words (e.g. "дио" in
-// "радио"). A phrase like "honda dio" cannot appear inside an unrelated word, so
-// ILIKE stays precise without needing fragile PostgREST regex word boundaries.
-// Model-specific frame codes (AF34, 3KJ, SA36 …) are alphanumeric and model-
-// unique, so they are matched too — brand word ALONE is never a token.
-const HONDA_DIO_PHRASES = ['honda dio', 'honda-dio', 'хонда дио', 'хонда-дио', 'хонда діо', 'хонда-діо']
-const YAMAHA_JOG_PHRASES = ['yamaha jog', 'yamaha-jog', 'ямаха джог', 'ямаха-джог']
-const SUZUKI_LETS_PHRASES = ['suzuki lets', "suzuki let's", 'suzuki-lets', 'сузуки летс', 'сузуки-летс']
+// `%` covers spaces/hyphens without enumerating them. Short model words are never
+// standalone patterns, preventing false matches such as "радио" and "bullets".
+// Base frame codes stay exact for paid-traffic precision; separator variants are
+// still found when the title also contains a full brand+model phrase.
+const HONDA_DIO_PHRASES = ['honda%dio', 'хонда%дио', 'хонда%діо']
+const YAMAHA_JOG_PHRASES = ['yamaha%jog', 'ямаха%джог']
+const SUZUKI_LETS_PHRASES = ['suzuki%lets', "suzuki%let's", 'сузуки%летс']
 
 export const SCOOTER_MODELS: Record<ModelSlug, ScooterModel> = {
   'honda-dio': {
@@ -68,8 +66,8 @@ export const SCOOTER_MODELS: Record<ModelSlug, ScooterModel> = {
     brand: 'Honda',
     listId: 'moto_honda_dio',
     listName: 'Honda Dio parts',
-    tokens: [...HONDA_DIO_PHRASES, ...HONDA_DIO_CODES.flatMap(codeVariants)],
-    mods: HONDA_DIO_CODES.map((c) => ({ slug: c, label: c.toUpperCase(), tokens: codeVariants(c) })),
+    tokens: [...HONDA_DIO_PHRASES, ...HONDA_DIO_CODES],
+    mods: HONDA_DIO_CODES.map((c) => ({ slug: c, label: c.toUpperCase(), tokens: [codeSeparatorPattern(c)] })),
     h1: { uk: 'Запчастини для Honda Dio', ru: 'Запчасти для Honda Dio' },
     intro: {
       uk: 'Запчастини та витратні матеріали для скутерів Honda Dio. Асортимент оновлюється з нашого каталогу — уточнюйте сумісність за рамою (AF18–AF35) перед замовленням.',
@@ -103,8 +101,8 @@ export const SCOOTER_MODELS: Record<ModelSlug, ScooterModel> = {
     brand: 'Yamaha',
     listId: 'moto_yamaha_jog',
     listName: 'Yamaha Jog parts',
-    tokens: [...YAMAHA_JOG_PHRASES, ...YAMAHA_JOG_CODES.flatMap(codeVariants)],
-    mods: YAMAHA_JOG_CODES.map((c) => ({ slug: c, label: c.toUpperCase(), tokens: codeVariants(c) })),
+    tokens: [...YAMAHA_JOG_PHRASES, ...YAMAHA_JOG_CODES],
+    mods: YAMAHA_JOG_CODES.map((c) => ({ slug: c, label: c.toUpperCase(), tokens: [codeSeparatorPattern(c)] })),
     h1: { uk: 'Запчастини для Yamaha Jog', ru: 'Запчасти для Yamaha Jog' },
     intro: {
       uk: 'Запчастини та витратні матеріали для скутерів Yamaha Jog. Асортимент оновлюється з нашого каталогу — уточнюйте модифікацію (3KJ, SA36, SA39) перед замовленням.',
@@ -143,9 +141,9 @@ export const SCOOTER_MODELS: Record<ModelSlug, ScooterModel> = {
     // Suzuki-Lets product — it can never false-match "bullets 2" on its own.
     tokens: [...SUZUKI_LETS_PHRASES],
     mods: [
-      { slug: 'lets-2', label: 'Lets 2', tokens: ['lets 2', 'lets-2', 'lets2', 'летс 2', 'летс-2', 'летс2'] },
-      { slug: 'lets-4', label: 'Lets 4', tokens: ['lets 4', 'lets-4', 'lets4', 'летс 4', 'летс-4', 'летс4'] },
-      { slug: 'lets-5', label: 'Lets 5', tokens: ['lets 5', 'lets-5', 'lets5', 'летс 5', 'летс-5', 'летс5'] },
+      { slug: 'lets-2', label: 'Lets 2', tokens: ['lets%2', 'летс%2'] },
+      { slug: 'lets-4', label: 'Lets 4', tokens: ['lets%4', 'летс%4'] },
+      { slug: 'lets-5', label: 'Lets 5', tokens: ['lets%5', 'летс%5'] },
     ],
     h1: { uk: 'Запчастини для Suzuki Lets', ru: 'Запчасти для Suzuki Lets' },
     intro: {
