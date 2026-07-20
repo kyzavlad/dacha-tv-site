@@ -85,7 +85,7 @@ export function planGuardedWrites(payload: CatalogUpdatePayload): GuardedWrite[]
 }
 
 // Pure simulation of the production UPDATE's WHERE clause:
-//   .eq('supplier_sku', sku).neq('source', 'manual').eq(guardColumn, false)
+//   .eq('supplier_sku', sku).or('source.is.null,source.neq.manual').eq(guardColumn, false)
 // Lets tests prove the concurrency guarantee — a lock or source flipped AFTER
 // candidate selection but BEFORE the write is still honored — without a live DB.
 export function wouldGuardedWriteApply(write: GuardedWrite, currentRowAtWriteTime: ExistingCatalogOwnership): boolean {
