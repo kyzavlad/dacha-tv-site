@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { verifyCronAuth, cronUnauthorized } from '../_auth'
 import { getAdminClient } from '@/lib/supabase/admin'
 import { sendCategorySeoBatch } from '@/lib/catalog/seo-generate'
+import { isSeoAutomationEnabled, seoDisabledResponse } from '@/lib/seo/automation-guard'
 
 // Daily category SEO: send a bounded batch of published categories that still
 // need SEO to n8n (new system). The legacy Google-Sheets importer is no longer
@@ -10,6 +11,8 @@ import { sendCategorySeoBatch } from '@/lib/catalog/seo-generate'
 // not configured.
 export async function GET(req: Request) {
   if (!verifyCronAuth(req)) return cronUnauthorized()
+  // Kill-switch: return before touching Supabase while SEO automation is paused.
+  if (!isSeoAutomationEnabled()) return seoDisabledResponse()
 
   const client = getAdminClient()
   const startedAt = Date.now()

@@ -14,18 +14,35 @@ function autoSlug(text: string): string {
     .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || `product-${Date.now()}`
 }
 
-// Approve a single supplier product and push it to catalog_products as draft
-export async function approveProductAction(supplierId: string): Promise<void> {
-  const client = getAdminClient()
+type AdminClient = ReturnType<typeof getAdminClient>
+
+// Promote one supplier product into catalog_products as a draft. Pure DB work —
+// NO redirect — so it is safe to call in a loop (the old code called an action
+// that redirect()'d on the first iteration, which threw NEXT_REDIRECT and
+// aborted the whole batch after a single row). Resolves category_slug reliably
+// from supplier_category_id → catalog_categories.slug instead of leaving the new
+// row uncategorised. Returns true when the row was promoted.
+async function promoteSupplierToCatalog(client: AdminClient, supplierId: string): Promise<boolean> {
   const { data: sp } = await client
     .from('supplier_products')
-    .select('*')
+    .select('id, supplier_sku, name, name_ua, slug, supplier_category_id, short_description_ua, description, description_ua, our_price_uah, price_uah, main_image_url, images, attributes, meta_title, meta_description')
     .eq('id', supplierId)
     .single()
 
-  if (!sp) return
+  if (!sp) return false
 
   const slug = sp.slug || autoSlug(sp.name_ua ?? sp.name ?? sp.supplier_sku)
+
+  // Reliable category: map the supplier category id to the catalog slug.
+  let categorySlug: string | null = null
+  if (sp.supplier_category_id) {
+    const { data: cat } = await client
+      .from('catalog_categories')
+      .select('slug')
+      .eq('supplier_category_id', sp.supplier_category_id)
+      .maybeSingle()
+    categorySlug = cat?.slug ?? null
+  }
 
   await client.from('supplier_products').update({ is_approved: true }).eq('id', supplierId)
 
@@ -35,6 +52,7 @@ export async function approveProductAction(supplierId: string): Promise<void> {
       supplier_sku: sp.supplier_sku,
       name_ua: sp.name_ua ?? sp.name,
       slug,
+      category_slug: categorySlug,
       short_description: sp.short_description_ua,
       description: sp.description_ua ?? sp.description,
       price_uah: sp.our_price_uah ?? sp.price_uah ?? 0,
@@ -49,7 +67,16 @@ export async function approveProductAction(supplierId: string): Promise<void> {
     },
     { onConflict: 'supplier_sku' },
   )
+  return true
+}
 
+// Legacy single-item approval. Retained for backward compatibility (external
+// callers / scripts may still use it); no longer wired into the admin UI, which
+// relies on the automated import pipeline. The redirect lives here — NOT in the
+// shared core — so batch callers never trigger it.
+export async function approveProductAction(supplierId: string): Promise<void> {
+  const client = getAdminClient()
+  await promoteSupplierToCatalog(client, supplierId)
   revalidatePath('/admin/catalog')
   redirect('/admin/catalog')
 }
@@ -78,13 +105,16 @@ export async function unpublishProductAction(catalogId: string): Promise<void> {
   redirect('/admin/catalog')
 }
 
-// Bulk: promote up to N in-stock, image-having, approved supplier products → catalog as draft
+// Bulk promote up to N in-stock, image-having supplier products → catalog drafts.
+// Loop-safe: each row goes through the shared core (no redirect); the single
+// revalidate + redirect happens once after the loop. Retained for compatibility;
+// the daily import pipeline is the primary promotion path.
 export async function bulkApproveFirstN(limit: number): Promise<void> {
   const client = getAdminClient()
 
   const { data: candidates } = await client
     .from('supplier_products')
-    .select('*')
+    .select('id')
     .eq('is_in_stock', true)
     .eq('is_approved', false)
     .not('main_image_url', 'is', null)
@@ -94,7 +124,7 @@ export async function bulkApproveFirstN(limit: number): Promise<void> {
     .limit(limit)
 
   for (const sp of candidates ?? []) {
-    await approveProductAction(sp.id)
+    await promoteSupplierToCatalog(client, sp.id as string)
   }
 
   revalidatePath('/admin/catalog')

@@ -7,7 +7,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "typecheck:scripts": "tsc -p scripts/tsconfig.json",
+    "test": "node --test \"tests/*.test.mjs\"",
+    "audit:legacy-catalog": "node scripts/audit-legacy-catalog.ts",
+    "migrate:legacy-catalog": "node scripts/migrate-legacy-catalog.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
@@ -35,6 +39,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.6",
     "tailwindcss": "^4",
+    "tsx": "^4.23.1",
     "typescript": "^5"
   }
 }
