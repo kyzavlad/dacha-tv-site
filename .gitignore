@@ -32,6 +32,9 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# ...but the legacy-migration credential TEMPLATE is meant to be tracked.
+# Real secrets (.env.legacy.local / .env.local) stay ignored by the rule above.
+!.env.legacy.example
 
 # vercel
 .vercel

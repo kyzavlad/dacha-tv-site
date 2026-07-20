@@ -1,6 +1,7 @@
 import { getAdminClient } from '@/lib/supabase/admin'
 import { autoSlug } from '@/lib/catalog/csv-utils'
 import { fetchSupplierCategoryMap } from '@/lib/supplier/sync'
+import { buildSupplierUpdatePayload, planGuardedWrites, type CatalogUpdatePayload, type ExistingCatalogOwnership } from '@/lib/catalog/field-ownership'
 
 type AdminClient = ReturnType<typeof getAdminClient>
 
@@ -437,15 +438,21 @@ export async function syncProductsToCatalog(
   // a URL that exceeds PostgREST limits and the response is capped at 1000 rows,
   // both causing incorrect "not existing" false-negatives.
   const skus = supplierProducts.map((p) => p.supplier_sku as string)
-  const existingSkus = new Set<string>()
+  // Capture ownership (source + manual locks) alongside existence so the update
+  // path can honor manual storefront fields instead of blindly overwriting them.
+  const existingOwnership = new Map<string, ExistingCatalogOwnership>()
   const SKU_CHUNK = 500
   for (let i = 0; i < skus.length; i += SKU_CHUNK) {
     const { data: existingChunk } = await client
       .from('catalog_products')
-      .select('supplier_sku')
+      .select('supplier_sku, source, price_manual_lock, image_manual_lock')
       .in('supplier_sku', skus.slice(i, i + SKU_CHUNK))
     for (const r of existingChunk ?? []) {
-      existingSkus.add(r.supplier_sku as string)
+      existingOwnership.set(r.supplier_sku as string, {
+        source: (r as { source?: string | null }).source ?? null,
+        price_manual_lock: (r as { price_manual_lock?: boolean | null }).price_manual_lock ?? false,
+        image_manual_lock: (r as { image_manual_lock?: boolean | null }).image_manual_lock ?? false,
+      })
     }
   }
 
@@ -459,18 +466,21 @@ export async function syncProductsToCatalog(
   const usedSlugs = new Set(slugRows.map((r) => r.slug).filter(Boolean))
 
   const toInsert: Record<string, unknown>[] = []
-  const toUpdatePrice: { sku: string; price_uah: number; main_image_url: string | null; images: unknown }[] = []
+  const toUpdatePrice: { sku: string; payload: CatalogUpdatePayload }[] = []
 
   for (const sp of supplierProducts) {
     const sku = sp.supplier_sku as string
-    if (existingSkus.has(sku)) {
-      // Already in catalog — update price and images from API only
-      toUpdatePrice.push({
-        sku,
-        price_uah: sp.price_uah as number,
-        main_image_url: sp.main_image_url as string | null,
-        images: sp.images,
-      })
+    const ownership = existingOwnership.get(sku)
+    if (ownership) {
+      // Already in catalog — refresh only the operational facts the supplier
+      // still owns (price + imagery), skipping any manually-locked field and
+      // never touching a fully manual row. buildSupplierUpdatePayload returns
+      // null when there is nothing the import may write.
+      const payload = buildSupplierUpdatePayload(
+        { price_uah: sp.price_uah as number, main_image_url: sp.main_image_url as string | null, images: sp.images },
+        ownership,
+      )
+      if (payload) toUpdatePrice.push({ sku, payload })
       continue
     }
     const name = (sp.name_ua || sp.name || '') as string
@@ -605,19 +615,32 @@ export async function syncProductsToCatalog(
     }
   }
 
-  // Update prices for existing products (API data wins — never from sheet)
-  for (const { sku, price_uah, main_image_url, images } of toUpdatePrice) {
-    const { error } = await client
-      .from('catalog_products')
-      .update({ price_uah, main_image_url, images, updated_at: new Date().toISOString() })
-      .eq('supplier_sku', sku)
-    if (error) {
-      errors.push(error.message)
-    } else {
-      updated++
-      const spId = skuToSpId.get(sku)
-      if (spId) approvedIds.add(spId)
+  // Refresh existing products with supplier-owned facts only. Each field is
+  // written in its own UPDATE whose WHERE re-checks the relevant manual lock AND
+  // excludes source='manual' — so a lock toggled on AFTER candidate selection is
+  // still honored (the guarded UPDATE simply matches zero rows). A matched row is
+  // approved even when fully locked, since it already exists in the catalog.
+  for (const { sku, payload } of toUpdatePrice) {
+    const writes = planGuardedWrites(payload)
+    let rowError: string | null = null
+    let wrote = false
+    for (const w of writes) {
+      const { error, count } = await client
+        .from('catalog_products')
+        .update({ ...w.columns, updated_at: new Date().toISOString() }, { count: 'exact' })
+        .eq('supplier_sku', sku)
+        .neq('source', 'manual')
+        .eq(w.guardColumn, false)
+      if (error) { rowError = error.message; break }
+      if ((count ?? 0) > 0) wrote = true
     }
+    if (rowError) {
+      errors.push(rowError)
+      continue
+    }
+    if (wrote) updated++
+    const spId = skuToSpId.get(sku)
+    if (spId) approvedIds.add(spId)
   }
 
   // Mark ONLY confirmed rows as approved — a failed insert must NOT be approved

@@ -312,6 +312,10 @@ export interface CatalogProduct {
   seo_source?: string
   seo_generated_at?: string | null
   seo_manual_lock?: boolean
+  // Per-field manual ownership locks (migration 20260720). When true, the
+  // supplier import must not overwrite the corresponding storefront field.
+  price_manual_lock?: boolean
+  image_manual_lock?: boolean
   created_at: string
   updated_at: string
 }
