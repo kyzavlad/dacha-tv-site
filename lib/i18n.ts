@@ -47,6 +47,27 @@ export function localizedPath(locale: Locale, path: string): string {
   return clean === '/' ? `/${locale}` : `/${locale}${clean}`
 }
 
+// Paths that must NEVER be localized — the admin console and the API. The proxy
+// already redirects /ru/admin and /ru/api back to canonical; this keeps the
+// switcher from ever offering a prefixed admin/api URL in the first place.
+export function isLocalizablePath(path: string): boolean {
+  return !(path === '/admin' || path.startsWith('/admin/') || path === '/api' || path.startsWith('/api/'))
+}
+
+// Build the href that switches the CURRENT location to `target`. It strips any
+// existing locale prefix first (so repeated switching never double-prefixes),
+// re-prefixes for the target (uk = no prefix), and PRESERVES the query string.
+// Non-localizable paths (/admin, /api) are returned canonical + query unchanged.
+//   ('ru', '/catalog/x', 'sort=price') → '/ru/catalog/x?sort=price'
+//   ('uk', '/ru/catalog/x')            → '/catalog/x'
+//   ('ru', '/admin/orders')            → '/admin/orders'
+export function switchLocaleHref(target: Locale, pathname: string, query = ''): string {
+  const { path } = splitLocale(pathname)
+  const q = query ? (query.startsWith('?') ? query : `?${query}`) : ''
+  if (!isLocalizablePath(path)) return `${path}${q}`
+  return `${localizedPath(target, path)}${q}`
+}
+
 // Read the active locale inside a Server Component / generateMetadata. The proxy
 // sets `x-dacha-locale` on the request for /ru and /en; absent → uk (default).
 // Reading headers marks the caller dynamic — only use in already-dynamic routes.

@@ -7,6 +7,7 @@ import { MobileMenu } from './MobileMenu'
 import { HeaderSearch } from './HeaderSearch'
 import { PhoneLink } from '@/components/shared/PhoneLink'
 import { CartButton } from '@/components/cart/CartButton'
+import { LanguageSwitcher } from '@/components/shared/LanguageSwitcher'
 import { LAUNCH_PHONE, LAUNCH_PHONE_SECONDARY, LAUNCH_LOGO_PATH } from '@/lib/launch-defaults'
 import type { SiteSettings } from '@/types'
 
@@ -58,6 +59,9 @@ export function Header({ siteSettings }: HeaderProps) {
                 showIcon
                 className="text-sm font-semibold text-bark/80 hover:text-honey-700 transition-colors"
               />
+            </div>
+            <div className="hidden md:block">
+              <LanguageSwitcher align="right" />
             </div>
             <CartButton />
             <MobileMenu

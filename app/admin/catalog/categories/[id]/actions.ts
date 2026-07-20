@@ -2,7 +2,6 @@
 
 import { getAdminClient } from '@/lib/supabase/admin'
 import { autoSlug } from '@/lib/catalog/csv-utils'
-import { deterministicCategoryIntro, isFallbackFillAllowed } from '@/lib/catalog/category-fallback'
 import { ruTranslationIntent, editorRedirectQuery } from '@/lib/admin/editor-forms'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
@@ -93,58 +92,8 @@ export async function updateCatalogCategoryAction(categoryId: string, fd: FormDa
   redirect(`/admin/catalog/categories/${categoryId}${editorRedirectQuery({})}`)
 }
 
-// Fill the SHORT intro (description) for PUBLISHED categories that have none,
-// using a deterministic name-based fallback.
-//
-// ORDER OF PRIORITY: legacy content wins. This action is GATED behind
-// LEGACY_MIGRATION_COMPLETE=true so a generated fallback can never be written
-// before the legacy recovery has had its chance. Even after that, generated rows
-// are marked description_auto_generated=true, so the legacy migrate tool may
-// still replace them later — the fallback never blocks real restoration.
-//
-// Resource-safe + bounded: selects only the columns needed and writes in bulk
-// chunks (upsert), never up to 2000 sequential UPDATEs. Never overwrites a
-// non-empty description.
-export async function fillEmptyCategoryIntrosAction(): Promise<void> {
-  if (!isFallbackFillAllowed(process.env)) {
-    redirect('/admin/catalog/categories?introsFilled=disabled')
-  }
-
-  const client = getAdminClient()
-  // Need id + the two NOT-NULL columns (name_ua, slug) so a bulk upsert's insert
-  // tuple is valid; the conflict path only updates description + marker.
-  const { data: empties, error } = await client
-    .from('catalog_categories')
-    .select('id, name_ua, slug')
-    .eq('is_published', true)
-    .or('description.is.null,description.eq.')
-    .limit(2000)
-  if (error) {
-    console.error('[admin:catalog:category] fill intros select failed', { code: error.code, message: error.message })
-    redirect('/admin/catalog/categories?introsFilled=error')
-  }
-
-  const now = new Date().toISOString()
-  const rows: Record<string, unknown>[] = []
-  for (const cat of empties ?? []) {
-    const intro = deterministicCategoryIntro(cat.name_ua as string | null)
-    if (!intro) continue
-    rows.push({ id: cat.id, name_ua: cat.name_ua, slug: cat.slug, description: intro, description_auto_generated: true, updated_at: now })
-  }
-
-  let filled = 0
-  const CHUNK = 200
-  for (let i = 0; i < rows.length; i += CHUNK) {
-    const chunk = rows.slice(i, i + CHUNK)
-    const { error: upErr } = await client.from('catalog_categories').upsert(chunk, { onConflict: 'id' })
-    if (upErr) {
-      console.error('[admin:catalog:category] fill intros upsert failed', { code: upErr.code, message: upErr.message })
-      redirect(`/admin/catalog/categories?introsFilled=error`)
-    }
-    filled += chunk.length
-  }
-
-  revalidatePath('/admin/catalog/categories')
-  revalidatePath('/catalog')
-  redirect(`/admin/catalog/categories?introsFilled=${filled}`)
-}
+// NOTE: the temporary "Заповнити порожні описи" admin button was removed. New
+// categories now receive a safe deterministic short description automatically
+// during the daily sync (see syncCatalogCategories), and a bounded one-time
+// backfill for pre-existing empty categories is available via
+// scripts/backfill-category-descriptions.ts (dry-run by default).

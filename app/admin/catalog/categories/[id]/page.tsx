@@ -10,7 +10,7 @@ export const metadata: Metadata = { title: 'Адмін: Редагування �
 
 interface Props {
   params: Promise<{ id: string }>
-  searchParams: Promise<{ saved?: string }>
+  searchParams: Promise<{ saved?: string; error?: string }>
 }
 
 const EDIT_COLUMNS =
@@ -18,7 +18,7 @@ const EDIT_COLUMNS =
 
 export default async function EditCatalogCategoryPage({ params, searchParams }: Props) {
   const { id } = await params
-  const { saved } = await searchParams
+  const { saved, error } = await searchParams
   const client = getAdminClient()
 
   const [{ data: category }, { data: ruRow }] = await Promise.all([
@@ -46,6 +46,11 @@ export default async function EditCatalogCategoryPage({ params, searchParams }: 
 
       {saved === '1' && (
         <div className="mb-4 rounded-lg bg-green-50 border border-green-200 px-4 py-2.5 text-sm text-green-800">Збережено ✓</div>
+      )}
+      {error === '1' && (
+        <div className="mb-4 rounded-lg bg-red-50 border border-red-200 px-4 py-2.5 text-sm text-red-800">
+          Не вдалося зберегти — зміни не застосовано. Перевірте дані та спробуйте ще раз (деталі у логах сервера).
+        </div>
       )}
 
       <form action={action} className="space-y-6">

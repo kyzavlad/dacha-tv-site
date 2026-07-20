@@ -115,36 +115,8 @@ export async function assignCategoryToProductsAction(
   redirect('/admin/catalog/categories')
 }
 
-export async function fixNumericCategoryNamesAction(): Promise<void> {
-  const client = getAdminClient()
-
-  const { data: cats } = await client
-    .from('catalog_categories')
-    .select('id, supplier_category_id, name_ua')
-
-  const numericCats = (cats ?? []).filter((c) => /^\d+$/.test(String(c.name_ua ?? '')))
-  if (numericCats.length === 0) { revalidatePath('/admin/catalog/categories'); redirect('/admin/catalog/categories') }
-
-  const supplierIds = numericCats.map((c) => c.supplier_category_id).filter(Boolean) as string[]
-  const { data: supplierCats } = await client
-    .from('supplier_categories')
-    .select('supplier_id, name, name_ua')
-    .in('supplier_id', supplierIds)
-
-  const nameMap = new Map(
-    (supplierCats ?? []).map((sc) => [
-      sc.supplier_id as string,
-      ((sc.name_ua || sc.name) as string | null)?.trim() ?? null,
-    ])
-  )
-
-  for (const cat of numericCats) {
-    if (!cat.supplier_category_id) continue
-    const realName = nameMap.get(cat.supplier_category_id as string)
-    if (!realName || realName === cat.name_ua) continue
-    await client.from('catalog_categories').update({ name_ua: realName }).eq('id', cat.id)
-  }
-
-  revalidatePath('/admin/catalog/categories')
-  redirect('/admin/catalog/categories')
-}
+// NOTE: the temporary `fixNumericCategoryNamesAction` admin button was removed.
+// Numeric/code-like category names now self-heal on the daily category cron via
+// `repairCategoryNamesFromProducts()` (real supplier YML/XML + raw_data), and
+// `publishAllCatalogCategories()` refuses to publish a code-like name. A bounded
+// one-time repair is available via scripts/repair-category-names.ts.

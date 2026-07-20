@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { Inter, Lora } from 'next/font/google'
 import './globals.css'
+import { headers } from 'next/headers'
 import { Header } from '@/components/layout/Header'
 import { Footer } from '@/components/layout/Footer'
 import { getSiteSettings } from '@/lib/supabase/queries'
@@ -8,6 +9,8 @@ import { CartProvider } from '@/lib/cart/CartContext'
 import { CartDrawer } from '@/components/cart/CartDrawer'
 import { Analytics } from '@/components/analytics/Analytics'
 import { AttributionCapture } from '@/components/analytics/AttributionCapture'
+import { SiteChrome } from '@/components/layout/SiteChrome'
+import { isLocale, DEFAULT_LOCALE } from '@/lib/i18n'
 
 const inter = Inter({
   variable: '--font-inter',
@@ -42,18 +45,30 @@ export const metadata: Metadata = {
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const siteSettings = await getSiteSettings().catch(() => null)
 
+  // Locale + admin signal come from the proxy (x-dacha-locale on /ru,/en;
+  // x-dacha-section=admin on /admin). Reading them here sets <html lang>
+  // correctly per request and lets SiteChrome pick the admin branch server-side.
+  const h = await headers()
+  const rawLocale = h.get('x-dacha-locale')
+  const lang = isLocale(rawLocale) ? rawLocale : DEFAULT_LOCALE
+  const initialIsAdmin = h.get('x-dacha-section') === 'admin'
+
   return (
-    <html lang="uk" className={`${inter.variable} ${lora.variable} h-full antialiased overflow-x-hidden`}>
+    <html lang={lang} className={`${inter.variable} ${lora.variable} h-full antialiased overflow-x-hidden`}>
       <head>
         <Analytics />
       </head>
       <body className="min-h-full flex flex-col bg-cream text-bark overflow-x-hidden">
         <CartProvider>
-          <AttributionCapture />
-          <Header siteSettings={siteSettings} />
-          <CartDrawer />
-          <main className="flex-1">{children}</main>
-          <Footer siteSettings={siteSettings} />
+          <SiteChrome
+            initialIsAdmin={initialIsAdmin}
+            attribution={<AttributionCapture />}
+            header={<Header siteSettings={siteSettings} />}
+            cartDrawer={<CartDrawer />}
+            footer={<Footer siteSettings={siteSettings} />}
+          >
+            {children}
+          </SiteChrome>
         </CartProvider>
       </body>
     </html>

@@ -3,7 +3,9 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { getAdminClient } from '@/lib/supabase/admin'
-import { updateCatalogProductAction } from './actions'
+import { updateCatalogProductAction, updateMetalProductAction } from './actions'
+import { MetalProductEditor } from './MetalProductEditor'
+import { isMetalProduct } from '@/lib/catalog/metal'
 import type { CatalogProduct } from '@/types'
 
 export const metadata: Metadata = { title: 'Адмін: Редагування товару', robots: 'noindex, nofollow' }
@@ -14,7 +16,7 @@ interface Props {
 }
 
 const EDIT_COLUMNS =
-  'id, supplier_product_id, supplier_sku, source, name_ua, name, slug, category_slug, short_description, description, description_ua, price_uah, compare_price_uah, status, main_image_url, images, attributes, meta_title, meta_description, seo_keywords, is_featured, display_order, price_manual_lock, image_manual_lock, seo_manual_lock'
+  'id, supplier_product_id, supplier_sku, source, lead_type, name_ua, name, slug, category_slug, short_description, description, description_ua, price_uah, compare_price_uah, price_prefix, unit_label, status, main_image_url, images, attributes, meta_title, meta_description, seo_keywords, is_featured, display_order, price_manual_lock, image_manual_lock, seo_manual_lock'
 
 function joinImages(images: unknown): string {
   if (Array.isArray(images)) return images.filter((x) => typeof x === 'string').join('\n')
@@ -39,18 +41,11 @@ export default async function EditCatalogProductPage({ params, searchParams }: P
   const cats = (categories ?? []) as { slug: string; name_ua: string }[]
   const ru = ruRow as { meta_title: string | null; meta_description: string | null; description: string | null; seo_keywords: string | null } | null
   const isManual = p.source === 'manual'
+  const metal = isMetalProduct(p)
   const action = updateCatalogProductAction.bind(null, p.id)
 
-  return (
-    <div className="px-4 sm:px-6 py-8 max-w-3xl mx-auto">
-      <div className="mb-5">
-        <Link href="/admin/catalog" className="text-xs text-gray-400 hover:text-gray-700">← Каталог</Link>
-        <h1 className="text-xl font-bold text-gray-900 mt-1">Редагування товару</h1>
-        <p className="text-sm text-gray-500 mt-0.5">
-          {isManual ? 'Ручний товар' : 'Товар постачальника'} · SKU: <span className="font-mono">{p.supplier_sku ?? '—'}</span>
-        </p>
-      </div>
-
+  const banners = (
+    <>
       {saved === '1' && (
         <div className="mb-4 rounded-lg bg-green-50 border border-green-200 px-4 py-2.5 text-sm text-green-800">Збережено ✓</div>
       )}
@@ -64,6 +59,56 @@ export default async function EditCatalogProductPage({ params, searchParams }: P
           Атрибути не збережено: некоректний JSON. Решту полів збережено.
         </div>
       )}
+    </>
+  )
+
+  // Metal-profile products get a dedicated, clean editor (no supplier-only UI).
+  if (metal) {
+    return (
+      <div className="px-4 sm:px-6 py-8 max-w-3xl mx-auto">
+        <div className="mb-5">
+          <Link href="/admin/catalog" className="text-xs text-gray-400 hover:text-gray-700">← Каталог</Link>
+          <h1 className="text-xl font-bold text-gray-900 mt-1">Редагування металопрофілю</h1>
+          <p className="text-sm text-gray-500 mt-0.5">Ручний товар · замовлення через запит</p>
+        </div>
+        {banners}
+        <MetalProductEditor
+          product={{
+            id: p.id,
+            name_ua: p.name_ua,
+            slug: p.slug,
+            status: p.status,
+            short_description: p.short_description ?? null,
+            description: p.description ?? null,
+            description_ua: p.description_ua ?? null,
+            price_uah: p.price_uah ?? null,
+            compare_price_uah: p.compare_price_uah ?? null,
+            price_prefix: p.price_prefix ?? null,
+            unit_label: p.unit_label ?? null,
+            is_featured: p.is_featured ?? false,
+            display_order: p.display_order ?? 0,
+            main_image_url: p.main_image_url ?? null,
+            images: Array.isArray(p.images) ? p.images : [],
+            attributes: p.attributes ?? null,
+          }}
+          ru={ru}
+          action={updateMetalProductAction.bind(null, p.id)}
+        />
+      </div>
+    )
+  }
+
+  return (
+    <div className="px-4 sm:px-6 py-8 max-w-3xl mx-auto">
+      <div className="mb-5">
+        <Link href="/admin/catalog" className="text-xs text-gray-400 hover:text-gray-700">← Каталог</Link>
+        <h1 className="text-xl font-bold text-gray-900 mt-1">Редагування товару</h1>
+        <p className="text-sm text-gray-500 mt-0.5">
+          {isManual ? 'Ручний товар' : 'Товар постачальника'} · SKU: <span className="font-mono">{p.supplier_sku ?? '—'}</span>
+        </p>
+      </div>
+
+      {banners}
 
       <form action={action} className="space-y-6">
         {/* Diagnostics (read-only) */}

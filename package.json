@@ -11,7 +11,11 @@
     "typecheck:scripts": "tsc -p scripts/tsconfig.json",
     "test": "tsx --test tests/*.test.mjs",
     "audit:legacy-catalog": "tsx scripts/audit-legacy-catalog.ts",
-    "migrate:legacy-catalog": "tsx scripts/migrate-legacy-catalog.ts"
+    "migrate:legacy-catalog": "tsx scripts/migrate-legacy-catalog.ts",
+    "diagnose:catalog": "tsx scripts/diagnose-catalog.ts",
+    "normalize:metal": "tsx scripts/normalize-metal-products.ts",
+    "repair:category-names": "tsx scripts/repair-category-names.ts",
+    "backfill:category-descriptions": "tsx scripts/backfill-category-descriptions.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
