@@ -47,3 +47,6 @@ next-env.d.ts
 # local data backups (never commit exported business data)
 /backups/*
 !/backups/README.md
+
+# Local legacy migration reports
+audit/legacy-catalog/

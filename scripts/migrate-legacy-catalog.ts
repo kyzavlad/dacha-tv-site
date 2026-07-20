@@ -43,13 +43,27 @@ interface TablePlan {
 }
 
 async function planTable(current: SupabaseClient, legacy: SupabaseClient, cfg: TableConfig): Promise<TablePlan> {
-  const legacyWanted = uniq([...cfg.matchKeys, ...cfg.fillFields, ...(cfg.restoreColumns ?? []), 'source', 'category_slug'])
-  const currentWanted = uniq([...cfg.matchKeys, ...cfg.fillFields, 'id', 'description_auto_generated'])
+  const legacyWanted = uniq([
+    ...cfg.matchKeys,
+    ...cfg.fillFields,
+    ...(cfg.restoreColumns ?? []),
+    ...(cfg.table === 'catalog_products'
+      ? ['source', 'category_slug']
+      : []),
+  ])
+  const currentWanted = uniq([
+    ...cfg.matchKeys,
+    ...cfg.fillFields,
+    ...(cfg.restoreColumns ?? []),
+    'id',
+    ...(cfg.table === 'catalog_categories'
+      ? ['description_auto_generated']
+      : []),
+  ])
   const [presentLegacy, presentCurrent] = await Promise.all([
     existingColumns(legacy, cfg.table, legacyWanted),
     existingColumns(current, cfg.table, currentWanted),
   ])
-  for (const k of cfg.matchKeys) if (k === 'id' || k === 'slug') { presentLegacy.add(k); presentCurrent.add(k) }
   const legacyCols = [...presentLegacy].join(', ')
   const currentCols = [...presentCurrent].join(', ')
   const legacyFilter = cfg.legacyFilterOr ? cfg.legacyFilterOr(presentLegacy) : null
@@ -93,7 +107,13 @@ async function applyTable(client: SupabaseClient, cfg: TableConfig, plan: TableP
 
   // Fills: re-read the row IMMEDIATELY before writing so we only ever fill fields
   // that are STILL empty — a field populated after planning is never overwritten.
-  const readCols = uniq(['id', ...plan.fills.flatMap((f) => f.fields), 'description_auto_generated']).join(', ')
+  const readCols = uniq([
+    'id',
+    ...plan.fills.flatMap((f) => f.fields),
+    ...(plan.presentCurrent.includes('description_auto_generated')
+      ? ['description_auto_generated']
+      : []),
+  ]).join(', ')
   for (const f of plan.fills) {
     const { data: freshRaw, error: readErr } = await client.from(cfg.table).select(readCols).eq('id', f.id).maybeSingle()
     if (readErr) { applied.errors.push(`reread ${String(f.id)}: ${readErr.message}`); continue }

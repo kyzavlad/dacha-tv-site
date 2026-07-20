@@ -12,6 +12,7 @@
 // Service-role keys are read from env and NEVER printed or written to any report.
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import WebSocket from 'ws'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
@@ -39,7 +40,17 @@ export function loadEnv(): Env {
 }
 
 export function makeClient({ url, key }: Creds): SupabaseClient {
-  return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } })
+  return createClient(url, key, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+    // Node.js 20 has no native WebSocket. Supabase requires an explicit
+    // transport even though these scripts use only PostgREST and never subscribe.
+    realtime: {
+      transport: WebSocket as unknown as typeof globalThis.WebSocket,
+    },
+  })
 }
 
 // The real project ref (subdomain). Used for the explicit APPLY confirmation.
@@ -83,9 +94,9 @@ export const TABLES: TableConfig[] = [
     table: 'apiary_products', label: 'Продукти пасіки', matchKeys: ['id', 'slug'],
     fillFields: ['description', 'full_description', 'image_url', 'image_alt', 'gallery_images', 'youtube_video_url', 'video_url'],
     mediaFields: ['image_url', 'youtube_video_url', 'video_url'], arrayMediaFields: ['gallery_images'],
-    restoreMissing: true, restoreWhen: () => true,
+    restoreMissing: false,
     restoreColumns: ['name', 'slug', 'description', 'image_url', 'image_alt', 'display_order'],
-    note: 'Restore genuinely missing manual apiary products.',
+    note: 'Current manual catalog is authoritative. Do not restore legacy apiary duplicates.',
   },
   {
     table: 'beekeeper_products', label: 'Пасічникам', matchKeys: ['id', 'slug'],
@@ -99,9 +110,9 @@ export const TABLES: TableConfig[] = [
     table: 'flower_products', label: 'Квіти', matchKeys: ['id', 'slug'],
     fillFields: ['short_description', 'full_description', 'color', 'bloom_season', 'lighting', 'packaging_note', 'image_url', 'image_alt', 'youtube_video_url', 'gallery_images', 'video_url'],
     mediaFields: ['image_url', 'youtube_video_url', 'video_url'], arrayMediaFields: ['gallery_images'],
-    restoreMissing: true, restoreWhen: () => true,
+    restoreMissing: false,
     restoreColumns: ['name', 'slug', 'category', 'variety', 'short_description', 'full_description', 'image_url', 'image_alt', 'display_order'],
-    note: 'Never touch price_uah/status. Restore missing manual flower products.',
+    note: 'Current canonical 50-product flower catalog is authoritative. Never restore legacy-only flower rows.',
   },
   {
     table: 'services', label: 'Послуги', matchKeys: ['id', 'slug'],
@@ -209,18 +220,78 @@ export async function headCount(client: SupabaseClient, table: string, orFilter?
 
 // Which of a config's columns actually exist (schema-drift guard) — a HEAD select
 // returns 42703 for an undefined column.
-export async function existingColumns(client: SupabaseClient, table: string, columns: string[]): Promise<Set<string>> {
+export async function existingColumns(
+  client: SupabaseClient,
+  table: string,
+  columns: string[],
+): Promise<Set<string>> {
   const present = new Set<string>()
-  await Promise.all(columns.map(async (col) => {
-    const { error } = await client.from(table).select(col, { head: true }).limit(1)
-    const code = (error as { code?: string } | null)?.code
 
-    if (!error) {
-      present.add(col)
-    } else if (code !== '42703' && code !== '42P01') {
-      throw new Error(`existingColumns ${table}.${col}: ${error.message}`)
+  // One bounded row is enough to discover the actual PostgREST shape.
+  // No table is downloaded in full.
+  const { data, error } = await client
+    .from(table)
+    .select('*')
+    .limit(1)
+
+  if (error) {
+    const details = error as {
+      code?: string
+      message?: string
+      details?: string
+      hint?: string
     }
-  }))
+
+    const code = String(details.code ?? '')
+    const diagnostic = [
+      details.message,
+      details.details,
+      details.hint,
+    ].filter(Boolean).join(' ')
+
+    const missingTable =
+      code === '42P01'
+      || code === 'PGRST205'
+      || /relation .* does not exist/i.test(diagnostic)
+      || /could not find .* table .* schema cache/i.test(diagnostic)
+
+    if (missingTable) {
+      return present
+    }
+
+    throw new Error(
+      `existingColumns table ${table}: ${
+        diagnostic || code || 'unknown error'
+      }`,
+    )
+  }
+
+  const first = data?.[0] as Row | undefined
+
+  if (first) {
+    const actualColumns = new Set(Object.keys(first))
+
+    for (const column of columns) {
+      if (actualColumns.has(column)) {
+        present.add(column)
+      }
+    }
+
+    return present
+  }
+
+  // Empty-table fallback. Queries stay bounded to one row.
+  for (const column of columns) {
+    const { error: columnError } = await client
+      .from(table)
+      .select(column)
+      .limit(1)
+
+    if (!columnError) {
+      present.add(column)
+    }
+  }
+
   return present
 }
 
