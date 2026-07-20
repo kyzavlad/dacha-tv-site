@@ -8,6 +8,9 @@ import { usePathname } from 'next/navigation'
 import { cn, formatPhoneDisplay, formatPhoneTel } from '@/lib/utils'
 import { trackPhoneClick } from '@/lib/analytics/gtag'
 import { PRIMARY_NAV } from '@/lib/navigation'
+import { splitLocale, localizedPath } from '@/lib/i18n'
+import { navLabel } from '@/lib/i18n-ui'
+import { LanguageSwitcher } from '@/components/shared/LanguageSwitcher'
 import {
   LAUNCH_PHONE,
   LAUNCH_PHONE_SECONDARY,
@@ -50,11 +53,16 @@ function SocialIcons({ siteSettings }: { siteSettings: SiteSettings | null | und
 export function MobileMenu({ phone, phoneSecondary, siteSettings, logoPath }: MobileMenuProps) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [mounted, setMounted] = useState(false)
-  const pathname = usePathname()
+  const pathname = usePathname() || '/'
+  const { locale, path: canonicalPath } = splitLocale(pathname)
   const resolvedPhone = phone || LAUNCH_PHONE
   const resolvedPhoneSecondary = phoneSecondary || LAUNCH_PHONE_SECONDARY
 
+  // Portal SSR-mount guard + close-on-navigation. Both are intentional
+  // synchronize-with-external (mount / URL) effects.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setMounted(true) }, [])
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setMenuOpen(false) }, [pathname])
 
   // Scroll lock
@@ -108,12 +116,12 @@ export function MobileMenu({ phone, phoneSecondary, siteSettings, logoPath }: Mo
         <ul className="space-y-0.5">
           {PRIMARY_NAV.map(({ href, label }) => (
             <li key={href}>
-              <Link href={href} onClick={() => setMenuOpen(false)}
+              <Link href={localizedPath(locale, href)} onClick={() => setMenuOpen(false)}
                 className={cn(
                   'flex items-center px-4 py-3.5 text-[1.0625rem] font-semibold rounded-xl transition-colors min-h-[52px]',
-                  pathname.startsWith(href) ? 'text-honey-800 bg-honey-50' : 'text-bark hover:bg-gray-50',
+                  canonicalPath.startsWith(href) ? 'text-honey-800 bg-honey-50' : 'text-bark hover:bg-gray-50',
                 )}>
-                {label}
+                {navLabel(href, locale, label)}
               </Link>
             </li>
           ))}
@@ -142,7 +150,11 @@ export function MobileMenu({ phone, phoneSecondary, siteSettings, logoPath }: Mo
 
         <SocialIcons siteSettings={siteSettings} />
 
-        <Link href="/catalog" onClick={() => setMenuOpen(false)}
+        <div className="flex justify-center">
+          <LanguageSwitcher align="left" />
+        </div>
+
+        <Link href={localizedPath(locale, '/catalog')} onClick={() => setMenuOpen(false)}
           className="flex items-center justify-center w-full py-3.5 bg-honey-700 hover:bg-honey-800 text-white font-semibold rounded-full transition-colors min-h-[52px] text-base">
           Перейти в магазин
         </Link>

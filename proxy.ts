@@ -40,6 +40,11 @@ export default function proxy(request: NextRequest) {
       const loginUrl = new URL('/admin/login', request.url)
       return NextResponse.redirect(loginUrl)
     }
+    // Flag the admin section so the root layout suppresses public chrome
+    // (Header/Footer/CartDrawer/LanguageSwitcher) server-side without flicker.
+    const requestHeaders = new Headers(request.headers)
+    requestHeaders.set('x-dacha-section', 'admin')
+    return NextResponse.next({ request: { headers: requestHeaders } })
   }
 
   return NextResponse.next()

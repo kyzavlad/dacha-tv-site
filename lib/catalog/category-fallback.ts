@@ -24,3 +24,21 @@ export function deterministicCategoryIntro(nameUa: string | null | undefined): s
 export function isFallbackFillAllowed(env: Record<string, string | undefined>): boolean {
   return env.LEGACY_MIGRATION_COMPLETE === 'true'
 }
+
+// A category name is "code-like" (not a real human name) when it is empty, a
+// bare number, a supplier code (cat-123, id_42, c99…), or contains no run of ≥2
+// letters at all. Used to (a) never publish/generate content from such names,
+// and (b) drive the deterministic repair. Pure → unit-testable.
+export function isCodeLikeCategoryName(name: string | null | undefined): boolean {
+  const n = (name ?? '').trim()
+  if (!n) return true
+  if (/^\d+$/.test(n)) return true                       // pure number: "123"
+  if (/^(cat|category|categoria|id|c|k)[-_ ]?\d+$/i.test(n)) return true // "cat-123", "id_42", "c99"
+  if (!/\p{L}{2,}/u.test(n)) return true                 // no 2+ consecutive letters anywhere
+  return false
+}
+
+// Convenience inverse — a real, presentable human category name.
+export function isValidHumanCategoryName(name: string | null | undefined): boolean {
+  return !isCodeLikeCategoryName(name)
+}

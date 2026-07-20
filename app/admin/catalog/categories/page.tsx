@@ -3,8 +3,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { getAdminClient } from '@/lib/supabase/admin'
 import type { CatalogCategory } from '@/types'
-import { createCatalogCategoryAction, publishCategoryAction, unpublishCategoryAction, deleteCategoryAction, bulkActivateFromSupplierAction, fixNumericCategoryNamesAction } from './actions'
-import { fillEmptyCategoryIntrosAction } from './[id]/actions'
+import { createCatalogCategoryAction, publishCategoryAction, unpublishCategoryAction, deleteCategoryAction, bulkActivateFromSupplierAction } from './actions'
 
 export const metadata: Metadata = { title: 'Адмін: Категорії каталогу', robots: 'noindex, nofollow' }
 
@@ -12,12 +11,7 @@ const INPUT = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:
 
 type CategoryRow = Pick<CatalogCategory, 'id' | 'name_ua' | 'slug' | 'description' | 'is_published' | 'display_order'>
 
-interface PageProps {
-  searchParams: Promise<{ introsFilled?: string }>
-}
-
-export default async function CatalogCategoriesPage({ searchParams }: PageProps) {
-  const { introsFilled } = await searchParams
+export default async function CatalogCategoriesPage() {
   let categories: CategoryRow[] = []
   let errorMsg: string | null = null
   let tablesMissing = false
@@ -61,56 +55,13 @@ export default async function CatalogCategoriesPage({ searchParams }: PageProps)
             {supplierCategoryCount > 0 && ` · ${supplierCategoryCount} у постачальника`}
           </p>
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <form action={fillEmptyCategoryIntrosAction}>
-            <button
-              type="submit"
-              title="Доступно лише після завершення міграції легасі (LEGACY_MIGRATION_COMPLETE=true). Заповнює лише короткий опис детермінованим текстом за назвою (без AI) і позначає його як згенерований, щоб легасі-контент міг замінити його пізніше."
-              className="text-sm font-medium text-gray-600 hover:text-gray-900 border border-gray-200 px-3 py-2 rounded-lg transition-colors"
-            >
-              Заповнити порожні описи
-            </button>
-          </form>
-          <Link
-            href="/admin/catalog/pipeline"
-            className="text-sm font-medium text-gray-600 hover:text-gray-900 border border-gray-200 px-3 py-2 rounded-lg transition-colors"
-          >
-            → Пайплайн імпорту
-          </Link>
-        </div>
+        <Link
+          href="/admin/catalog/pipeline"
+          className="text-sm font-medium text-gray-600 hover:text-gray-900 border border-gray-200 px-3 py-2 rounded-lg transition-colors"
+        >
+          → Пайплайн імпорту
+        </Link>
       </div>
-
-      {introsFilled === 'disabled' && (
-        <div className="bg-amber-50 border border-amber-200 rounded-xl px-5 py-3 mb-6 text-sm text-amber-800">
-          Заповнення вимкнено: спершу завершіть міграцію легасі, потім встановіть <code>LEGACY_MIGRATION_COMPLETE=true</code>. Легасі-описи мають пріоритет над згенерованими.
-        </div>
-      )}
-      {introsFilled === 'error' && (
-        <div className="bg-red-50 border border-red-200 rounded-xl px-5 py-3 mb-6 text-sm text-red-800">
-          Не вдалося заповнити описи — деталі у логах сервера.
-        </div>
-      )}
-      {introsFilled != null && introsFilled !== 'disabled' && introsFilled !== 'error' && (
-        <div className="bg-green-50 border border-green-200 rounded-xl px-5 py-3 mb-6 text-sm text-green-800">
-          Заповнено коротких описів (згенерованих): {introsFilled}. Довгі SEO-тексти не змінювались; легасі зможе замінити їх пізніше.
-        </div>
-      )}
-
-      {categories.filter((c) => /^\d+$/.test(c.name_ua)).length > 0 && !tablesMissing && (
-        <div className="bg-orange-50 border border-orange-200 rounded-xl p-5 mb-6">
-          <p className="font-semibold text-orange-800">
-            {categories.filter((c) => /^\d+$/.test(c.name_ua)).length} категорій з числовою назвою
-          </p>
-          <p className="text-sm text-orange-700 mt-1 mb-3">
-            Назви збереглись як числові ID замість реальних. Натисніть щоб виправити з даних постачальника.
-          </p>
-          <form action={fixNumericCategoryNamesAction}>
-            <button type="submit" className="text-sm font-medium bg-orange-700 text-white px-4 py-2 rounded-lg hover:bg-orange-800 transition-colors">
-              Виправити числові назви
-            </button>
-          </form>
-        </div>
-      )}
 
       {tablesMissing && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-5 mb-6">

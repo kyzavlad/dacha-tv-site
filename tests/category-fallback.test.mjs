@@ -1,6 +1,18 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { deterministicCategoryIntro, isFallbackFillAllowed } from '../lib/catalog/category-fallback.ts'
+import { deterministicCategoryIntro, isFallbackFillAllowed, isCodeLikeCategoryName, isValidHumanCategoryName } from '../lib/catalog/category-fallback.ts'
+
+test('isCodeLikeCategoryName flags numeric / code-like / empty names', () => {
+  for (const bad of ['', '   ', '123', '456789', 'cat-123', 'CAT_42', 'c99', 'id-7', '---', '№№']) {
+    assert.equal(isCodeLikeCategoryName(bad), true, `expected code-like: ${JSON.stringify(bad)}`)
+  }
+})
+
+test('isValidHumanCategoryName accepts real names (uk/ru/en, with digits)', () => {
+  for (const good of ['Мотокоси', 'Запчастини на скутер', 'Акумулятори 12В', 'Металопрофіль', 'Bosch фільтри', 'Цветы']) {
+    assert.equal(isValidHumanCategoryName(good), true, `expected valid: ${JSON.stringify(good)}`)
+  }
+})
 
 test('empty / numeric names produce no intro', () => {
   assert.equal(deterministicCategoryIntro(''), '')

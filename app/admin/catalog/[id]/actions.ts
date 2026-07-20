@@ -3,6 +3,7 @@
 import { getAdminClient } from '@/lib/supabase/admin'
 import { autoSlug } from '@/lib/catalog/csv-utils'
 import { ruTranslationIntent, editorRedirectQuery } from '@/lib/admin/editor-forms'
+import { buildMetalAttributes, METAL_ATTR_FIELDS, METAL_CATEGORY_SLUG } from '@/lib/catalog/metal'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 
@@ -148,5 +149,94 @@ export async function updateCatalogProductAction(productId: string, fd: FormData
   const category = strOrNull(fd, 'category_slug')
   if (category) revalidatePath(`/catalog/${category}/${slug}`)
 
+  redirect(`/admin/catalog/${productId}${editorRedirectQuery({ warn: attrWarn ? 'attributes' : null })}`)
+}
+
+// Dedicated metal-profile product update. ENFORCES the metal invariants
+// (source='manual', lead_type='metal', inquiry_only=true, product_group='metal')
+// so a metal row can never drift into cart-buyable/supplier-owned state, and
+// builds `attributes` from structured characteristic fields overlaid on an
+// optional advanced-JSON base. Reuses the same image serialization
+// (main_image_url + images) and RU-translation handling as the generic editor.
+export async function updateMetalProductAction(productId: string, fd: FormData): Promise<void> {
+  const client = getAdminClient()
+
+  const nameUa = str(fd, 'name_ua') || 'Без назви'
+  const slug = await uniqueSlug(client, str(fd, 'slug') || nameUa, productId)
+  const statusRaw = str(fd, 'status')
+  const status = statusRaw === 'published' || statusRaw === 'draft' || statusRaw === 'archived' ? statusRaw : 'draft'
+
+  // Advanced JSON base (invalid → keep, warn) overlaid with structured metal fields.
+  let attrWarn = false
+  let base: Record<string, unknown> = {}
+  const advRaw = str(fd, 'attributes_advanced')
+  if (advRaw !== '') {
+    try {
+      const parsed = JSON.parse(advRaw)
+      if (parsed && typeof parsed === 'object') base = parsed as Record<string, unknown>
+      else attrWarn = true
+    } catch { attrWarn = true }
+  }
+  const structured: Record<string, string> = {}
+  for (const f of METAL_ATTR_FIELDS) structured[f.field] = str(fd, f.field)
+  const attributes = buildMetalAttributes(base, structured)
+
+  const update: Record<string, unknown> = {
+    name_ua: nameUa,
+    slug,
+    status,
+    // Enforced metal invariants — inquiry-only, never cart-buyable, never supplier-owned.
+    source: 'manual',
+    lead_type: 'metal',
+    inquiry_only: true,
+    product_group: 'metal',
+    short_description: strOrNull(fd, 'short_description'),
+    description: strOrNull(fd, 'description'),
+    description_ua: strOrNull(fd, 'description_ua'),
+    price_uah: numOrNull(fd, 'price_uah'),
+    compare_price_uah: numOrNull(fd, 'compare_price_uah'),
+    price_prefix: strOrNull(fd, 'price_prefix'),
+    unit_label: strOrNull(fd, 'unit_label'),
+    main_image_url: strOrNull(fd, 'main_image_url'),
+    images: imageList(fd, 'images'),
+    attributes,
+    is_featured: bool(fd, 'is_featured'),
+    display_order: intOr(fd, 'display_order', 0),
+    updated_at: new Date().toISOString(),
+  }
+
+  const { error: baseError } = await client.from('catalog_products').update(update).eq('id', productId)
+  if (baseError) {
+    console.error('[admin:catalog:metal] base update failed', { productId, code: baseError.code, message: baseError.message })
+    redirect(`/admin/catalog/${productId}${editorRedirectQuery({ error: true })}`)
+  }
+
+  const ru = {
+    meta_title: strOrNull(fd, 'ru_meta_title'),
+    meta_description: strOrNull(fd, 'ru_meta_description'),
+    description: strOrNull(fd, 'ru_description'),
+    seo_keywords: strOrNull(fd, 'ru_seo_keywords'),
+  }
+  if (ruTranslationIntent(ru) === 'upsert') {
+    const { error } = await client.from('catalog_product_translations').upsert(
+      { product_id: productId, locale: 'ru', ...ru, updated_at: new Date().toISOString() },
+      { onConflict: 'product_id,locale' },
+    )
+    if (error) {
+      console.error('[admin:catalog:metal] RU upsert failed', { productId, code: error.code, message: error.message })
+      redirect(`/admin/catalog/${productId}${editorRedirectQuery({ error: true })}`)
+    }
+  } else {
+    const { error } = await client.from('catalog_product_translations').delete().eq('product_id', productId).eq('locale', 'ru')
+    if (error) {
+      console.error('[admin:catalog:metal] RU clear failed', { productId, code: error.code, message: error.message })
+      redirect(`/admin/catalog/${productId}${editorRedirectQuery({ error: true })}`)
+    }
+  }
+
+  revalidatePath('/admin/catalog')
+  revalidatePath(`/admin/catalog/${productId}`)
+  revalidatePath('/catalog')
+  revalidatePath(`/catalog/${METAL_CATEGORY_SLUG}/${slug}`)
   redirect(`/admin/catalog/${productId}${editorRedirectQuery({ warn: attrWarn ? 'attributes' : null })}`)
 }

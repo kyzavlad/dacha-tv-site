@@ -50,3 +50,6 @@ next-env.d.ts
 
 # Local legacy migration reports
 audit/legacy-catalog/
+
+# Local catalog v3 diagnostics
+audit/catalog-v3/

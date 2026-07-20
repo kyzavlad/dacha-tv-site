@@ -2,6 +2,7 @@ import { getAdminClient } from '@/lib/supabase/admin'
 import { autoSlug } from '@/lib/catalog/csv-utils'
 import { fetchSupplierCategoryMap } from '@/lib/supplier/sync'
 import { buildSupplierUpdatePayload, planGuardedWrites, type CatalogUpdatePayload, type ExistingCatalogOwnership } from '@/lib/catalog/field-ownership'
+import { isValidHumanCategoryName, deterministicCategoryIntro } from '@/lib/catalog/category-fallback'
 
 type AdminClient = ReturnType<typeof getAdminClient>
 
@@ -255,6 +256,12 @@ export async function getPipelineStats(): Promise<PipelineStats> {
 // Step 3: Create/update catalog_categories from supplier_categories.
 // Existing entries (matched by supplier_category_id) are skipped to preserve SEO edits,
 // except entries where name_ua is purely numeric — those get fixed from supplier_categories.
+// Stable, collision-resistant slug suffix from the supplier category id (which is
+// unique per row) — deterministic, unlike Date.now().
+function supplierIdSuffix(supplierCategoryId: unknown): string {
+  return autoSlug(String(supplierCategoryId ?? '')) || 'x'
+}
+
 export async function syncCatalogCategories(): Promise<SyncCategoriesResult> {
   const client = getAdminClient()
 
@@ -308,13 +315,22 @@ export async function syncCatalogCategories(): Promise<SyncCategoriesResult> {
       continue
     }
 
-    toInsert.push({
+    // New category. Auto-fill a safe short description ONLY when the name is a
+    // real human name (never generate copy from a numeric/code name), and mark it
+    // as generated so legacy/manual content can replace it later.
+    const validName = isValidHumanCategoryName(displayName)
+    const row: Record<string, unknown> = {
       supplier_category_id: supplierId,
       slug: autoSlug(displayName),
       name_ua: displayName,
       is_published: false,
       display_order: 0,
-    })
+    }
+    if (validName) {
+      const intro = deterministicCategoryIntro(displayName)
+      if (intro) { row.description = intro; row.description_auto_generated = true }
+    }
+    toInsert.push(row)
   }
 
   const skipped = supplierCats.length - toInsert.length - fixed
@@ -329,27 +345,31 @@ export async function syncCatalogCategories(): Promise<SyncCategoriesResult> {
     }
   }
 
+  // toInsert rows are known-new (absent from existingMap by supplier_category_id),
+  // so a plain INSERT is correct. We deliberately do NOT upsert on
+  // supplier_category_id: only a PARTIAL unique index exists on that column, which
+  // Postgres cannot use for ON CONFLICT inference (42P10) — that made every insert
+  // chunk fail. On a slug collision (23505) we retry the single row with a suffix.
   let inserted = 0
   const errors: string[] = []
   const CHUNK = 100
 
   for (let i = 0; i < toInsert.length; i += CHUNK) {
     const chunk = toInsert.slice(i, i + CHUNK)
-    const { error } = await client
-      .from('catalog_categories')
-      .upsert(chunk, { onConflict: 'supplier_category_id', ignoreDuplicates: true })
-    if (error) {
-      for (const row of chunk) {
-        const r = row as Record<string, unknown>
-        const { error: e2 } = await client.from('catalog_categories').upsert(
-          { ...r, slug: `${r.slug}-${Date.now()}` },
-          { onConflict: 'supplier_category_id', ignoreDuplicates: true },
-        )
-        if (e2) errors.push(e2.message)
-        else inserted++
+    const { error } = await client.from('catalog_categories').insert(chunk)
+    if (!error) { inserted += chunk.length; continue }
+    // Isolate the failing chunk row-by-row; fix slug collisions with a suffix.
+    for (const row of chunk) {
+      const r = row as Record<string, unknown>
+      const { error: e1 } = await client.from('catalog_categories').insert(r)
+      if (!e1) { inserted++; continue }
+      if ((e1 as { code?: string }).code === '23505') {
+        const { error: e2 } = await client.from('catalog_categories').insert({ ...r, slug: `${r.slug}-${supplierIdSuffix(r.supplier_category_id)}` })
+        if (!e2) { inserted++; continue }
+        errors.push(e2.message)
+      } else {
+        errors.push(e1.message)
       }
-    } else {
-      inserted += chunk.length
     }
   }
 
@@ -671,15 +691,38 @@ export async function syncProductsToCatalog(
 }
 
 // Step 7: Publish all unpublished catalog categories
+// Publish only categories that have a REAL human name. A numeric/code-like name
+// (e.g. an unresolved supplier id) must never go public — it would render a
+// broken card. Bounded: categories number in the hundreds, read in one bounded
+// page and published by id in chunks.
 export async function publishAllCatalogCategories(): Promise<PublishResult> {
   const client = getAdminClient()
-  const { data, error } = await client
+  const { data: candidates, error: readErr } = await client
     .from('catalog_categories')
-    .update({ is_published: true })
+    .select('id, name_ua')
     .eq('is_published', false)
-    .select('id')
-  if (error) return { ok: false, updated: 0, message: error.message }
-  return { ok: true, updated: data?.length ?? 0, message: `Опубліковано ${data?.length ?? 0} категорій` }
+    .limit(5000)
+  if (readErr) return { ok: false, updated: 0, message: readErr.message }
+
+  const publishable = (candidates ?? []).filter((c) => isValidHumanCategoryName(c.name_ua as string | null))
+  const skipped = (candidates ?? []).length - publishable.length
+  if (publishable.length === 0) {
+    return { ok: true, updated: 0, message: `Немає категорій з валідними назвами для публікації${skipped > 0 ? ` (пропущено ${skipped} з числовими назвами)` : ''}` }
+  }
+
+  let updated = 0
+  const errors: string[] = []
+  const ids = publishable.map((c) => c.id as string)
+  for (let i = 0; i < ids.length; i += 200) {
+    const { error } = await client
+      .from('catalog_categories')
+      .update({ is_published: true })
+      .in('id', ids.slice(i, i + 200))
+    if (error) errors.push(error.message)
+    else updated += ids.slice(i, i + 200).length
+  }
+  if (errors.length) return { ok: false, updated, message: `Опубліковано ${updated}, ${errors.length} помилок: ${errors[0]}` }
+  return { ok: true, updated, message: `Опубліковано ${updated} категорій${skipped > 0 ? `, пропущено ${skipped} з числовими назвами` : ''}` }
 }
 
 // Step 7b: Backfill category_slug on existing catalog_products.
