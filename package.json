@@ -9,9 +9,9 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck:scripts": "tsc -p scripts/tsconfig.json",
-    "test": "node --test \"tests/*.test.mjs\"",
-    "audit:legacy-catalog": "node scripts/audit-legacy-catalog.ts",
-    "migrate:legacy-catalog": "node scripts/migrate-legacy-catalog.ts"
+    "test": "node --test tests/*.test.mjs",
+    "audit:legacy-catalog": "tsx scripts/audit-legacy-catalog.ts",
+    "migrate:legacy-catalog": "tsx scripts/migrate-legacy-catalog.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

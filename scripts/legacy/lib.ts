@@ -124,8 +124,22 @@ export const TABLES: TableConfig[] = [
     restoreColumns: ['supplier_sku', 'name_ua', 'slug', 'category_slug', 'short_description', 'description', 'description_ua', 'price_uah', 'compare_price_uah', 'main_image_url', 'images', 'attributes', 'source', 'lead_type', 'inquiry_only', 'status', 'meta_title', 'meta_description'],
     // Only scan LEGACY manual + metal rows — never the whole supplier catalog.
     legacyFilterOr: (present) => {
-      const preds = [`category_slug.eq.${METAL_CATEGORY_SLUG}`]
-      if (present.has('source')) preds.unshift('source.eq.manual')
+      const preds: string[] = []
+
+      if (present.has('source')) {
+        preds.push('source.eq.manual')
+      }
+
+      if (present.has('category_slug')) {
+        preds.push(`category_slug.eq.${METAL_CATEGORY_SLUG}`)
+      }
+
+      if (preds.length === 0) {
+        throw new Error(
+          'Refusing to scan legacy catalog_products without source/category_slug safety columns',
+        )
+      }
+
       return preds.join(',')
     },
     note: 'Restore missing manual products (esp. metal-profile). Never overwrite prices/status/slug/supplier data.',
@@ -185,7 +199,11 @@ export async function headCount(client: SupabaseClient, table: string, orFilter?
   let q = client.from(table).select('id', { count: 'exact', head: true })
   if (orFilter) q = q.or(orFilter)
   const { count, error } = await q
-  if (error) return null
+  if (error) {
+    const code = (error as { code?: string }).code
+    if (code === '42P01' || code === '42703') return null
+    throw new Error(`headCount ${table}: ${error.message}`)
+  }
   return count ?? 0
 }
 
@@ -195,7 +213,13 @@ export async function existingColumns(client: SupabaseClient, table: string, col
   const present = new Set<string>()
   await Promise.all(columns.map(async (col) => {
     const { error } = await client.from(table).select(col, { head: true }).limit(1)
-    if (!error || (error as { code?: string }).code !== '42703') present.add(col)
+    const code = (error as { code?: string } | null)?.code
+
+    if (!error) {
+      present.add(col)
+    } else if (code !== '42703' && code !== '42P01') {
+      throw new Error(`existingColumns ${table}.${col}: ${error.message}`)
+    }
   }))
   return present
 }

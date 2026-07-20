@@ -629,7 +629,7 @@ export async function syncProductsToCatalog(
         .from('catalog_products')
         .update({ ...w.columns, updated_at: new Date().toISOString() }, { count: 'exact' })
         .eq('supplier_sku', sku)
-        .neq('source', 'manual')
+        .or('source.is.null,source.neq.manual')
         .eq(w.guardColumn, false)
       if (error) { rowError = error.message; break }
       if ((count ?? 0) > 0) wrote = true
