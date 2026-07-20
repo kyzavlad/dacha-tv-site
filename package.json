@@ -9,7 +9,7 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck:scripts": "tsc -p scripts/tsconfig.json",
-    "test": "node --test tests/*.test.mjs",
+    "test": "tsx --test tests/*.test.mjs",
     "audit:legacy-catalog": "tsx scripts/audit-legacy-catalog.ts",
     "migrate:legacy-catalog": "tsx scripts/migrate-legacy-catalog.ts"
   },
@@ -36,10 +36,12 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/ws": "^8.18.1",
     "eslint": "^9",
     "eslint-config-next": "16.2.6",
     "tailwindcss": "^4",
     "tsx": "^4.23.1",
-    "typescript": "^5"
+    "typescript": "^5",
+    "ws": "^8.21.1"
   }
 }

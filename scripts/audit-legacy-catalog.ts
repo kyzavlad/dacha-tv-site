@@ -36,13 +36,27 @@ interface TableReport {
 }
 
 async function auditTable(current: SupabaseClient, legacy: SupabaseClient, cfg: TableConfig): Promise<TableReport> {
-  const legacyWanted = uniq([...cfg.matchKeys, ...cfg.fillFields, ...(cfg.restoreColumns ?? []), 'source', 'category_slug'])
-  const currentWanted = uniq([...cfg.matchKeys, ...cfg.fillFields, 'id', 'description_auto_generated'])
+  const legacyWanted = uniq([
+    ...cfg.matchKeys,
+    ...cfg.fillFields,
+    ...(cfg.restoreColumns ?? []),
+    ...(cfg.table === 'catalog_products'
+      ? ['source', 'category_slug']
+      : []),
+  ])
+  const currentWanted = uniq([
+    ...cfg.matchKeys,
+    ...cfg.fillFields,
+    ...(cfg.restoreColumns ?? []),
+    'id',
+    ...(cfg.table === 'catalog_categories'
+      ? ['description_auto_generated']
+      : []),
+  ])
   const [presentLegacy, presentCurrent] = await Promise.all([
     existingColumns(legacy, cfg.table, legacyWanted),
     existingColumns(current, cfg.table, currentWanted),
   ])
-  for (const k of cfg.matchKeys) if (k === 'id' || k === 'slug') { presentLegacy.add(k); presentCurrent.add(k) }
   const legacyCols = [...presentLegacy].join(', ')
   const currentCols = [...presentCurrent].join(', ')
   const legacyFilter = cfg.legacyFilterOr ? cfg.legacyFilterOr(presentLegacy) : null
