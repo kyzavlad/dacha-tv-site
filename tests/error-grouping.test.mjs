@@ -1,8 +1,29 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  classifyBuildFailure, classifyUpsertError, recordError, mergeErrorReport, emptyErrorReport, SAMPLE_CAP,
+  classifyBuildFailure, classifyPriceIssue, classifyUpsertError, isRetryableDbError,
+  recordError, mergeErrorReport, emptyErrorReport, SAMPLE_CAP,
 } from '../lib/supplier/error-grouping.ts'
+
+test('classifyPriceIssue flags null/zero/negative/NaN prices', () => {
+  assert.equal(classifyPriceIssue(null), 'invalid_price')
+  assert.equal(classifyPriceIssue(undefined), 'invalid_price')
+  assert.equal(classifyPriceIssue(0), 'invalid_price')
+  assert.equal(classifyPriceIssue(-5), 'invalid_price')
+  assert.equal(classifyPriceIssue(NaN), 'invalid_price')
+  assert.equal(classifyPriceIssue(199), null)
+})
+
+test('isRetryableDbError: transient yes, constraint no', () => {
+  assert.equal(isRetryableDbError({ code: '40001' }), true) // serialization failure
+  assert.equal(isRetryableDbError({ code: '40P01' }), true) // deadlock
+  assert.equal(isRetryableDbError({ code: '08006' }), true) // connection failure
+  assert.equal(isRetryableDbError({ code: '53300' }), true) // too many connections
+  assert.equal(isRetryableDbError({ code: '', message: 'fetch failed' }), true)
+  assert.equal(isRetryableDbError({ code: '23505', message: 'duplicate' }), false) // constraint — never
+  assert.equal(isRetryableDbError({ code: '42883' }), false) // undefined function
+  assert.equal(isRetryableDbError(null), false)
+})
 
 test('classifyBuildFailure: missing sku vs malformed record', () => {
   assert.equal(classifyBuildFailure(''), 'missing_sku')

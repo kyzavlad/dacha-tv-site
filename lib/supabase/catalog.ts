@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
-import type { CatalogCategory, CatalogProduct } from '@/types'
+import type { CatalogCategory, CatalogProduct, CatalogImageMeta } from '@/types'
+import { resolveImageEntries, primaryImageAlt } from '@/lib/catalog/image-metadata'
 
 function getClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -173,6 +174,34 @@ export function getCatalogProductImages(product: ImageBearingProduct | null | un
     : []
   const ordered = [primary, ...rest, ...rawRest].filter((u): u is string => u != null)
   return [...new Set(ordered)]
+}
+
+// Ordered gallery entries WITH alt text for a product. Uses saved image_metadata
+// when present; otherwise derives entries from the resolved URL list. Every entry
+// gets a non-empty alt (own alt → main_image_alt → localized name fallback).
+// `fallbackAlt` should be the localized product name.
+export function getCatalogProductImageEntries(
+  product: (ImageBearingProduct & { image_metadata?: unknown; main_image_alt?: string | null }) | null | undefined,
+  fallbackAlt: string,
+): CatalogImageMeta[] {
+  return resolveImageEntries({
+    imageMetadata: product?.image_metadata,
+    urls: getCatalogProductImages(product),
+    mainImageAlt: product?.main_image_alt ?? null,
+    fallbackAlt,
+  })
+}
+
+// The alt for a product's single primary image (cards / og:image).
+export function getCatalogPrimaryImageAlt(
+  product: { image_metadata?: unknown; main_image_alt?: string | null } | null | undefined,
+  fallbackAlt: string,
+): string {
+  return primaryImageAlt({
+    imageMetadata: product?.image_metadata,
+    mainImageAlt: product?.main_image_alt ?? null,
+    fallbackAlt,
+  })
 }
 
 // ─── Manual / supplier unified price + CTA logic ─────────────────────────────

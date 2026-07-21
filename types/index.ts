@@ -278,6 +278,14 @@ export interface CatalogCategory {
   updated_at: string
 }
 
+// One entry in catalog_products.image_metadata — an ordered image with its alt.
+export interface CatalogImageMeta {
+  url: string
+  alt: string
+  position: number
+  isPrimary: boolean
+}
+
 export interface CatalogProduct {
   id: string
   supplier_product_id: string | null
@@ -290,12 +298,17 @@ export interface CatalogProduct {
   price_uah: number | null
   compare_price_uah: number | null
   main_image_url: string | null
+  main_image_alt?: string | null
+  // Ordered image list [{url, alt, position, isPrimary}]. Backward-compatible
+  // companion to main_image_url + images (those stay authoritative when absent).
+  image_metadata?: CatalogImageMeta[] | null
   images: string[] | null
   attributes: Record<string, unknown> | null
   status: CatalogProductStatus
   is_featured: boolean
   is_price_suspicious: boolean
   display_order: number
+  seo_description?: string | null
   meta_title: string | null
   meta_description: string | null
   // Manual catalog layer (migration 051)

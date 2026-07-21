@@ -19,6 +19,15 @@ export function classifyBuildFailure(rawSku: string): SupplierErrorGroup {
   return rawSku && rawSku.trim() ? 'invalid_record' : 'missing_sku'
 }
 
+// A record that BUILT fine (has a SKU) but carries no usable price. Such rows are
+// written to supplier_products with a null price and then silently excluded from
+// the catalog import (which requires price_uah > 0), so they are a real, report-
+// able data-quality issue. Returns 'invalid_price' when the price is unusable.
+export function classifyPriceIssue(priceUah: number | null | undefined): SupplierErrorGroup | null {
+  const n = Number(priceUah)
+  return priceUah == null || !Number.isFinite(n) || n <= 0 ? 'invalid_price' : null
+}
+
 // A failed upsert, classified by Postgres error code. 23xxx = constraint
 // violation (unique/not-null/check/fk); any other code = generic upsert failure.
 export function classifyUpsertError(err: { code?: string | null; message?: string | null } | null | undefined): SupplierErrorGroup {
@@ -27,6 +36,19 @@ export function classifyUpsertError(err: { code?: string | null; message?: strin
   if (/^23\d{3}$/.test(code)) return 'database_constraint'
   if (code) return 'upsert_failed'
   return /duplicate|constraint|violat|null value/i.test(err.message ?? '') ? 'database_constraint' : 'upsert_failed'
+}
+
+// Transient Postgres/PostgREST failures worth a bounded retry (never a constraint
+// violation — those are deterministic). Serialization/deadlock (40001/40P01),
+// connection (08xxx), insufficient resources (53xxx), cancellation (57014),
+// and network-ish messages. Constraint violations (23xxx) are NEVER retryable.
+export function isRetryableDbError(err: { code?: string | null; message?: string | null } | null | undefined): boolean {
+  if (!err) return false
+  const code = String(err.code ?? '')
+  if (/^23\d{3}$/.test(code)) return false
+  if (/^(40001|40P01|57014)$/.test(code)) return true
+  if (/^(08|53)\d{3}$/.test(code)) return true
+  return /timeout|timed out|connection|ECONNRESET|ETIMEDOUT|fetch failed|network|temporarily/i.test(err.message ?? '')
 }
 
 export interface GroupDetail {

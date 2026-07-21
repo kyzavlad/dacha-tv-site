@@ -2,20 +2,25 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { uploadMediaFile } from '@/app/admin/actions/upload'
+import { buildImageMetadata } from '@/lib/catalog/image-metadata'
+import type { CatalogImageMeta } from '@/types'
 
 // Image manager for catalog_products. Reuses the existing `uploadMediaFile`
 // server action + `product-media` storage bucket (NO second upload backend, and
 // it never touches the product_media table). Manages an ordered list of image
-// URLs where the FIRST is the primary; serializes to exactly the two fields the
-// catalog server actions already read: `main_image_url` (first URL) and `images`
-// (one URL per line — matches the `imageList` newline parser). Supports upload,
-// preview, multiple images, set-primary, delete, reorder, and a manual URL
-// fallback. Reports upload-in-progress so the parent can disable Save.
+// URLs where the FIRST is the primary; serializes the fields the catalog server
+// actions read: `main_image_url` (first URL), `images` (one URL per line —
+// matches the `imageList` newline parser), `main_image_alt` (primary alt), and
+// `image_metadata` (ordered [{url, alt, position, isPrimary}] JSON). Supports
+// upload, preview, multiple images, per-image alt, set-primary, delete, reorder,
+// and a manual URL fallback. Reports upload-in-progress so the parent can disable
+// Save.
 
 interface Slot {
   id: string        // stable identity — patches target this, never a mutable index
   url: string       // '' while a freshly-picked file is still uploading
   preview: string   // object URL while uploading, then the final URL
+  alt: string       // per-image alt text
   isBlob: boolean   // true while `preview` is an object URL that must be revoked
   uploading: boolean
   error: string | null
@@ -26,14 +31,19 @@ interface Props {
   onUploadingChange?: (uploading: boolean) => void
   // Groups uploaded media under catalog/{productId}/… for collision-free paths.
   productId?: string
+  // Existing saved image_metadata (alt per URL) to prefill the alt inputs.
+  initialImageMeta?: CatalogImageMeta[] | null
+  // Localized product name — shown as the alt placeholder / fallback hint.
+  altFallback?: string
 }
 
 let slotSeq = 0
 const nextSlotId = () => `slot-${slotSeq++}-${Math.random().toString(36).slice(2, 7)}`
 
-export function CatalogImageManager({ initialImages, onUploadingChange, productId }: Props) {
+export function CatalogImageManager({ initialImages, onUploadingChange, productId, initialImageMeta, altFallback }: Props) {
+  const altByUrl = new Map((initialImageMeta ?? []).map((m) => [m.url, m.alt]))
   const [slots, setSlots] = useState<Slot[]>(
-    initialImages.filter(Boolean).map((u) => ({ id: nextSlotId(), url: u, preview: u, isBlob: false, uploading: false, error: null })),
+    initialImages.filter(Boolean).map((u) => ({ id: nextSlotId(), url: u, preview: u, alt: altByUrl.get(u) ?? '', isBlob: false, uploading: false, error: null })),
   )
   const [urlInput, setUrlInput] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
@@ -59,7 +69,7 @@ export function CatalogImageManager({ initialImages, onUploadingChange, productI
     // Reserve placeholder slots first (each with a stable id).
     setSlots((prev) => [
       ...prev,
-      ...picked.map((p) => ({ id: p.id, url: '', preview: p.preview, isBlob: true, uploading: true, error: null as string | null })),
+      ...picked.map((p) => ({ id: p.id, url: '', preview: p.preview, alt: '', isBlob: true, uploading: true, error: null as string | null })),
     ])
     await Promise.all(picked.map(async ({ file, id, preview }) => {
       const fd = new FormData()
@@ -78,7 +88,7 @@ export function CatalogImageManager({ initialImages, onUploadingChange, productI
   function addUrl() {
     const u = urlInput.trim()
     if (!u) return
-    setSlots((prev) => [...prev, { id: nextSlotId(), url: u, preview: u, isBlob: false, uploading: false, error: null }])
+    setSlots((prev) => [...prev, { id: nextSlotId(), url: u, preview: u, alt: '', isBlob: false, uploading: false, error: null }])
     setUrlInput('')
   }
   const remove = (id: string) => setSlots((prev) => prev.filter((s) => {
@@ -101,12 +111,23 @@ export function CatalogImageManager({ initialImages, onUploadingChange, productI
   const ready = slots.filter((s) => s.url && !s.uploading)
   const mainImage = ready[0]?.url ?? ''
   const imagesValue = ready.map((s) => s.url).join('\n')
+  const mainAlt = (ready[0]?.alt ?? '').trim()
+  // Ordered [{url, alt, position, isPrimary}] — primary is the first ready slot.
+  const imageMeta: CatalogImageMeta[] = buildImageMetadata(
+    ready.map((s) => s.url),
+    Object.fromEntries(ready.map((s) => [s.url, s.alt])),
+    (altFallback ?? '').trim(),
+  )
+
+  const setAlt = (id: string, alt: string) => patch(id, { alt })
 
   return (
     <div className="space-y-3">
-      {/* Serialized fields consumed by the catalog server actions — unchanged API. */}
+      {/* Serialized fields consumed by the catalog server actions. */}
       <input type="hidden" name="main_image_url" value={mainImage} readOnly />
       <input type="hidden" name="images" value={imagesValue} readOnly />
+      <input type="hidden" name="main_image_alt" value={mainAlt} readOnly />
+      <input type="hidden" name="image_metadata" value={JSON.stringify(imageMeta)} readOnly />
 
       {slots.length > 0 && (
         <ul className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -117,6 +138,14 @@ export function CatalogImageManager({ initialImages, onUploadingChange, productI
               {i === 0 && <span className="absolute top-1 left-1 text-[10px] font-semibold bg-honey-600 text-white px-1.5 py-0.5 rounded">Головне</span>}
               {s.uploading && <span className="absolute inset-0 flex items-center justify-center bg-white/70 text-xs text-gray-600 rounded-lg animate-pulse">Завантаження…</span>}
               {s.error && <p className="text-[11px] text-red-500 mt-1">{s.error}</p>}
+              <input
+                type="text"
+                value={s.alt}
+                onChange={(e) => setAlt(s.id, e.target.value)}
+                placeholder={altFallback ? `Alt (напр. ${altFallback})` : 'Alt-текст зображення'}
+                aria-label="Alt-текст зображення"
+                className="mt-1.5 w-full rounded border border-gray-200 px-1.5 py-1 text-[11px] focus:outline-none focus:border-gray-400"
+              />
               <div className="flex items-center justify-between mt-1.5 text-gray-500">
                 <div className="flex items-center gap-1">
                   <button type="button" onClick={() => move(s.id, -1)} disabled={i === 0} className="px-1 disabled:opacity-30 hover:text-gray-800" aria-label="Вгору">↑</button>

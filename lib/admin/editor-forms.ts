@@ -18,6 +18,25 @@ export function ruTranslationIntent(f: RuFields): 'upsert' | 'clear' {
   return anySet ? 'upsert' : 'clear'
 }
 
+// Full localized product-translation field set (any locale). name /
+// short_description / seo_description extend the SEO-only fields above so the
+// metal editor can carry a complete RU/EN translation, not just SEO metadata.
+export interface ProductTranslationFields {
+  name: string | null
+  short_description: string | null
+  description: string | null
+  seo_description: string | null
+  meta_title: string | null
+  meta_description: string | null
+  seo_keywords: string | null
+}
+
+// Upsert vs clear for a full translation row: any non-empty field → upsert.
+export function translationIntent(f: ProductTranslationFields): 'upsert' | 'clear' {
+  const anySet = Object.values(f).some((v) => v != null && String(v).trim() !== '')
+  return anySet ? 'upsert' : 'clear'
+}
+
 // Build the post-save redirect query. NEVER report success when a write failed.
 export function editorRedirectQuery(opts: { error?: boolean; warn?: string | null }): string {
   if (opts.error) return '?error=1'

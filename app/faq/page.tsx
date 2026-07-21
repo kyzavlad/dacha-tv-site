@@ -1,7 +1,10 @@
 import type { Metadata } from 'next'
+import Link from 'next/link'
 import type { FaqItem } from '@/types'
 import { getAllFaqItems } from '@/lib/supabase/queries'
 import { StructuredData } from '@/components/shared/StructuredData'
+import { getRequestLocale } from '@/lib/i18n'
+import { pageDict } from '@/lib/i18n/pages'
 
 export const metadata: Metadata = {
   title: 'Часті запитання',
@@ -22,13 +25,6 @@ export const metadata: Metadata = {
 
 type FaqCategory = 'products' | 'ordering' | 'delivery' | 'beekeeping'
 
-const CATEGORY_LABELS: Record<FaqCategory, string> = {
-  products: 'Про продукти',
-  ordering: 'Замовлення',
-  delivery: 'Доставка',
-  beekeeping: 'Бджільництво',
-}
-
 const CATEGORIES: FaqCategory[] = ['products', 'ordering', 'delivery', 'beekeeping']
 
 const STATIC_FAQ: FaqItem[] = [
@@ -45,6 +41,8 @@ const STATIC_FAQ: FaqItem[] = [
 ]
 
 export default async function FaqPage() {
+  const locale = await getRequestLocale()
+  const t = pageDict(locale)
   const dbItems = await getAllFaqItems().catch(() => [])
   const items = dbItems.length > 0 ? dbItems : STATIC_FAQ
 
@@ -72,12 +70,12 @@ export default async function FaqPage() {
 
       <div className="bg-white border-b border-gray-100 py-12 md:py-16">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <span className="text-xs font-semibold text-honey-700 uppercase tracking-widest mb-3 block">FAQ</span>
+          <span className="text-xs font-semibold text-honey-700 uppercase tracking-widest mb-3 block">{t.faq.eyebrow}</span>
           <h1 className="font-serif text-4xl md:text-5xl font-bold text-bark mb-4">
-            Часті запитання
+            {t.faq.title}
           </h1>
           <p className="text-gray-500 text-lg max-w-xl">
-            Відповіді на найпоширеніші запитання про наш мед, замовлення та доставку.
+            {t.faq.intro}
           </p>
         </div>
       </div>
@@ -90,7 +88,7 @@ export default async function FaqPage() {
           return (
             <section key={cat} aria-labelledby={`faq-${cat}`}>
               <h2 id={`faq-${cat}`} className="font-serif text-2xl font-bold text-bark mb-6">
-                {CATEGORY_LABELS[cat]}
+                {t.faq.categories[cat]}
               </h2>
               <div className="space-y-3">
                 {catItems.map((item) => (
@@ -119,21 +117,21 @@ export default async function FaqPage() {
         })}
 
         <div className="bg-honey-50 rounded-2xl p-6 border border-honey-200 text-center">
-          <h2 className="font-serif text-xl font-bold text-bark mb-3">Готові замовити?</h2>
-          <p className="text-bark/70 mb-4">Переходьте до магазину або напишіть нам — допоможемо обрати</p>
+          <h2 className="font-serif text-xl font-bold text-bark mb-3">{t.faq.ctaTitle}</h2>
+          <p className="text-bark/70 mb-4">{t.faq.ctaBody}</p>
           <div className="flex flex-wrap justify-center gap-3">
-            <a
+            <Link
               href="/catalog"
               className="inline-flex items-center gap-2 bg-honey-700 hover:bg-honey-800 text-white font-semibold px-6 py-3 rounded-lg transition-colors min-h-[48px]"
             >
-              Перейти до магазину
-            </a>
-            <a
+              {t.common.toCatalog}
+            </Link>
+            <Link
               href="/contact"
               className="inline-flex items-center gap-2 border border-honey-700 text-honey-800 hover:bg-honey-100 font-semibold px-6 py-3 rounded-lg transition-colors min-h-[48px]"
             >
-              Зв&apos;язатись з нами
-            </a>
+              {t.common.contactUs}
+            </Link>
           </div>
         </div>
       </div>

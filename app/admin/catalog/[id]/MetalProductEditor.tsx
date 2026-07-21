@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { CatalogImageManager } from '@/components/admin/CatalogImageManager'
 import { METAL_ATTR_FIELDS, metalAttrDefaults } from '@/lib/catalog/metal'
+import type { CatalogImageMeta } from '@/types'
 
 // Dedicated, clean editor for manual metal-profile products. Shows ONLY fields
 // that make sense for a hand-managed inquiry product — no supplier SKU
@@ -26,24 +27,33 @@ export interface MetalEditorProduct {
   is_featured: boolean
   display_order: number
   main_image_url: string | null
+  main_image_alt: string | null
+  image_metadata: CatalogImageMeta[] | null
   images: string[]
   attributes: Record<string, unknown> | null
 }
 
-export interface MetalEditorRu {
+// Full localized translation row (RU or EN). name / short_description /
+// seo_description extend the SEO-only fields so each locale carries a complete
+// translation, not just SEO metadata.
+export interface MetalEditorTranslation {
+  name: string | null
+  short_description: string | null
+  description: string | null
+  seo_description: string | null
   meta_title: string | null
   meta_description: string | null
-  description: string | null
   seo_keywords: string | null
 }
 
 const inputCls = 'w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:border-gray-500'
 
 export function MetalProductEditor({
-  product, ru, action,
+  product, ru, en, action,
 }: {
   product: MetalEditorProduct
-  ru: MetalEditorRu | null
+  ru: MetalEditorTranslation | null
+  en: MetalEditorTranslation | null
   action: (fd: FormData) => void
 }) {
   const [uploading, setUploading] = useState(false)
@@ -117,15 +127,17 @@ export function MetalProductEditor({
       </Section>
 
       <Section title="Зображення">
-        <CatalogImageManager initialImages={initialImages} onUploadingChange={setUploading} productId={product.id} />
+        <CatalogImageManager
+          initialImages={initialImages}
+          initialImageMeta={product.image_metadata}
+          altFallback={product.name_ua}
+          onUploadingChange={setUploading}
+          productId={product.id}
+        />
       </Section>
 
-      <Section title="SEO (RU) — таблиця перекладів">
-        <Field label="Meta Title (RU)"><input name="ru_meta_title" defaultValue={ru?.meta_title ?? ''} className={inputCls} /></Field>
-        <Field label="Meta Description (RU)"><textarea name="ru_meta_description" defaultValue={ru?.meta_description ?? ''} rows={2} className={inputCls} /></Field>
-        <Field label="Опис (RU)"><textarea name="ru_description" defaultValue={ru?.description ?? ''} rows={4} className={inputCls} /></Field>
-        <Field label="SEO ключові слова (RU)"><input name="ru_seo_keywords" defaultValue={ru?.seo_keywords ?? ''} className={inputCls} /></Field>
-      </Section>
+      <TranslationSection locale="ru" title="Переклад (RU) — таблиця перекладів" t={ru} />
+      <TranslationSection locale="en" title="Переклад (EN) — таблиця перекладів" t={en} />
 
       <Section title="Вітрина">
         <div className="grid grid-cols-2 gap-4 items-end">
@@ -165,5 +177,23 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       <span className="text-xs font-medium text-gray-500 mb-1 block">{label}</span>
       {children}
     </label>
+  )
+}
+
+// One locale's full translation block (name, short/full/SEO descriptions, meta).
+// Field names are prefixed by locale so the server action reads ru_* / en_*.
+function TranslationSection({ locale, title, t }: { locale: 'ru' | 'en'; title: string; t: MetalEditorTranslation | null }) {
+  const p = locale
+  const lang = locale.toUpperCase()
+  return (
+    <Section title={title}>
+      <Field label={`Назва (${lang})`}><input name={`${p}_name`} defaultValue={t?.name ?? ''} className={inputCls} /></Field>
+      <Field label={`Короткий опис (${lang})`}><textarea name={`${p}_short_description`} defaultValue={t?.short_description ?? ''} rows={2} className={inputCls} /></Field>
+      <Field label={`Повний опис (${lang})`}><textarea name={`${p}_description`} defaultValue={t?.description ?? ''} rows={5} className={inputCls} /></Field>
+      <Field label={`Довгий SEO-текст (${lang})`}><textarea name={`${p}_seo_description`} defaultValue={t?.seo_description ?? ''} rows={4} className={inputCls} /></Field>
+      <Field label={`Meta Title (${lang})`}><input name={`${p}_meta_title`} defaultValue={t?.meta_title ?? ''} className={inputCls} /></Field>
+      <Field label={`Meta Description (${lang})`}><textarea name={`${p}_meta_description`} defaultValue={t?.meta_description ?? ''} rows={2} className={inputCls} /></Field>
+      <Field label={`SEO ключові слова (${lang})`}><input name={`${p}_seo_keywords`} defaultValue={t?.seo_keywords ?? ''} className={inputCls} /></Field>
+    </Section>
   )
 }

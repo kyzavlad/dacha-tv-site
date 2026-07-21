@@ -1,5 +1,5 @@
 -- ============================================================================
--- Migration: 20260720_final_catalog_i18n_stock_media_v4
+-- Migration: 20260720230000_final_catalog_i18n_stock_media_v4
 -- ============================================================================
 -- Additive, idempotent. No data rewrite. Safe to re-run. Covers three defect
 -- areas of the "final catalog / i18n / stock / media" pass:
@@ -20,9 +20,12 @@
 --       Idempotent public `product-media` Storage bucket + service-role write /
 --       public read policies, so admin server uploads have a stable destination.
 --
--- ORDER: apply AFTER 20260720_catalog_manual_ownership_and_sync_state.sql (which
--- adds the manual-lock columns this pass relies on) and the v3 metal/language
--- migration. Every statement guards its own existence, so re-running is a no-op.
+-- ORDER: this migration's DDL is fully self-contained and additive — it does NOT
+-- reference the manual-lock columns from 20260720_catalog_manual_ownership_and_sync_state.sql,
+-- so it is safe to apply in any order relative to the other 20260720* migrations.
+-- (The import CODE reads those lock columns at runtime, but that is a code-level
+-- dependency satisfied once all migrations are applied, not a DDL one.)
+-- Every statement guards its own existence, so re-running is a no-op.
 -- ============================================================================
 
 -- ── Item 6: public storefront stock ─────────────────────────────────────────
@@ -41,6 +44,28 @@ comment on column catalog_products.stock_synced_at is
 create index if not exists idx_catalog_products_in_stock
   on catalog_products(is_in_stock)
   where is_in_stock is not null;
+
+-- ── Item 3: localized name / short_description + long SEO description ─────────
+-- The translation tables (20260701) carry meta_title/meta_description/description/
+-- seo_keywords per locale but NOT the display name or short description. Metal
+-- (and any manual) products need a localized RU/EN name + short_description, and
+-- a longer SEO description body distinct from the storefront short description.
+alter table catalog_product_translations add column if not exists name              text;
+alter table catalog_product_translations add column if not exists short_description text;
+alter table catalog_product_translations add column if not exists seo_description   text;
+
+comment on column catalog_product_translations.name is
+  'Localized display name for this locale. Falls back to catalog_products.name_ua when absent.';
+comment on column catalog_product_translations.short_description is
+  'Localized short (card) description. Falls back to the Ukrainian short_description when absent.';
+comment on column catalog_product_translations.seo_description is
+  'Longer localized SEO body copy, distinct from the storefront short_description.';
+
+-- Ukrainian long-form SEO description on the base row (RU/EN equivalents live in
+-- the translation rows above). Distinct from the storefront `short_description`.
+alter table catalog_products add column if not exists seo_description text;
+comment on column catalog_products.seo_description is
+  'Ukrainian long-form SEO description (distinct from the storefront short_description). RU/EN live in catalog_product_translations.seo_description.';
 
 -- ── Item 2: image metadata ──────────────────────────────────────────────────
 alter table catalog_products add column if not exists main_image_alt text;

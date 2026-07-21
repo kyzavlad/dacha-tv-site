@@ -16,7 +16,9 @@ interface Props {
 }
 
 const EDIT_COLUMNS =
-  'id, supplier_product_id, supplier_sku, source, lead_type, name_ua, name, slug, category_slug, short_description, description, description_ua, price_uah, compare_price_uah, price_prefix, unit_label, status, main_image_url, images, attributes, meta_title, meta_description, seo_keywords, is_featured, display_order, price_manual_lock, image_manual_lock, seo_manual_lock'
+  'id, supplier_product_id, supplier_sku, source, lead_type, name_ua, name, slug, category_slug, short_description, description, description_ua, seo_description, price_uah, compare_price_uah, price_prefix, unit_label, status, main_image_url, main_image_alt, image_metadata, images, attributes, meta_title, meta_description, seo_keywords, is_featured, display_order, price_manual_lock, image_manual_lock, seo_manual_lock'
+
+const TRANSLATION_COLUMNS = 'locale, name, short_description, description, seo_description, meta_title, meta_description, seo_keywords'
 
 function joinImages(images: unknown): string {
   if (Array.isArray(images)) return images.filter((x) => typeof x === 'string').join('\n')
@@ -28,18 +30,27 @@ export default async function EditCatalogProductPage({ params, searchParams }: P
   const { saved, warn, error } = await searchParams
   const client = getAdminClient()
 
-  const [{ data: product }, { data: categories }, { data: ruRow }] = await Promise.all([
+  const [{ data: product }, { data: categories }, { data: translationRows }] = await Promise.all([
     client.from('catalog_products').select(EDIT_COLUMNS).eq('id', id).maybeSingle(),
     client.from('catalog_categories').select('slug, name_ua').order('name_ua', { ascending: true }).limit(2000),
     client.from('catalog_product_translations')
-      .select('meta_title, meta_description, description, seo_keywords')
-      .eq('product_id', id).eq('locale', 'ru').maybeSingle(),
+      .select(TRANSLATION_COLUMNS)
+      .eq('product_id', id).in('locale', ['ru', 'en']),
   ])
 
   if (!product) notFound()
   const p = product as unknown as CatalogProduct & { name?: string | null }
   const cats = (categories ?? []) as { slug: string; name_ua: string }[]
-  const ru = ruRow as { meta_title: string | null; meta_description: string | null; description: string | null; seo_keywords: string | null } | null
+  type TransRow = { locale: string; name: string | null; short_description: string | null; description: string | null; seo_description: string | null; meta_title: string | null; meta_description: string | null; seo_keywords: string | null }
+  const transByLocale = new Map((translationRows as TransRow[] | null ?? []).map((r) => [r.locale, r]))
+  const pickTranslation = (loc: string) => {
+    const r = transByLocale.get(loc)
+    return r
+      ? { name: r.name, short_description: r.short_description, description: r.description, seo_description: r.seo_description, meta_title: r.meta_title, meta_description: r.meta_description, seo_keywords: r.seo_keywords }
+      : null
+  }
+  const ru = pickTranslation('ru')
+  const en = pickTranslation('en')
   const isManual = p.source === 'manual'
   const metal = isMetalProduct(p)
   const action = updateCatalogProductAction.bind(null, p.id)
@@ -88,10 +99,13 @@ export default async function EditCatalogProductPage({ params, searchParams }: P
             is_featured: p.is_featured ?? false,
             display_order: p.display_order ?? 0,
             main_image_url: p.main_image_url ?? null,
+            main_image_alt: p.main_image_alt ?? null,
+            image_metadata: Array.isArray(p.image_metadata) ? p.image_metadata : null,
             images: Array.isArray(p.images) ? p.images : [],
             attributes: p.attributes ?? null,
           }}
           ru={ru}
+          en={en}
           action={updateMetalProductAction.bind(null, p.id)}
         />
       </div>

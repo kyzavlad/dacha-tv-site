@@ -1,6 +1,7 @@
 import { getAdminClient } from '@/lib/supabase/admin'
 import {
-  classifyBuildFailure, classifyUpsertError, recordError, mergeErrorReport, emptyErrorReport,
+  classifyBuildFailure, classifyPriceIssue, classifyUpsertError, isRetryableDbError,
+  recordError, mergeErrorReport, emptyErrorReport,
   type SupplierErrorReport,
 } from '@/lib/supplier/error-grouping'
 
@@ -763,6 +764,11 @@ async function upsertSupplierWindow(
 
     if (winField === 'rate_missing') rateMissing++
     if (priceUah == null) noPrice++
+    // Data-quality: a row that built OK but has no usable price will be silently
+    // dropped from the catalog import (price_uah > 0 filter). Record it as
+    // invalid_price so the diagnostic can surface these unsellable rows.
+    const priceIssue = classifyPriceIssue(priceUah)
+    if (priceIssue) recordError(errorReport, priceIssue, 1, { skus: [sku], offset: windowOffset })
     if (!existingSkus.has(sku)) newSkusInBatch.add(sku)
 
     if (priceSamples.length < 5) {
@@ -788,6 +794,20 @@ async function upsertSupplierWindow(
   const newInSlice = (slice: Record<string, unknown>[]) =>
     slice.reduce((n, r) => n + (newSkusInBatch.has(String(r.supplier_sku)) ? 1 : 0), 0)
 
+  // Bounded retry for TRANSIENT db failures (serialization/deadlock/connection —
+  // never constraint violations). Up to 3 attempts; returns the final error (or
+  // null on success). Constraint errors short-circuit immediately (not retryable).
+  const upsertWithRetry = async (rows: Record<string, unknown>[]) => {
+    let lastErr: { code?: string | null; message?: string | null } | null = null
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      const { error } = await client.from('supplier_products').upsert(rows, { onConflict: 'supplier_sku' })
+      if (!error) return null
+      lastErr = error
+      if (!isRetryableDbError(error)) break
+    }
+    return lastErr
+  }
+
   let upserted = 0
   let inserted = 0
   const CHUNK = 200
@@ -795,7 +815,7 @@ async function upsertSupplierWindow(
     for (let i = 0; i < batch.length; i += CHUNK) {
       const slice = batch.slice(i, i + CHUNK)
       const sampleSkus = slice.map((r) => String(r.supplier_sku ?? '')).filter(Boolean).slice(0, 5)
-      const { error } = await client.from('supplier_products').upsert(slice, { onConflict: 'supplier_sku' })
+      const error = await upsertWithRetry(slice)
       if (error) {
         const missingCol = error.message?.includes('price_win_field') ||
           error.message?.includes('supplier_price_currency') ||
