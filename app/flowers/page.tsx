@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic'
 
 import type { Metadata } from 'next'
+import { buildAlternates } from '@/lib/seo'
 import Link from 'next/link'
 import { FlowerGrid } from '@/components/flowers/FlowerGrid'
 import { FlowerInquiryForm } from '@/components/forms/FlowerInquiryForm'
@@ -35,11 +36,12 @@ const FLOWERS_META: Record<'uk' | 'ru' | 'en', { title: string; description: str
 
 export async function generateMetadata(): Promise<Metadata> {
   const locale = await getRequestLocale()
+  const { canonical, languages } = buildAlternates(locale, '/flowers')
   const m = FLOWERS_META[locale]
   return {
     title: m.title,
     description: m.description,
-    alternates: { canonical: '/flowers' },
+    alternates: { canonical, languages },
     openGraph: {
       title: m.title,
       description: m.ogDescription,

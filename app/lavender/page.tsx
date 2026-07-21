@@ -9,6 +9,7 @@
 export const dynamic = 'force-dynamic'
 
 import type { Metadata } from 'next'
+import { buildAlternates } from '@/lib/seo'
 import Link from 'next/link'
 import { HourlyCalendar } from '@/components/bookings/HourlyCalendar'
 import { YouTubeFacade } from '@/components/shared/YouTubeFacade'
@@ -61,11 +62,12 @@ const LAVENDER_META: Record<'uk' | 'ru' | 'en', { title: string; description: st
 
 export async function generateMetadata(): Promise<Metadata> {
   const locale = await getRequestLocale()
+  const { canonical, languages } = buildAlternates(locale, '/lavender')
   const m = LAVENDER_META[locale]
   return {
     title: m.title,
     description: m.description,
-    alternates: { canonical: '/lavender' },
+    alternates: { canonical, languages },
     openGraph: {
       title: m.title,
       description: m.ogDescription,

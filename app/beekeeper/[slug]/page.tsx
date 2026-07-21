@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic'
 
 import type { Metadata } from 'next'
+import { buildAlternates } from '@/lib/seo'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { StructuredData } from '@/components/shared/StructuredData'
@@ -35,6 +36,7 @@ const BLUR_DATA_URL =
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params
   const locale = await getRequestLocale()
+  const { canonical, languages } = buildAlternates(locale, `/beekeeper/${slug}`)
   const t = manualDict(locale)
   const product = await getBeekeeperProductBySlug(slug).catch(() => null)
   if (!product) return { title: t.detailNotFound }
@@ -51,7 +53,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   return {
     title: name,
     description,
-    alternates: { canonical: siteUrl ? `${siteUrl}/beekeeper/${slug}` : `/beekeeper/${slug}` },
+    alternates: { canonical, languages },
     openGraph: {
       title: name,
       description,

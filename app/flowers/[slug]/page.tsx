@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic'
 
 import type { Metadata } from 'next'
+import { buildAlternates } from '@/lib/seo'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { FlowerInquiryForm } from '@/components/forms/FlowerInquiryForm'
@@ -23,6 +24,7 @@ interface Props {
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params
   const locale = await getRequestLocale()
+  const { canonical, languages } = buildAlternates(locale, `/flowers/${slug}`)
   const t = manualDict(locale)
   const dbProduct = await getFlowerProductBySlug(slug).catch(() => null)
   if (!dbProduct) return { title: t.detailNotFound }
@@ -38,7 +40,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   return {
     title: name,
     description,
-    alternates: { canonical: siteUrl ? `${siteUrl}/flowers/${slug}` : `/flowers/${slug}` },
+    alternates: { canonical, languages },
     openGraph: {
       title: name,
       description: shortDesc || name,

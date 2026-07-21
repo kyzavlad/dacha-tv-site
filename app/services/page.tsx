@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic'
 
 import type { Metadata } from 'next'
+import { buildAlternates } from '@/lib/seo'
 import Link from 'next/link'
 import { getAllServices } from '@/lib/supabase/queries'
 import { GeneralContactForm } from '@/components/forms/GeneralContactForm'
@@ -34,11 +35,12 @@ const SERVICES_META: Record<'uk' | 'ru' | 'en', { title: string; description: st
 
 export async function generateMetadata(): Promise<Metadata> {
   const locale = await getRequestLocale()
+  const { canonical, languages } = buildAlternates(locale, '/services')
   const m = SERVICES_META[locale]
   return {
     title: m.title,
     description: m.description,
-    alternates: { canonical: `${siteUrl}/services` },
+    alternates: { canonical, languages },
     openGraph: {
       title: m.ogTitle,
       description: m.ogDescription,
