@@ -8,6 +8,9 @@ import { YouTubeFacade } from '@/components/shared/YouTubeFacade'
 import { ProductGallery } from '@/components/shared/ProductGallery'
 import { getApiaryProductBySlug } from '@/lib/supabase/queries'
 import { extractYouTubeId } from '@/lib/youtube'
+import { getRequestLocale, localizedPath } from '@/lib/i18n'
+import { manualDict } from '@/lib/i18n/sections/manual'
+import { getManualTranslations, resolveManualField } from '@/lib/i18n/manual-translations'
 
 interface Props {
   params: Promise<{ slug: string }>
@@ -17,30 +20,36 @@ export const dynamic = 'force-dynamic'
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params
+  const locale = await getRequestLocale()
+  const t = manualDict(locale)
   const product = await getApiaryProductBySlug(slug).catch(() => null)
 
   if (!product) {
-    return { title: 'Продукт не знайдено' }
+    return { title: t.detailNotFound }
   }
 
+  const tr = locale === 'uk' ? null : (await getManualTranslations('apiary_product', [product.id], locale)).get(product.id)
+  const name = resolveManualField(product.name, tr, 'name', locale)
+  const shortDesc = resolveManualField(product.short_description ?? null, tr, 'short_description', locale)
+  const desc = resolveManualField(product.description ?? null, tr, 'description', locale)
   const media = product.media ?? []
   const primaryImg = media.find((m) => m.media_type === 'image' && m.is_primary) ?? media.find((m) => m.media_type === 'image')
   const ogImageUrl = primaryImg?.url ?? product.image_url ?? null
-  const description = product.short_description || product.description || `${product.name} від сімейної пасіки Дача TV на Харківщині.`
+  const description = shortDesc || desc || `${name} — Дача TV`
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? ''
   return {
-    title: product.name,
+    title: name,
     description,
     alternates: { canonical: siteUrl ? `${siteUrl}/products/${slug}` : `/products/${slug}` },
     openGraph: {
-      title: `${product.name}`,
-      description: product.short_description || product.description || product.name,
+      title: name,
+      description: shortDesc || desc || name,
       images: ogImageUrl ? [{ url: ogImageUrl, width: 1200, height: 630 }] : [],
       type: 'website',
     },
     twitter: {
       card: 'summary_large_image',
-      title: `${product.name}`,
+      title: name,
       description,
       images: ogImageUrl ? [ogImageUrl] : [],
     },
@@ -52,9 +61,15 @@ const BLUR_DATA_URL =
 
 export default async function ApiaryProductPage({ params }: Props) {
   const { slug } = await params
+  const locale = await getRequestLocale()
+  const t = manualDict(locale)
   const product = await getApiaryProductBySlug(slug).catch(() => null)
 
   if (!product) notFound()
+  const tr = locale === 'uk' ? null : (await getManualTranslations('apiary_product', [product.id], locale)).get(product.id)
+  const name = resolveManualField(product.name, tr, 'name', locale)
+  const shortDesc = resolveManualField(product.short_description ?? null, tr, 'short_description', locale)
+  const fullDesc = resolveManualField(product.full_description ?? product.description ?? null, tr, 'description', locale)
 
   const media = product.media ?? []
   const primaryImg = media.find((m) => m.media_type === 'image' && m.is_primary) ?? media.find((m) => m.media_type === 'image') ?? null
@@ -64,12 +79,12 @@ export default async function ApiaryProductPage({ params }: Props) {
   // Fall back to legacy columns when media table is empty
   const allImages = media.length > 0
     ? [
-        ...(primaryImg ? [{ src: primaryImg.url, alt: primaryImg.alt ?? product.name }] : []),
-        ...galleryImgs.map((m) => ({ src: m.url, alt: m.alt ?? product.name })),
+        ...(primaryImg ? [{ src: primaryImg.url, alt: primaryImg.alt ?? name }] : []),
+        ...galleryImgs.map((m) => ({ src: m.url, alt: m.alt ?? name })),
       ]
     : [
-        ...(product.image_url ? [{ src: product.image_url, alt: product.image_alt || product.name }] : []),
-        ...(product.gallery_images || []).map((src) => ({ src, alt: product.name })),
+        ...(product.image_url ? [{ src: product.image_url, alt: product.image_alt || name }] : []),
+        ...(product.gallery_images || []).map((src) => ({ src, alt: name })),
       ]
   const videoUrl = localVideo?.url ?? product.video_url ?? null
   const youtubeId = ytItems[0] ? extractYouTubeId(ytItems[0].url) : extractYouTubeId(product.youtube_video_url)
@@ -101,12 +116,12 @@ export default async function ApiaryProductPage({ params }: Props) {
 
       {/* Breadcrumb */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-        <nav aria-label="Навігація" className="text-sm text-bark/50">
-          <Link href="/" className="hover:text-honey-700">Головна</Link>
+        <nav aria-label={t.detailBreadcrumbHome} className="text-sm text-bark/50">
+          <Link href={localizedPath(locale, '/')} className="hover:text-honey-700">{t.detailBreadcrumbHome}</Link>
           <span className="mx-2">›</span>
-          <Link href="/products" className="hover:text-honey-700">Продукти пасіки</Link>
+          <Link href={localizedPath(locale, '/products')} className="hover:text-honey-700">{t.productsH1}</Link>
           <span className="mx-2">›</span>
-          <span className="text-bark">{product.name}</span>
+          <span className="text-bark">{name}</span>
         </nav>
       </div>
 
@@ -122,7 +137,7 @@ export default async function ApiaryProductPage({ params }: Props) {
           >
             <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-forest-50 to-forest-100">
               <span className="text-forest-600 font-serif font-bold text-3xl text-center px-6">
-                {product.name}
+                {name}
               </span>
             </div>
           </ProductGallery>
@@ -136,18 +151,18 @@ export default async function ApiaryProductPage({ params }: Props) {
             )}
 
             <h1 className="font-serif text-3xl md:text-4xl font-bold text-bark mb-3">
-              {product.name}
+              {name}
             </h1>
 
-            {product.short_description && (
+            {shortDesc && (
               <p className="text-bark/70 text-lg leading-relaxed mb-6">
-                {product.short_description}
+                {shortDesc}
               </p>
             )}
 
             {product.status !== 'available' && product.status !== 'preorder' && (
               <div className="bg-gray-100 text-gray-700 rounded-lg px-4 py-3 mb-4 text-sm font-medium">
-                Наразі немає в наявності. Залиште заявку: ми повідомимо, коли з&apos;явиться.
+                {t.detailOutOfStockNote}
               </div>
             )}
 
@@ -169,21 +184,21 @@ export default async function ApiaryProductPage({ params }: Props) {
             {product.price_uah && (
               <div className="flex items-baseline gap-2 mb-6 py-3 border-t border-b border-honey-100">
                 <span className="text-2xl font-bold text-bark">{product.price_uah} грн</span>
-                <span className="text-sm text-bark/50">за одиницю</span>
+                <span className="text-sm text-bark/50">{t.detailPerUnit}</span>
               </div>
             )}
 
             {/* Full description (preferred) or regular description */}
-            {(product.full_description || product.description) && (
+            {fullDesc && (
               <p className="text-bark/70 leading-relaxed mb-6">
-                {product.full_description || product.description}
+                {fullDesc}
               </p>
             )}
 
             {/* Composition */}
             {product.composition && (
               <div className="mb-5">
-                <h2 className="font-semibold text-bark text-sm uppercase tracking-wide mb-1.5">Склад</h2>
+                <h2 className="font-semibold text-bark text-sm uppercase tracking-wide mb-1.5">{t.detailComposition}</h2>
                 <p className="text-bark/70 text-sm leading-relaxed">{product.composition}</p>
               </div>
             )}
@@ -191,7 +206,7 @@ export default async function ApiaryProductPage({ params }: Props) {
             {/* Usage */}
             {product.usage_notes && (
               <div className="mb-5">
-                <h2 className="font-semibold text-bark text-sm uppercase tracking-wide mb-1.5">Застосування</h2>
+                <h2 className="font-semibold text-bark text-sm uppercase tracking-wide mb-1.5">{t.detailUsage}</h2>
                 <p className="text-bark/70 text-sm leading-relaxed">{product.usage_notes}</p>
               </div>
             )}
@@ -199,7 +214,7 @@ export default async function ApiaryProductPage({ params }: Props) {
             {/* Storage */}
             {product.storage_info && (
               <div className="mb-8">
-                <h2 className="font-semibold text-bark text-sm uppercase tracking-wide mb-1.5">Зберігання</h2>
+                <h2 className="font-semibold text-bark text-sm uppercase tracking-wide mb-1.5">{t.detailStorage}</h2>
                 <p className="text-bark/70 text-sm leading-relaxed">{product.storage_info}</p>
               </div>
             )}
@@ -207,7 +222,7 @@ export default async function ApiaryProductPage({ params }: Props) {
             {videoUrl && (
               <div className="mb-6">
                 <p className="text-xs font-semibold text-bark/50 uppercase tracking-widest mb-2">
-                  Відео про цей продукт
+                  {t.detailVideoAboutProduct}
                 </p>
                 <video src={videoUrl} controls className="w-full rounded-xl" />
               </div>
@@ -216,15 +231,15 @@ export default async function ApiaryProductPage({ params }: Props) {
             {youtubeId && (
               <div className="mb-6">
                 <p className="text-xs font-semibold text-bark/50 uppercase tracking-widest mb-2">
-                  {videoUrl ? 'Також на YouTube' : 'Відео про цей продукт'}
+                  {videoUrl ? t.detailAlsoOnYoutube : t.detailVideoAboutProduct}
                 </p>
-                <YouTubeFacade videoId={youtubeId} title={`Відео про ${product.name}`} />
+                <YouTubeFacade videoId={youtubeId} title={`${name} — Дача TV`} />
               </div>
             )}
 
             {extraYoutubeIds.map((vid, i) => (
               <div key={i} className="mb-4">
-                <YouTubeFacade videoId={vid} title={`Відео ${i + 2} про ${product.name}`} />
+                <YouTubeFacade videoId={vid} title={`${name} — Дача TV (${i + 2})`} />
               </div>
             ))}
 
@@ -237,7 +252,7 @@ export default async function ApiaryProductPage({ params }: Props) {
                       id: `apiary-${product.slug}`,
                       productType: 'apiary',
                       productSlug: product.slug,
-                      name: product.name,
+                      name,
                       price: product.price_uah,
                       imageUrl: allImages[0]?.src ?? product.image_url ?? undefined,
                     }}
@@ -247,20 +262,20 @@ export default async function ApiaryProductPage({ params }: Props) {
                       id: `apiary-${product.slug}`,
                       productType: 'apiary',
                       productSlug: product.slug,
-                      name: product.name,
+                      name,
                       price: product.price_uah,
                       imageUrl: allImages[0]?.src ?? product.image_url ?? undefined,
                     }}
                   />
                 </div>
               ) : (
-                <a href="/contact" className="inline-flex items-center justify-center w-full py-3 px-6 text-base font-semibold rounded-xl border border-honey-300 text-honey-700 hover:bg-honey-50 transition-colors">
-                  Уточнити ціну
-                </a>
+                <Link href={localizedPath(locale, '/contact')} className="inline-flex items-center justify-center w-full py-3 px-6 text-base font-semibold rounded-xl border border-honey-300 text-honey-700 hover:bg-honey-50 transition-colors">
+                  {t.detailPriceOnRequest2}
+                </Link>
               )
             ) : (
               <div className="bg-gray-100 text-gray-600 rounded-xl px-4 py-3 text-sm font-medium text-center">
-                Немає в наявності. Залиште заявку: повідомимо про надходження.
+                {t.detailOutOfStockNotify}
               </div>
             )}
           </div>

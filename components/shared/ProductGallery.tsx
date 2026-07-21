@@ -33,7 +33,16 @@ export function ProductGallery({
   const [activeIdx, setActiveIdx] = useState(0)
   const [lightboxOpen, setLightboxOpen] = useState(false)
 
-  useEffect(() => { setActiveIdx(0) }, [images])
+  // Reset the active slide whenever a new `images` array arrives (e.g. slug
+  // navigation to a different product). Adjusting state directly during
+  // render — rather than via an effect — keeps this synchronous with the
+  // prop change instead of flashing the previous product's active index for
+  // one frame; see https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes
+  const [prevImages, setPrevImages] = useState(images)
+  if (images !== prevImages) {
+    setPrevImages(images)
+    setActiveIdx(0)
+  }
 
   const prev = useCallback(() => {
     setActiveIdx((i) => (i - 1 + images.length) % images.length)

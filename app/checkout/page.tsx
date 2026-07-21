@@ -2,13 +2,16 @@
 
 export const dynamic = 'force-dynamic'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import { useCart } from '@/lib/cart/CartContext'
 import type { CartItem } from '@/lib/cart/CartContext'
 import { submitProductOrder } from '@/actions/submitProductOrder'
 import { isValidUkrainianPhone } from '@/lib/utils'
 import { trackBeginCheckout, trackPurchase, type AnalyticsItem } from '@/lib/analytics/gtag'
+import { splitLocale, DEFAULT_LOCALE, type Locale } from '@/lib/i18n'
+import { shopUiDict } from '@/lib/i18n/sections/shop-ui'
 
 // Map cart items → GA4 ecommerce items (SKU = productSlug when available).
 function toAnalyticsItems(items: CartItem[]): AnalyticsItem[] {
@@ -38,11 +41,14 @@ function WarehousePicker({
   warehouseId,
   onChange,
   error,
+  locale = DEFAULT_LOCALE,
 }: {
   warehouseId: string
   onChange: (id: string, label: string) => void
   error?: string
+  locale?: Locale
 }) {
+  const t = useMemo(() => shopUiDict(locale), [locale])
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<WarehouseResult[]>([])
   const [loading, setLoading] = useState(false)
@@ -51,17 +57,18 @@ function WarehousePicker({
   const [open, setOpen] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
   const boxRef = useRef<HTMLDivElement | null>(null)
-  // Prevents a re-search when query changes because the user just selected a warehouse.
-  const justSelectedRef = useRef(false)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const slowTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  useEffect(() => {
-    // Skip the search triggered by select() setting the query to the warehouse label.
-    if (justSelectedRef.current) {
-      justSelectedRef.current = false
-      return
-    }
+  // Debounced search is triggered directly from the input's onChange handler
+  // (a user-initiated event, not an effect keyed on `query`), so a
+  // programmatic query change (select() below) never needs to distinguish
+  // itself from a real search.
+  function search(raw: string) {
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    if (slowTimerRef.current) clearTimeout(slowTimerRef.current)
 
-    const trimmed = query.trim()
+    const trimmed = raw.trim()
     if (trimmed.length < 2) {
       abortRef.current?.abort()
       setResults([])
@@ -79,9 +86,9 @@ function WarehousePicker({
     setSlowLoad(false)
 
     // Slow-load hint: if the first fetch takes over 1.2s (cold cache), tell the user.
-    const slowTimer = setTimeout(() => setSlowLoad(true), 1200)
+    slowTimerRef.current = setTimeout(() => setSlowLoad(true), 1200)
 
-    const timer = setTimeout(async () => {
+    debounceRef.current = setTimeout(async () => {
       try {
         const res = await fetch(
           `/api/supplier/warehouses?q=${encodeURIComponent(trimmed)}`,
@@ -90,30 +97,33 @@ function WarehousePicker({
         if (ac.signal.aborted) return
         const data = (await res.json()) as { ok: boolean; warehouses?: WarehouseResult[]; error?: string }
         if (!data.ok) {
-          setFetchError(data.error ?? 'Помилка пошуку')
+          setFetchError(data.error ?? t.warehouseErrSearch)
           setResults([])
         } else {
           const list = data.warehouses ?? []
           setResults(list)
           setOpen(list.length > 0)
-          setFetchError(list.length === 0 ? 'Населений пункт або відділення не знайдено' : null)
+          setFetchError(list.length === 0 ? t.warehouseNotFound : null)
         }
       } catch (e) {
         if ((e as Error)?.name === 'AbortError') return
-        setFetchError('Помилка з\'єднання')
+        setFetchError(t.warehouseErrConnection)
         setResults([])
       } finally {
-        clearTimeout(slowTimer)
+        if (slowTimerRef.current) clearTimeout(slowTimerRef.current)
         setSlowLoad(false)
         if (!ac.signal.aborted) setLoading(false)
       }
     }, 300)
+  }
 
+  useEffect(() => {
     return () => {
-      clearTimeout(timer)
-      clearTimeout(slowTimer)
+      abortRef.current?.abort()
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+      if (slowTimerRef.current) clearTimeout(slowTimerRef.current)
     }
-  }, [query])
+  }, [])
 
   // Close the dropdown on outside click.
   useEffect(() => {
@@ -128,11 +138,10 @@ function WarehousePicker({
     setQuery(val)
     // Any manual edit invalidates the previously selected warehouse.
     if (warehouseId) onChange('', '')
+    search(val)
   }
 
   function select(w: WarehouseResult) {
-    // Mark so the useEffect triggered by setQuery(w.label) below does NOT fire a search.
-    justSelectedRef.current = true
     onChange(w.internal_id, w.label)
     setQuery(w.label)
     setResults([])
@@ -152,16 +161,16 @@ function WarehousePicker({
           value={query}
           onChange={(e) => handleInput(e.target.value)}
           onFocus={() => { if (results.length > 0) setOpen(true) }}
-          placeholder="Населений пункт або відділення (наприклад: Пісочин)"
+          placeholder={t.warehousePlaceholder}
           autoComplete="off"
-          aria-label="Населений пункт або відділення Нової Пошти"
+          aria-label={t.warehouseAriaLabel}
           className="w-full border border-gray-200 rounded-xl px-4 py-3 text-bark placeholder:text-bark/40 focus:outline-none focus:ring-2 focus:ring-honey-400 focus:border-transparent"
         />
 
         {open && results.length > 0 && (
           <ul
             role="listbox"
-            aria-label="Результати пошуку відділень"
+            aria-label={t.warehouseResultsAria}
             className="absolute z-10 mt-1 w-full max-h-72 overflow-auto bg-white border border-gray-200 rounded-xl shadow-lg"
           >
             {results.map((w) => (
@@ -181,7 +190,7 @@ function WarehousePicker({
 
       {/* Short-query hint */}
       {trimLen > 0 && trimLen < 2 && !warehouseId && (
-        <p className="text-bark/40 text-xs">Введіть населений пункт</p>
+        <p className="text-bark/40 text-xs">{t.warehouseShortHint}</p>
       )}
 
       {/* Loading state — visible text + spinner */}
@@ -197,10 +206,10 @@ function WarehousePicker({
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
             </svg>
-            Шукаємо відділення Нової Пошти…
+            {t.warehouseSearching}
           </p>
           {slowLoad && (
-            <p className="text-bark/40 text-xs pl-[18px]">Перший пошук може тривати кілька секунд.</p>
+            <p className="text-bark/40 text-xs pl-[18px]">{t.warehouseSlowHint}</p>
           )}
         </div>
       )}
@@ -213,7 +222,7 @@ function WarehousePicker({
       {/* Green selected state */}
       {warehouseId && (
         <p className="text-xs text-green-700 bg-green-50 rounded-lg px-3 py-2">
-          ✓ Обрано: {query}
+          ✓ {t.warehouseSelected} {query}
         </p>
       )}
 
@@ -224,6 +233,9 @@ function WarehousePicker({
 }
 
 export default function CheckoutPage() {
+  const pathname = usePathname()
+  const locale = splitLocale(pathname ?? '/').locale
+  const t = shopUiDict(locale)
   const { items, totalPrice, clearCart, hydrated } = useCart()
 
   const [firstName, setFirstName] = useState('')
@@ -242,11 +254,19 @@ export default function CheckoutPage() {
   // is enabled — preserving PR #16 payment lock.
   const hasSupplierItems = items.some((item) => item.productType === 'catalog')
 
-  useEffect(() => {
+  // Force the payment method back to cashondelivery whenever a supplier item
+  // is present and prepayment is (still) selected — e.g. a supplier item was
+  // added to the cart after prepayment was chosen. Adjusted directly during
+  // render rather than via an effect — see
+  // https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes
+  const lockKey = `${hasSupplierItems}:${methodPayment}`
+  const [prevLockKey, setPrevLockKey] = useState(lockKey)
+  if (lockKey !== prevLockKey) {
+    setPrevLockKey(lockKey)
     if (hasSupplierItems && methodPayment === 'prepayment') {
       setMethodPayment('cashondelivery')
     }
-  }, [hasSupplierItems, methodPayment])
+  }
 
   // GA4 begin_checkout — fire once when the cart is hydrated and non-empty.
   const beginCheckoutFired = useRef(false)
@@ -266,15 +286,15 @@ export default function CheckoutPage() {
               <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
             </svg>
           </div>
-          <h1 className="font-serif text-2xl font-bold text-bark mb-3">Дякуємо за замовлення!</h1>
+          <h1 className="font-serif text-2xl font-bold text-bark mb-3">{t.successTitle}</h1>
           <p className="text-bark/70 mb-8">
-            Ваше замовлення прийнято та передано на комплектацію.
+            {t.successBody}
           </p>
           <Link
             href="/"
             className="inline-flex items-center justify-center px-6 py-3 bg-honey-600 hover:bg-honey-700 text-white font-semibold rounded-xl transition-colors"
           >
-            На головну
+            {t.successHome}
           </Link>
         </div>
       </div>
@@ -287,9 +307,9 @@ export default function CheckoutPage() {
     return (
       <div className="bg-cream min-h-screen flex items-center justify-center px-4">
         <div className="text-center">
-          <p className="text-bark/60 mb-4 text-lg">Кошик порожній</p>
+          <p className="text-bark/60 mb-4 text-lg">{t.emptyCartText}</p>
           <Link href="/" className="text-honey-700 hover:text-honey-800 font-semibold underline">
-            Повернутися до покупок
+            {t.backToShopping}
           </Link>
         </div>
       </div>
@@ -302,12 +322,12 @@ export default function CheckoutPage() {
     setFieldErrors({})
 
     if (!isValidUkrainianPhone(phone)) {
-      setFieldErrors({ phone: ['Введіть коректний номер телефону (+380XXXXXXXXX або 0XXXXXXXXX)'] })
+      setFieldErrors({ phone: [t.phoneError] })
       return
     }
 
     if (!warehouseId) {
-      setFieldErrors({ warehouseId: ['Оберіть відділення Нової Пошти'] })
+      setFieldErrors({ warehouseId: [t.warehouseError] })
       return
     }
 
@@ -359,27 +379,27 @@ export default function CheckoutPage() {
     <div className="bg-cream min-h-screen">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
         <nav className="text-sm text-bark/50">
-          <Link href="/" className="hover:text-bark transition-colors">Головна</Link>
+          <Link href="/" className="hover:text-bark transition-colors">{t.crumbHome}</Link>
           <span className="mx-2">›</span>
-          <span className="text-bark">Оформлення замовлення</span>
+          <span className="text-bark">{t.crumbCheckout}</span>
         </nav>
       </div>
 
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 pb-16">
-        <h1 className="font-serif text-3xl font-bold text-bark mb-8">Оформлення замовлення</h1>
+        <h1 className="font-serif text-3xl font-bold text-bark mb-8">{t.checkoutTitle}</h1>
 
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-8 items-start">
           {/* Form */}
           <div className="lg:col-span-3">
             <div className="bg-white rounded-2xl p-6 border border-honey-100 shadow-sm">
               <form onSubmit={handleSubmit} className="space-y-5">
-                <h2 className="font-serif text-xl font-bold text-bark">Отримувач</h2>
+                <h2 className="font-serif text-xl font-bold text-bark">{t.recipientTitle}</h2>
 
                 {/* Last + first name */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label htmlFor="lastName" className="block text-sm font-medium text-bark/70 mb-1.5">
-                      Прізвище <span className="text-red-500">*</span>
+                      {t.lastNameLabel} <span className="text-red-500">*</span>
                     </label>
                     <input
                       id="lastName"
@@ -388,17 +408,17 @@ export default function CheckoutPage() {
                       minLength={2}
                       value={lastName}
                       onChange={(e) => setLastName(e.target.value)}
-                      placeholder="Іваненко"
+                      placeholder={t.lastNamePlaceholder}
                       className="w-full border border-gray-200 rounded-xl px-4 py-3 text-bark placeholder:text-bark/40 focus:outline-none focus:ring-2 focus:ring-honey-400 focus:border-transparent"
                     />
                     {fieldErrors.lastName?.map((e) => <p key={e} className="text-red-500 text-xs mt-1">{e}</p>)}
                     {lastNameCyrillicInvalid && !fieldErrors.lastName?.length && (
-                      <p className="text-amber-600 text-xs mt-1">Введіть кирилицею, наприклад: Іван / Кузьменко</p>
+                      <p className="text-amber-600 text-xs mt-1">{t.cyrillicHint}</p>
                     )}
                   </div>
                   <div>
                     <label htmlFor="firstName" className="block text-sm font-medium text-bark/70 mb-1.5">
-                      Ім&apos;я <span className="text-red-500">*</span>
+                      {t.firstNameLabel} <span className="text-red-500">*</span>
                     </label>
                     <input
                       id="firstName"
@@ -407,12 +427,12 @@ export default function CheckoutPage() {
                       minLength={2}
                       value={firstName}
                       onChange={(e) => setFirstName(e.target.value)}
-                      placeholder="Іван"
+                      placeholder={t.firstNamePlaceholder}
                       className="w-full border border-gray-200 rounded-xl px-4 py-3 text-bark placeholder:text-bark/40 focus:outline-none focus:ring-2 focus:ring-honey-400 focus:border-transparent"
                     />
                     {fieldErrors.firstName?.map((e) => <p key={e} className="text-red-500 text-xs mt-1">{e}</p>)}
                     {firstNameCyrillicInvalid && !fieldErrors.firstName?.length && (
-                      <p className="text-amber-600 text-xs mt-1">Введіть кирилицею, наприклад: Іван / Кузьменко</p>
+                      <p className="text-amber-600 text-xs mt-1">{t.cyrillicHint}</p>
                     )}
                   </div>
                 </div>
@@ -420,7 +440,7 @@ export default function CheckoutPage() {
                 {/* Phone — live inline validation, no reliance on browser tooltip */}
                 <div>
                   <label htmlFor="phone" className="block text-sm font-medium text-bark/70 mb-1.5">
-                    Номер телефону <span className="text-red-500">*</span>
+                    {t.phoneLabel} <span className="text-red-500">*</span>
                   </label>
                   <input
                     id="phone"
@@ -428,13 +448,13 @@ export default function CheckoutPage() {
                     required
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
-                    placeholder="+380XXXXXXXXX або 0XXXXXXXXX"
+                    placeholder={t.phonePlaceholder}
                     className="w-full border border-gray-200 rounded-xl px-4 py-3 text-bark placeholder:text-bark/40 focus:outline-none focus:ring-2 focus:ring-honey-400 focus:border-transparent"
                   />
                   {/* Live hint while typing — hidden once corrected or after server error */}
                   {phoneDirtyInvalid && !fieldErrors.phone?.length && (
                     <p className="text-red-500 text-xs mt-1">
-                      Введіть номер у форматі +380XXXXXXXXX або 0XXXXXXXXX
+                      {t.phoneHint}
                     </p>
                   )}
                   {fieldErrors.phone?.map((e) => <p key={e} className="text-red-500 text-xs mt-1">{e}</p>)}
@@ -443,12 +463,12 @@ export default function CheckoutPage() {
                 {/* Payment method */}
                 <div>
                   <p className="block text-sm font-medium text-bark/70 mb-2">
-                    Спосіб оплати <span className="text-red-500">*</span>
+                    {t.paymentTitle} <span className="text-red-500">*</span>
                   </p>
                   <div className="grid grid-cols-2 gap-3">
                     {([
-                      { value: 'cashondelivery', label: 'Накладний платіж', desc: 'Оплата при отриманні' },
-                      { value: 'prepayment',     label: 'Передоплата',      desc: 'Оплата до відправки' },
+                      { value: 'cashondelivery', label: t.payCodLabel, desc: t.payCodDesc },
+                      { value: 'prepayment',     label: t.payPrepayLabel, desc: t.payPrepayDesc },
                     ] as const).map((opt) => {
                       const lockedOut = opt.value === 'prepayment' && hasSupplierItems
                       return (
@@ -475,7 +495,7 @@ export default function CheckoutPage() {
                           <span className="text-xs text-bark/50">{opt.desc}</span>
                           {lockedOut && (
                             <span className="text-xs text-amber-700 mt-0.5 leading-snug">
-                              Передплата буде доступна після підтвердження менеджером
+                              {t.payLockedHint}
                             </span>
                           )}
                         </label>
@@ -487,26 +507,27 @@ export default function CheckoutPage() {
                 {/* Nova Poshta warehouse */}
                 <div>
                   <label className="block text-sm font-medium text-bark/70 mb-1.5">
-                    Відділення Нової Пошти <span className="text-red-500">*</span>
+                    {t.warehouseLabel} <span className="text-red-500">*</span>
                   </label>
                   <WarehousePicker
                     warehouseId={warehouseId}
                     onChange={(id, label) => { setWarehouseId(id); setWarehouseName(label) }}
                     error={fieldErrors.warehouseId?.[0]}
+                    locale={locale}
                   />
                 </div>
 
                 {/* Comment */}
                 <div>
                   <label htmlFor="comment" className="block text-sm font-medium text-bark/70 mb-1.5">
-                    Коментар <span className="text-bark/40 font-normal">(необов&apos;язково)</span>
+                    {t.commentLabel} <span className="text-bark/40 font-normal">{t.commentOptional}</span>
                   </label>
                   <textarea
                     id="comment"
                     rows={3}
                     value={comment}
                     onChange={(e) => setComment(e.target.value)}
-                    placeholder="Будь-які побажання або уточнення"
+                    placeholder={t.commentPlaceholder}
                     className="w-full border border-gray-200 rounded-xl px-4 py-3 text-bark placeholder:text-bark/40 focus:outline-none focus:ring-2 focus:ring-honey-400 focus:border-transparent resize-none"
                   />
                 </div>
@@ -522,11 +543,11 @@ export default function CheckoutPage() {
                   disabled={submitting}
                   className="w-full py-4 bg-honey-600 hover:bg-honey-700 disabled:opacity-60 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition-colors text-base"
                 >
-                  {submitting ? 'Оформлюємо…' : 'Оформити замовлення'}
+                  {submitting ? t.submitting : t.submit}
                 </button>
 
                 <p className="text-xs text-bark/40 text-center">
-                  Після підтвердження ми зателефонуємо та узгодимо деталі доставки
+                  {t.afterSubmitNote}
                 </p>
               </form>
             </div>
@@ -535,7 +556,7 @@ export default function CheckoutPage() {
           {/* Order summary */}
           <div className="lg:col-span-2">
             <div className="bg-white rounded-2xl p-6 border border-honey-100 shadow-sm sticky top-24">
-              <h2 className="font-serif text-xl font-bold text-bark mb-4">Ваше замовлення</h2>
+              <h2 className="font-serif text-xl font-bold text-bark mb-4">{t.orderSummaryTitle}</h2>
 
               <div className="space-y-3 mb-4">
                 {items.map((item) => (
@@ -553,22 +574,22 @@ export default function CheckoutPage() {
               </div>
 
               <div className="border-t border-honey-100 pt-3 flex items-center justify-between">
-                <span className="font-bold text-bark">Разом</span>
+                <span className="font-bold text-bark">{t.total}</span>
                 <span className="text-xl font-bold text-bark">
                   {totalPrice.toLocaleString('uk-UA')} ₴
                 </span>
               </div>
 
               <p className="text-xs text-bark/40 mt-3">
-                Доставка: Нова Пошта. Оплата при отриманні або передоплата.
+                {t.summaryNote}
               </p>
             </div>
 
             <div className="mt-4 space-y-2.5 text-xs text-bark/60">
               {[
-                'Доставка по Україні: Нова Пошта',
-                'Оплата при отриманні або передоплата',
-                'Підтвердимо дзвінком після отримання заявки',
+                t.infoDelivery,
+                t.infoPayment,
+                t.infoCall,
               ].map((text) => (
                 <div key={text} className="flex items-start gap-2">
                   <svg className="w-4 h-4 text-green-500 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">

@@ -2,30 +2,21 @@ import { existsSync } from 'fs'
 import { join } from 'path'
 import { CTAButton } from '@/components/shared/CTAButton'
 import { SafeImage } from '@/components/shared/SafeImage'
-
-const TRUST_POINTS = [
-  {
-    label: 'Сімейна справа',
-    description: 'Власне господарство на Харківщині — без посередників.',
-  },
-  {
-    label: 'Власне виробництво',
-    description: 'Мед, натуральні продукти та квіти вирощуємо й готуємо самі.',
-  },
-  {
-    label: 'Чесно і відкрито',
-    description: 'Показуємо всю роботу на YouTube — від поля до столу.',
-  },
-  {
-    label: 'Зручне замовлення',
-    description: 'Замовляйте онлайн із доставкою Новою Поштою по всій Україні.',
-  },
-]
+import { getRequestLocale } from '@/lib/i18n'
+import { homeDict } from '@/lib/i18n/sections/home'
 
 const BRAND_STORY_IMAGE = '/images/dacha-tv/brand-story.jpg'
 
-export function BrandStory() {
+export async function BrandStory() {
+  const t = homeDict(await getRequestLocale())
   const hasImage = existsSync(join(process.cwd(), 'public', BRAND_STORY_IMAGE))
+
+  const TRUST_POINTS = [
+    { label: t.storyTrust1Label, description: t.storyTrust1Desc },
+    { label: t.storyTrust2Label, description: t.storyTrust2Desc },
+    { label: t.storyTrust3Label, description: t.storyTrust3Desc },
+    { label: t.storyTrust4Label, description: t.storyTrust4Desc },
+  ]
 
   return (
     <section className="py-20 md:py-28 bg-white" aria-labelledby="brand-story-heading">
@@ -39,7 +30,7 @@ export function BrandStory() {
                     Falls back to a branded gradient if the file is ever missing. */}
                 <SafeImage
                   src={BRAND_STORY_IMAGE}
-                  alt="Пасіка Дача TV — Коротич, Харківська область"
+                  alt={t.storyImageAlt}
                   className="absolute inset-0 h-full w-full object-cover"
                   fallback={
                     <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-honey-100 via-honey-50 to-forest-100">
@@ -57,8 +48,8 @@ export function BrandStory() {
                   </svg>
                 </div>
                 <div>
-                  <p className="font-serif font-bold text-bark text-sm">Власне господарство</p>
-                  <p className="text-gray-400 text-xs">Харківщина, с. Коротич</p>
+                  <p className="font-serif font-bold text-bark text-sm">{t.storyStatTitle}</p>
+                  <p className="text-gray-400 text-xs">{t.storyStatLocation}</p>
                 </div>
               </div>
             </div>
@@ -67,18 +58,18 @@ export function BrandStory() {
           {/* Text content */}
           <div className={hasImage ? 'order-1 lg:order-2' : ''}>
             <span className="text-xs font-semibold text-honey-700 uppercase tracking-widest mb-4 block">
-              Хто ми
+              {t.storyEyebrow}
             </span>
             <h2 id="brand-story-heading" className="font-serif text-3xl md:text-4xl font-bold text-bark mb-6 leading-tight">
-              Сімейне господарство. Власна праця. Чесний підхід.
+              {t.storyTitle}
             </h2>
 
             <div className="space-y-4 text-gray-600 leading-relaxed text-base mb-8">
               <p>
-                Дача TV — це сімейне господарство на Харківщині. Починали з пасіки, а сьогодні це ще й натуральні продукти, квіти, лавандове поле, послуги та магазин товарів для дому й господарства.
+                {t.storyPara1}
               </p>
               <p>
-                Кожен напрям — це наша власна праця. На YouTube-каналі ми відкрито показуємо весь процес, бо чесність у роботі — це не маркетинг, а наш спосіб.
+                {t.storyPara2}
               </p>
             </div>
 
@@ -100,7 +91,7 @@ export function BrandStory() {
             </ul>
 
             <CTAButton href="/about" variant="outline">
-              Читати нашу історію
+              {t.storyCta}
             </CTAButton>
           </div>
         </div>

@@ -2,7 +2,10 @@ import Link from 'next/link'
 import type { CatalogProduct } from '@/types'
 import { AddToCartButton } from '@/components/cart/AddToCartButton'
 import { SafeImage } from '@/components/shared/SafeImage'
-import { canAddToCart, displayProductName, formatCatalogPrice, getCatalogProductImage, hasDisplayablePrice } from '@/lib/supabase/catalog'
+import { canAddToCart, displayProductName, formatCatalogPrice, getCatalogProductImage, getCatalogPrimaryImageAlt, hasDisplayablePrice } from '@/lib/supabase/catalog'
+import { stockStatus, stockLabel } from '@/lib/catalog/stock'
+import { DEFAULT_LOCALE, isLocale, type Locale } from '@/lib/i18n'
+import { pageDict } from '@/lib/i18n/pages'
 
 interface CatalogProductCardProps {
   product: CatalogProduct
@@ -16,19 +19,29 @@ interface CatalogProductCardProps {
 // ordered by contact (gift sets, made-to-order oil). Falls back to the neutral
 // "Уточнити ціну" for everything else (supplier catalog is unaffected — those
 // buyable products never reach this branch).
-function inquiryCtaLabel(product: CatalogProduct): string {
-  if (product.category_slug === 'podarunkovi-nabory') return 'Замовити набір'
-  if (product.category_slug === 'zhyvi-olii-holodnogo-vidzhymu') return 'Замовити олію'
-  return 'Уточнити ціну'
+const INQUIRY_CTA: Record<string, { uk: string; ru: string; en: string }> = {
+  'podarunkovi-nabory': { uk: 'Замовити набір', ru: 'Заказать набор', en: 'Order set' },
+  'zhyvi-olii-holodnogo-vidzhymu': { uk: 'Замовити олію', ru: 'Заказать масло', en: 'Order oil' },
+}
+function inquiryCtaLabel(product: CatalogProduct, loc: Locale, priceOnRequest: string): string {
+  const e = product.category_slug ? INQUIRY_CTA[product.category_slug] : undefined
+  return e ? (e[loc] ?? e.uk) : priceOnRequest
 }
 
 export function CatalogProductCard({ product, categorySlug, locale }: CatalogProductCardProps) {
+  const loc: Locale = isLocale(locale) ? locale : DEFAULT_LOCALE
+  const t = pageDict(loc)
   const href = `/catalog/${categorySlug}/${product.slug}`
   const imageUrl = getCatalogProductImage(product)
   const name = displayProductName(product, locale)
+  // Saved primary alt → localized product name fallback.
+  const imageAlt = getCatalogPrimaryImageAlt(product, name)
   const priceOk = hasDisplayablePrice(product)
   const buyable = canAddToCart(product)
   const priceLabel = formatCatalogPrice(product)
+  const stStatus = stockStatus(product)
+  const stockIsOut = stStatus === 'out_of_stock'
+  const stockText = stockLabel(stStatus, loc)
   const hasDiscount =
     priceOk && product.compare_price_uah != null && product.price_uah != null && product.compare_price_uah > product.price_uah
 
@@ -37,7 +50,7 @@ export function CatalogProductCard({ product, categorySlug, locale }: CatalogPro
       <Link href={href} className="relative block aspect-square bg-honey-50 overflow-hidden">
         <SafeImage
           src={imageUrl}
-          alt={name}
+          alt={imageAlt}
           className="absolute inset-0 h-full w-full object-cover group-hover:scale-105 transition-transform duration-300"
           fallback={
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-honey-50 to-forest-50 gap-3 px-4">
@@ -55,7 +68,7 @@ export function CatalogProductCard({ product, categorySlug, locale }: CatalogPro
         />
         {product.is_featured && (
           <span className="absolute top-2 left-2 text-xs font-semibold bg-honey-700 text-white px-2 py-0.5 rounded-full">
-            Хіт
+            {loc === 'ru' ? 'Хит' : loc === 'en' ? 'Top' : 'Хіт'}
           </span>
         )}
         {hasDiscount && (
@@ -93,7 +106,7 @@ export function CatalogProductCard({ product, categorySlug, locale }: CatalogPro
               )}
             </div>
           ) : (
-            <p className="text-sm font-semibold text-honey-700 mb-3">Уточнити ціну</p>
+            <p className="text-sm font-semibold text-honey-700 mb-3">{t.shop.priceOnRequest}</p>
           )}
 
           {buyable ? (
@@ -106,22 +119,24 @@ export function CatalogProductCard({ product, categorySlug, locale }: CatalogPro
                 price: product.price_uah as number,
                 imageUrl: imageUrl ?? undefined,
               }}
+              outOfStock={stockIsOut}
+              outOfStockLabel={stockText}
             />
           ) : product.status === 'published' ? (
             <Link
               href={href}
               className="flex items-center justify-center w-full py-2.5 px-4 text-sm font-semibold rounded-xl border border-honey-300 text-honey-700 hover:bg-honey-50 transition-colors"
             >
-              {inquiryCtaLabel(product)}
+              {inquiryCtaLabel(product, loc, t.shop.priceOnRequest)}
             </Link>
           ) : (
-            <div className="text-xs text-gray-400 text-center py-2">Немає в наявності</div>
+            <div className="text-xs text-gray-400 text-center py-2">{t.shop.outOfStock}</div>
           )}
           <Link
             href={href}
             className="block text-center text-xs font-medium mt-2 text-bark/50 hover:text-bark transition-colors"
           >
-            Детальніше →
+            {t.shop.more}
           </Link>
         </div>
       </div>

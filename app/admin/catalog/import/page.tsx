@@ -34,12 +34,17 @@ function usePersistedUrl(lsKey: string, defaultVal: string) {
   useEffect(() => {
     if (ready.current) return
     ready.current = true
-    try {
-      const stored = localStorage.getItem(lsKey)
-      const migrated = stored ? (LEGACY_URL_MAP[stored] ?? stored) : null
-      if (migrated && migrated !== stored) localStorage.setItem(lsKey, migrated)
-      setVal(migrated ?? defaultVal)
-    } catch { /* SSR */ }
+    // Deferred to a microtask (not called synchronously in the effect body)
+    // since this reads from an external system (localStorage), not derived
+    // props/state.
+    Promise.resolve().then(() => {
+      try {
+        const stored = localStorage.getItem(lsKey)
+        const migrated = stored ? (LEGACY_URL_MAP[stored] ?? stored) : null
+        if (migrated && migrated !== stored) localStorage.setItem(lsKey, migrated)
+        setVal(migrated ?? defaultVal)
+      } catch { /* SSR */ }
+    })
   }, [lsKey, defaultVal])
   function set(v: string) {
     setVal(v)
@@ -337,15 +342,30 @@ type Tab = 'products' | 'categories'
 
 export default function ImportPage() {
   const [tab, setTab] = useState<Tab>('products')
+  const hashSynced = useRef(false)
 
+  // Restore the tab from the URL hash on mount. Deferred to a microtask (not
+  // called synchronously in the effect body) since this is reading from an
+  // external system (the browser URL), not deriving state from props/state.
   useEffect(() => {
-    const hash = window.location.hash
-    if (hash === '#categories') setTab('categories')
+    Promise.resolve().then(() => {
+      if (window.location.hash === '#categories') setTab('categories')
+    })
   }, [])
+
+  // Keep the URL hash in sync with the active tab — a legitimate effect use
+  // (writing React state out to an external system). Skips the first run so
+  // load doesn't rewrite a hash the user didn't set.
+  useEffect(() => {
+    if (!hashSynced.current) {
+      hashSynced.current = true
+      return
+    }
+    window.location.hash = tab === 'categories' ? '#categories' : '#products'
+  }, [tab])
 
   function switchTab(t: Tab) {
     setTab(t)
-    window.location.hash = t === 'categories' ? '#categories' : '#products'
   }
 
   return (

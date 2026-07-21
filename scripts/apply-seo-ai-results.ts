@@ -51,7 +51,14 @@ async function main(): Promise<void> {
     headers: { Authorization: `Bearer ${secret}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ items, dryRun }),
   })
-  const d = await res.json() as Record<string, any>
+  interface ApplyBatchResponse {
+    ok?: boolean
+    updated?: number
+    skipped?: number
+    invalid?: number
+    errors?: number
+  }
+  const d = await res.json() as ApplyBatchResponse
   console.log(JSON.stringify(d, null, 2))
   if (!res.ok || d.ok === false) process.exit(1)
   console.error(`✓ ${dryRun ? 'DRY RUN' : 'Applied'}: updated=${d.updated} skipped=${d.skipped} invalid=${d.invalid} errors=${d.errors}`)

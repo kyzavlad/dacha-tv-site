@@ -24,7 +24,28 @@ async function main(): Promise<void> {
     headers: { Authorization: `Bearer ${secret}` },
   })
   if (!res.ok) { console.error(`✗ HTTP ${res.status} ${res.statusText}`); process.exit(1) }
-  const d = await res.json() as Record<string, any>
+  interface SeoQualityResponse {
+    totals?: {
+      published_products?: number
+      with_meta_title?: number
+      with_meta_description?: number
+      with_long_description?: number
+      missing_any_meta?: number
+      missing_long_description?: number
+    }
+    coverage_pct?: {
+      meta_title?: number
+      meta_description?: number
+      long_description?: number
+    }
+    seo_status_breakdown?: Record<string, number>
+    ai_backlog?: { eligible_products?: number }
+    top_categories_needing_seo?: {
+      sampled_rows?: number
+      categories?: { category_slug: string; sampled_missing: number }[]
+    }
+  }
+  const d = await res.json() as SeoQualityResponse
 
   const line = (label: string, value: string | number) => `  ${String(label).padEnd(26)} ${value}`
 

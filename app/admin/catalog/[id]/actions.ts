@@ -2,8 +2,9 @@
 
 import { getAdminClient } from '@/lib/supabase/admin'
 import { autoSlug } from '@/lib/catalog/csv-utils'
-import { ruTranslationIntent, editorRedirectQuery } from '@/lib/admin/editor-forms'
+import { ruTranslationIntent, translationIntent, editorRedirectQuery, type ProductTranslationFields } from '@/lib/admin/editor-forms'
 import { buildMetalAttributes, METAL_ATTR_FIELDS, METAL_CATEGORY_SLUG } from '@/lib/catalog/metal'
+import { parseImageMetadata } from '@/lib/catalog/image-metadata'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 
@@ -36,6 +37,44 @@ function bool(fd: FormData, key: string): boolean {
 function imageList(fd: FormData, key: string): string[] | null {
   const lines = str(fd, key).split(/\r?\n/).map((l) => l.trim()).filter(Boolean)
   return lines.length ? lines : null
+}
+// Ordered image_metadata [{url, alt, position, isPrimary}] from the manager's
+// serialized JSON field. Empty/invalid → null (column left cleared, legacy
+// main_image_url + images still render).
+function imageMetadata(fd: FormData, key: string): unknown[] | null {
+  const meta = parseImageMetadata(str(fd, key))
+  return meta.length ? meta : null
+}
+
+// Read a full localized translation field set from the form for a given prefix
+// ('ru' / 'en'). Returns the fields plus the upsert/clear intent.
+function readTranslation(fd: FormData, prefix: 'ru' | 'en'): { fields: ProductTranslationFields; intent: 'upsert' | 'clear' } {
+  const fields: ProductTranslationFields = {
+    name: strOrNull(fd, `${prefix}_name`),
+    short_description: strOrNull(fd, `${prefix}_short_description`),
+    description: strOrNull(fd, `${prefix}_description`),
+    seo_description: strOrNull(fd, `${prefix}_seo_description`),
+    meta_title: strOrNull(fd, `${prefix}_meta_title`),
+    meta_description: strOrNull(fd, `${prefix}_meta_description`),
+    seo_keywords: strOrNull(fd, `${prefix}_seo_keywords`),
+  }
+  return { fields, intent: translationIntent(fields) }
+}
+
+// Upsert or clear one locale's translation row. Returns an error message or null.
+async function writeTranslation(
+  client: AdminClient, productId: string, locale: 'ru' | 'en',
+  fields: ProductTranslationFields, intent: 'upsert' | 'clear',
+): Promise<string | null> {
+  if (intent === 'upsert') {
+    const { error } = await client.from('catalog_product_translations').upsert(
+      { product_id: productId, locale, ...fields, updated_at: new Date().toISOString() },
+      { onConflict: 'product_id,locale' },
+    )
+    return error ? `${locale} upsert: ${error.message}` : null
+  }
+  const { error } = await client.from('catalog_product_translations').delete().eq('product_id', productId).eq('locale', locale)
+  return error ? `${locale} clear: ${error.message}` : null
 }
 
 // Ensure a slug is unique across catalog_products, excluding the row being edited.
@@ -97,7 +136,9 @@ export async function updateCatalogProductAction(productId: string, fd: FormData
     compare_price_uah: numOrNull(fd, 'compare_price_uah'),
     status,
     main_image_url: strOrNull(fd, 'main_image_url'),
+    main_image_alt: strOrNull(fd, 'main_image_alt'),
     images: imageList(fd, 'images'),
+    image_metadata: imageMetadata(fd, 'image_metadata'),
     meta_title: strOrNull(fd, 'meta_title'),
     meta_description: strOrNull(fd, 'meta_description'),
     seo_keywords: strOrNull(fd, 'seo_keywords'),
@@ -198,7 +239,9 @@ export async function updateMetalProductAction(productId: string, fd: FormData):
     price_prefix: strOrNull(fd, 'price_prefix'),
     unit_label: strOrNull(fd, 'unit_label'),
     main_image_url: strOrNull(fd, 'main_image_url'),
+    main_image_alt: strOrNull(fd, 'main_image_alt'),
     images: imageList(fd, 'images'),
+    image_metadata: imageMetadata(fd, 'image_metadata'),
     attributes,
     is_featured: bool(fd, 'is_featured'),
     display_order: intOr(fd, 'display_order', 0),
@@ -211,25 +254,15 @@ export async function updateMetalProductAction(productId: string, fd: FormData):
     redirect(`/admin/catalog/${productId}${editorRedirectQuery({ error: true })}`)
   }
 
-  const ru = {
-    meta_title: strOrNull(fd, 'ru_meta_title'),
-    meta_description: strOrNull(fd, 'ru_meta_description'),
-    description: strOrNull(fd, 'ru_description'),
-    seo_keywords: strOrNull(fd, 'ru_seo_keywords'),
-  }
-  if (ruTranslationIntent(ru) === 'upsert') {
-    const { error } = await client.from('catalog_product_translations').upsert(
-      { product_id: productId, locale: 'ru', ...ru, updated_at: new Date().toISOString() },
-      { onConflict: 'product_id,locale' },
-    )
-    if (error) {
-      console.error('[admin:catalog:metal] RU upsert failed', { productId, code: error.code, message: error.message })
-      redirect(`/admin/catalog/${productId}${editorRedirectQuery({ error: true })}`)
-    }
-  } else {
-    const { error } = await client.from('catalog_product_translations').delete().eq('product_id', productId).eq('locale', 'ru')
-    if (error) {
-      console.error('[admin:catalog:metal] RU clear failed', { productId, code: error.code, message: error.message })
+  // RU + EN localized content live in catalog_product_translations (never on the
+  // Ukrainian base columns). Each locale is upserted when any field is set, else
+  // cleared. name / short_description / seo_description are the full-translation
+  // extensions on top of the SEO fields.
+  for (const locale of ['ru', 'en'] as const) {
+    const { fields, intent } = readTranslation(fd, locale)
+    const err = await writeTranslation(client, productId, locale, fields, intent)
+    if (err) {
+      console.error('[admin:catalog:metal] translation write failed', { productId, locale, message: err })
       redirect(`/admin/catalog/${productId}${editorRedirectQuery({ error: true })}`)
     }
   }

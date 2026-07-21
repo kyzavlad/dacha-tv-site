@@ -6,23 +6,52 @@ import { FlowerGrid } from '@/components/flowers/FlowerGrid'
 import { FlowerInquiryForm } from '@/components/forms/FlowerInquiryForm'
 import { getAllFlowerProducts } from '@/lib/supabase/queries'
 import { FlowerCard } from '@/components/flowers/FlowerCard'
+import { getRequestLocale, localizedPath } from '@/lib/i18n'
+import { manualDict } from '@/lib/i18n/sections/manual'
 
-export const metadata: Metadata = {
-  title: 'Хризантеми',
-  description:
-    'Хризантеми від домашнього розсадника на Харківщині: помпонові, кущові, великоквіткові та рідкісні сорти. Вирощуємо для букетів, подарунків і саду.',
-  alternates: { canonical: '/flowers' },
-  openGraph: {
+const FLOWERS_META: Record<'uk' | 'ru' | 'en', { title: string; description: string; ogDescription: string; ogAlt: string; twitterDescription: string }> = {
+  uk: {
     title: 'Хризантеми',
-    description: 'Понад 20 сортів хризантем від домашнього розсадника на Харківщині. Помпонові, кущові, великоквіткові.',
-    type: 'website',
-    images: [{ url: '/images/dacha-tv/logo-square.png', width: 1200, height: 1200, alt: 'Дача TV: Хризантеми' }],
+    description: 'Хризантеми від домашнього розсадника на Харківщині: помпонові, кущові, великоквіткові та рідкісні сорти. Вирощуємо для букетів, подарунків і саду.',
+    ogDescription: 'Понад 20 сортів хризантем від домашнього розсадника на Харківщині. Помпонові, кущові, великоквіткові.',
+    ogAlt: 'Дача TV: Хризантеми',
+    twitterDescription: 'Хризантеми від домашнього розсадника на Харківщині: помпонові, кущові та великоквіткові сорти.',
   },
-  twitter: {
-    card: 'summary_large_image',
-    title: 'Хризантеми',
-    description: 'Хризантеми від домашнього розсадника на Харківщині: помпонові, кущові та великоквіткові сорти.',
+  ru: {
+    title: 'Хризантемы',
+    description: 'Хризантемы от домашнего питомника на Харьковщине: помпонные, кустовые, крупноцветковые и редкие сорта. Выращиваем для букетов, подарков и сада.',
+    ogDescription: 'Более 20 сортов хризантем от домашнего питомника на Харьковщине. Помпонные, кустовые, крупноцветковые.',
+    ogAlt: 'Дача TV: Хризантемы',
+    twitterDescription: 'Хризантемы от домашнего питомника на Харьковщине: помпонные, кустовые и крупноцветковые сорта.',
   },
+  en: {
+    title: 'Chrysanthemums',
+    description: 'Chrysanthemums from a home nursery in the Kharkiv region: pompon, spray, exhibition and rare varieties. Grown for bouquets, gifts and the garden.',
+    ogDescription: 'Over 20 chrysanthemum varieties from a home nursery in the Kharkiv region. Pompon, spray, exhibition.',
+    ogAlt: 'Dacha TV: Chrysanthemums',
+    twitterDescription: 'Chrysanthemums from a home nursery in the Kharkiv region: pompon, spray and exhibition varieties.',
+  },
+}
+
+export async function generateMetadata(): Promise<Metadata> {
+  const locale = await getRequestLocale()
+  const m = FLOWERS_META[locale]
+  return {
+    title: m.title,
+    description: m.description,
+    alternates: { canonical: '/flowers' },
+    openGraph: {
+      title: m.title,
+      description: m.ogDescription,
+      type: 'website',
+      images: [{ url: '/images/dacha-tv/logo-square.png', width: 1200, height: 1200, alt: m.ogAlt }],
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title: m.title,
+      description: m.twitterDescription,
+    },
+  }
 }
 
 const VARIETY_ORDER = [
@@ -36,6 +65,8 @@ const VARIETY_ORDER = [
 ]
 
 export default async function FlowersPage() {
+  const locale = await getRequestLocale()
+  const t = manualDict(locale)
   const allProducts = await getAllFlowerProducts().catch(() => [])
 
   const featured = allProducts.filter((p) => p.is_featured && (p.status === 'available' || p.status === 'preorder')).slice(0, 3)
@@ -67,22 +98,21 @@ export default async function FlowersPage() {
       {/* Hero */}
       <div className="bg-gray-950 text-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-14 md:py-20">
-          <nav aria-label="Навігація" className="text-sm text-white/40 mb-8">
-            <Link href="/" className="hover:text-white/70 transition-colors">Головна</Link>
+          <nav aria-label={t.flowersBreadcrumbCurrent} className="text-sm text-white/40 mb-8">
+            <Link href={localizedPath(locale, '/')} className="hover:text-white/70 transition-colors">{t.flowersBreadcrumbHome}</Link>
             <span className="mx-2">›</span>
-            <span className="text-white/70">Квіти</span>
+            <span className="text-white/70">{t.flowersBreadcrumbCurrent}</span>
           </nav>
 
           <div className="max-w-2xl">
             <p className="text-xs font-semibold text-white/40 uppercase tracking-widest mb-4">
-              Домашній розсадник · Харківщина
+              {t.flowersEyebrow}
             </p>
             <h1 className="font-serif text-4xl md:text-5xl font-bold mb-5 leading-tight">
-              Хризантеми
+              {t.flowersH1}
             </h1>
             <p className="text-white/60 text-lg leading-relaxed mb-8">
-              Понад {totalCount} сортів. Помпонові, кущові, великоквіткові і рідкісні.
-              Вирощуємо вдома: для букетів, подарунків і саду.
+              {t.flowersIntro.replace('{count}', String(totalCount))}
             </p>
 
             {/* Quick-jump anchors */}
@@ -111,7 +141,7 @@ export default async function FlowersPage() {
             <div className="flex items-center gap-3 mb-6">
               <span className="w-6 h-px bg-gray-300" />
               <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-widest">
-                Рекомендовані
+                {t.flowersFeatured}
               </h2>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
@@ -134,7 +164,7 @@ export default async function FlowersPage() {
                       {variety}
                     </h2>
                     <span className="text-sm text-gray-400">
-                      {products.length} сорт{products.length === 1 ? '' : products.length < 5 ? 'и' : 'ів'}
+                      {products.length} {t.catalogVarietiesLabel}
                     </span>
                   </div>
                 </div>
@@ -152,10 +182,10 @@ export default async function FlowersPage() {
         <div className="max-w-xl mx-auto px-4 sm:px-6 py-16">
           <div className="text-center mb-8">
             <h2 className="font-serif text-2xl font-bold text-gray-900 mb-2">
-              Замовити квіти
+              {t.flowersInquiryTitle}
             </h2>
             <p className="text-gray-500 text-sm">
-              Уточнимо наявність, ціну і домовимося про передачу або доставку.
+              {t.flowersInquiryBody}
             </p>
           </div>
           <FlowerInquiryForm source="/flowers" />

@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
-import type { CatalogCategory, CatalogProduct } from '@/types'
+import type { CatalogCategory, CatalogProduct, CatalogImageMeta } from '@/types'
+import { resolveImageEntries, primaryImageAlt } from '@/lib/catalog/image-metadata'
 
 function getClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -62,10 +63,34 @@ export const SITEMAP_PRODUCTS_PER_CHUNK = 1000
 // on a possibly-unmigrated column.
 export const NATURAL_CATEGORY_SLUGS = ['naturalni-produkty', 'zhyvi-olii-holodnogo-vidzhymu', 'podarunkovi-nabory']
 
-// PostgREST `or` filter: keep null-category products (the /catalog/all catch-all)
-// but drop products in the natural categories. `NOT IN` alone would also drop
-// NULLs, so the explicit `is.null` branch is required.
-const EXCLUDE_NATURAL_OR = `category_slug.is.null,category_slug.not.in.(${NATURAL_CATEGORY_SLUGS.join(',')})`
+// The SINGLE reusable storefront-scope filter (item 5). /catalog/all, catalog
+// search, the catalog sitemap, related catalog products and catalog totals all
+// show the SAME set: supplier rows (including legacy rows whose `source` is NULL)
+// plus manual metal-profile products — and nothing else. Every other manual
+// product (natural products, cold-pressed oils, gift sets, …) is presented in its
+// own section and is excluded here. Source-based (not category-based) so it can
+// never leak a non-natural manual row the way the old category filter did.
+// Storefront scope (PostgREST .or()): a supplier row, OR a genuine LEGACY supplier
+// row (source IS NULL but carrying supplier identity — supplier_sku or
+// supplier_product_id), OR a manual METAL row. A source=NULL row WITHOUT supplier
+// identity is unknown legacy manual content and is EXCLUDED (the old
+// `source.is.null` clause was too broad and leaked such rows).
+export const STOREFRONT_SCOPE_OR =
+  `source.eq.supplier,` +
+  `and(source.is.null,or(supplier_sku.not.is.null,supplier_product_id.not.is.null)),` +
+  `and(source.eq.manual,lead_type.eq.metal)`
+
+// Pure predicate mirror of STOREFRONT_SCOPE_OR for unit tests / in-memory checks.
+export function isStorefrontProduct(p: {
+  source?: string | null; lead_type?: string | null
+  supplier_sku?: string | null; supplier_product_id?: string | null
+}): boolean {
+  const src = p.source ?? null
+  if (src === 'supplier') return true
+  // Legacy supplier row: NULL source but proven supplier identity.
+  if (src === null) return p.supplier_sku != null || p.supplier_product_id != null
+  return src === 'manual' && p.lead_type === 'metal'
+}
 
 // Public price-display guard. Until a re-sync corrects historical rows, some
 // catalog products may still carry a corrupted sub-currency price (raw USD
@@ -162,6 +187,34 @@ export function getCatalogProductImages(product: ImageBearingProduct | null | un
     : []
   const ordered = [primary, ...rest, ...rawRest].filter((u): u is string => u != null)
   return [...new Set(ordered)]
+}
+
+// Ordered gallery entries WITH alt text for a product. Uses saved image_metadata
+// when present; otherwise derives entries from the resolved URL list. Every entry
+// gets a non-empty alt (own alt → main_image_alt → localized name fallback).
+// `fallbackAlt` should be the localized product name.
+export function getCatalogProductImageEntries(
+  product: (ImageBearingProduct & { image_metadata?: unknown; main_image_alt?: string | null }) | null | undefined,
+  fallbackAlt: string,
+): CatalogImageMeta[] {
+  return resolveImageEntries({
+    imageMetadata: product?.image_metadata,
+    urls: getCatalogProductImages(product),
+    mainImageAlt: product?.main_image_alt ?? null,
+    fallbackAlt,
+  })
+}
+
+// The alt for a product's single primary image (cards / og:image).
+export function getCatalogPrimaryImageAlt(
+  product: { image_metadata?: unknown; main_image_alt?: string | null } | null | undefined,
+  fallbackAlt: string,
+): string {
+  return primaryImageAlt({
+    imageMetadata: product?.image_metadata,
+    mainImageAlt: product?.main_image_alt ?? null,
+    fallbackAlt,
+  })
 }
 
 // ─── Manual / supplier unified price + CTA logic ─────────────────────────────
@@ -633,6 +686,7 @@ export async function getRelatedCatalogProducts(
     .eq('status', 'published')
     .eq('category_slug', categorySlug)
     .neq('slug', excludeSlug)
+    .or(STOREFRONT_SCOPE_OR)   // same storefront scope as /catalog/all
     .order('is_featured', { ascending: false })
     .order('display_order', { ascending: true })
     .limit(limit * 8)
@@ -688,7 +742,7 @@ export async function getPublishedCatalogSlugs(): Promise<{ category: string; pr
     .select('slug, category_slug')
     .eq('status', 'published')
     .not('category_slug', 'is', null)
-    .not('category_slug', 'in', `(${NATURAL_CATEGORY_SLUGS.join(',')})`)
+    .or(STOREFRONT_SCOPE_OR)
     .limit(1000)
   return (data ?? []).map((r) => ({ category: r.category_slug as string, product: r.slug as string }))
 }
@@ -709,7 +763,7 @@ export async function getPublishedCatalogSlugsPage(
     .from('catalog_products')
     .select('slug, category_slug')
     .eq('status', 'published')
-    .or(EXCLUDE_NATURAL_OR)
+    .or(STOREFRONT_SCOPE_OR)
     .order('id', { ascending: true })
     .range(offset, offset + limit - 1)
   return (data ?? []).map((r) => ({
@@ -730,7 +784,7 @@ export async function getPublishedCatalogProducts(
     .from('catalog_products')
     .select('*', { count: 'exact' })
     .eq('status', 'published')
-    .or(EXCLUDE_NATURAL_OR)
+    .or(STOREFRONT_SCOPE_OR)
   const { data, count } = await applyCatalogSort(base, sort).range(from, to)
   const products = ((data ?? []) as CatalogProduct[]).filter(isPublicListableProduct)
   return { products, total: count ?? 0 }
@@ -878,7 +932,7 @@ async function findProductsBySku(
       .from('catalog_products')
       .select('*')
       .eq('status', 'published')
-      .or(EXCLUDE_NATURAL_OR)
+      .or(STOREFRONT_SCOPE_OR)
       .or(orClause)
       .limit(limit)
     if (error) {
@@ -942,7 +996,7 @@ export async function searchPublishedCatalogProducts(
     .from('catalog_products')
     .select('*', { count: 'exact' })
     .eq('status', 'published')
-    .or(EXCLUDE_NATURAL_OR)
+    .or(STOREFRONT_SCOPE_OR)
   for (const tok of tokens) {
     base = base.or(`name_ua.ilike.%${tok}%,name.ilike.%${tok}%,supplier_sku.ilike.%${tok}%,category_slug.ilike.%${tok}%`)
   }
@@ -964,7 +1018,7 @@ export async function searchPublishedCatalogProducts(
         .from('catalog_products')
         .select('*')
         .eq('status', 'published')
-        .or(EXCLUDE_NATURAL_OR)
+        .or(STOREFRONT_SCOPE_OR)
         .in('category_slug', matchedSlugs)
       if (buyable) catBase = catBase.gte('price_uah', MIN_VALID_PRICE_UAH).not('is_price_suspicious', 'is', true)
       if (withImage) catBase = catBase.or('main_image_url.not.is.null,images.not.is.null')
@@ -1046,7 +1100,7 @@ export async function suggestCatalogProducts(q: string, limit = 8): Promise<Cata
     .from('catalog_products')
     .select(SUGGEST_COLS)
     .eq('status', 'published')
-    .or(EXCLUDE_NATURAL_OR)
+    .or(STOREFRONT_SCOPE_OR)
   for (const tok of tokens) {
     base = base.or(`name_ua.ilike.%${tok}%,name.ilike.%${tok}%,supplier_sku.ilike.%${tok}%`)
   }
@@ -1064,7 +1118,7 @@ export async function suggestCatalogProducts(q: string, limit = 8): Promise<Cata
         .from('catalog_products')
         .select(SUGGEST_COLS)
         .eq('status', 'published')
-        .or(EXCLUDE_NATURAL_OR)
+        .or(STOREFRONT_SCOPE_OR)
         .in('category_slug', matchedSlugs)
         .order('is_featured', { ascending: false })
         .limit(over)
@@ -1123,7 +1177,7 @@ export async function getPublishedCatalogProductCount(): Promise<number> {
     .from('catalog_products')
     .select('id', { count: 'exact', head: true })
     .eq('status', 'published')
-    .or(EXCLUDE_NATURAL_OR)
+    .or(STOREFRONT_SCOPE_OR)
   return count ?? 0
 }
 

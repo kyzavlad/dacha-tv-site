@@ -9,7 +9,15 @@ import {
   detectTestOrderMarker,
 } from '@/lib/supplier/order'
 import { normalizeUkrainianPhone, isValidUkrainianPhone } from '@/lib/utils'
+import { revalidateSupplierStock, type RevalRow } from '@/lib/cart/stock-revalidation'
+import { getRequestLocale } from '@/lib/i18n'
+import { pageDict } from '@/lib/i18n/pages'
 import { cookies } from 'next/headers'
+
+// Localized checkout revalidation messages (uk/ru/en).
+function checkoutMessages(locale: Awaited<ReturnType<typeof getRequestLocale>>) {
+  return pageDict(locale).shop
+}
 import { formatAttribution, buildStoredSource, attributionNotificationLine, ATTRIBUTION_COOKIE } from '@/lib/analytics/attribution'
 
 const orderItemSchema = z.object({
@@ -295,17 +303,40 @@ export async function submitProductOrder(
       .map((i) => i.productSlug)
 
     const slugToSku: Map<string, string> = new Map()
+    // Authoritative stock revalidation (FAIL CLOSED): the cart snapshots
+    // availability at add-to-cart time, so we re-check the live catalog before an
+    // order is created. A lookup failure or a missing catalog row blocks the order
+    // with a temporary error; a synced supplier row with is_in_stock=false blocks
+    // with the item names. Manual/metal (inquiry) products are never blocked.
     if (catalogSlugs.length > 0) {
       const { data: skuRows, error: skuError } = await client
         .from('catalog_products')
-        .select('slug, supplier_sku')
+        .select('slug, supplier_sku, supplier_product_id, source, lead_type, is_in_stock, stock_synced_at, name_ua')
         .in('slug', catalogSlugs)
-      if (skuError) {
-        // Non-fatal: without SKUs we simply treat the items as manual.
-        console.error(`[checkout-submit ${trace}] supplier SKU lookup failed (non-fatal): ${skuError.message}`)
-      }
+
+      const reval = revalidateSupplierStock({
+        items: d.items,
+        rows: (skuRows ?? []) as RevalRow[],
+        lookupFailed: !!skuError,
+      })
+
       for (const row of skuRows ?? []) {
         if (row.supplier_sku) slugToSku.set(row.slug as string, row.supplier_sku as string)
+      }
+
+      if (!reval.ok) {
+        const t = checkoutMessages(await getRequestLocale())
+        if (reval.reason === 'lookup_failed') {
+          console.error(`[checkout-submit ${trace}] blocked — stock lookup failed: ${skuError?.message ?? 'unknown'}`)
+          return { success: false, error: t.errStockCheckFailed }
+        }
+        const list = reval.names.slice(0, 5).join(', ')
+        if (reval.reason === 'missing') {
+          console.error(`[checkout-submit ${trace}] blocked — missing catalog rows: ${list}`)
+          return { success: false, error: t.errItemUnavailable.replace('{names}', list) }
+        }
+        console.error(`[checkout-submit ${trace}] blocked — out of stock: ${list}`)
+        return { success: false, error: t.errOutOfStock.replace('{names}', list) }
       }
     }
 

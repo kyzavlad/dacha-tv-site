@@ -155,7 +155,7 @@ export default async function SearchPage({ searchParams }: Props) {
                 </div>
                 {filterChips}
               </div>
-              {(products.length > 1 || page > 1) && <CatalogSortSelect value={sort} />}
+              {(products.length > 1 || page > 1) && <CatalogSortSelect value={sort} locale={locale} />}
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
               {products.map((p) => (

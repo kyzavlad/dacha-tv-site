@@ -89,7 +89,7 @@ export default async function AdminBeekeeperPage() {
             <label className={LABEL}>Тип продукту</label>
             <select name="product_type" defaultValue="bee_packages" className={INPUT}>
               <option value="bee_packages">Бджолопакети</option>
-              <option value="bee_colonies">Бджолосім'ї</option>
+              <option value="bee_colonies">Бджолосім&#39;ї</option>
               <option value="empty_hives">Порожні вулики</option>
               <option value="hives_with_bees">Вулики з бджолами</option>
               <option value="apiary_supply">Товари пасічника</option>

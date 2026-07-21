@@ -38,7 +38,7 @@ async function main(): Promise<void> {
     headers: { Authorization: `Bearer ${secret}` },
   })
   if (!res.ok) { console.error(`✗ HTTP ${res.status} ${res.statusText}`); process.exit(1) }
-  const d = await res.json() as Record<string, any>
+  const d = await res.json() as { count?: number }
 
   const json = JSON.stringify(d, null, 2)
   if (out) {

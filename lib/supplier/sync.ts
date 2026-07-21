@@ -1,4 +1,9 @@
 import { getAdminClient } from '@/lib/supabase/admin'
+import {
+  classifyBuildFailure, classifyPriceIssue, classifyUpsertError, isRetryableDbError,
+  recordError, mergeErrorReport, emptyErrorReport,
+  type SupplierErrorReport,
+} from '@/lib/supplier/error-grouping'
 
 // ─── API config ───────────────────────────────────────────────────────────────
 // personal.cab uses a single base endpoint with query-param routing:
@@ -254,7 +259,8 @@ async function handleActiveRuns(
 export interface SyncResult {
   ok: boolean
   synced: number
-  errors: number
+  errors: number              // HARD DB/write failures only (records not persisted)
+  diagnosticIssues?: number   // non-fatal data-quality issues (skipped/priceless rows)
   message: string
   alreadyRunning?: boolean
   priceSample?: Array<{ sku: string; rawFields: Record<string, unknown>; computedUah: number | null }>
@@ -266,6 +272,8 @@ export interface SyncResult {
   updated?: number        // existing SKUs re-upserted this invocation
   nextOffset?: number | null // pass back as ?offset= to continue; null when done
   done?: boolean          // true when offset reached the end of the feed
+  completedWithErrors?: boolean          // true when the cycle finished but errors occurred
+  errorGroups?: Record<string, number>   // categorized failure counts (item 8)
 }
 
 function safeStock(raw: unknown): number {
@@ -424,8 +432,6 @@ export interface FeedDiagResult {
 // Fetches get_products in json / xml / yml and reports WHERE category names live.
 export async function inspectSupplierFeeds(): Promise<FeedDiagResult> {
   let jsonResult: FeedDiagResult['json']
-  let ymlResult:  FeedDiagResult['yml']
-  let xmlResult:  FeedDiagResult['xml']
 
   // JSON: structure + whether products carry a readable category name field
   try {
@@ -466,8 +472,8 @@ export async function inspectSupplierFeeds(): Promise<FeedDiagResult> {
     }
   }
 
-  ymlResult = await parseFeed('yml')
-  xmlResult = await parseFeed('xml')
+  const ymlResult = await parseFeed('yml')
+  const xmlResult = await parseFeed('xml')
 
   // Derive winner: whichever feed produced named categories first
   const ymlNamed = ('namedCategoryCount' in ymlResult) ? ymlResult.namedCategoryCount : 0
@@ -698,6 +704,7 @@ interface WindowResult {
   errors: number
   noPrice: number
   rateMissing: number
+  errorReport: SupplierErrorReport   // categorized failures for this window
 }
 
 // Process + upsert ONE bounded window of the feed. Self-contained so the caller
@@ -709,10 +716,12 @@ async function upsertSupplierWindow(
   window: unknown[],
   rootCurrency: number | null,
   priceSamples: NonNullable<SyncResult['priceSample']>,
+  windowOffset = 0,
 ): Promise<WindowResult> {
   let errors = 0
   let noPrice = 0
   let rateMissing = 0
+  const errorReport = emptyErrorReport()
 
   const skuOf = (p: Record<string, unknown>) =>
     String(p.vendor_code ?? p.sku ?? p.article ?? p.supplier_sku ?? p.id ?? '').trim()
@@ -737,14 +746,30 @@ async function upsertSupplierWindow(
   const seenSku = new Set<string>()
 
   for (const prod of window) {
+    const rawSku = skuOf(prod as Record<string, unknown>)
     const built = buildSupplierRow(prod as Record<string, unknown>, rootCurrency)
-    if (!built) { errors++; continue }
+    if (!built) {
+      errors++
+      const group = classifyBuildFailure(rawSku)
+      recordError(errorReport, group, 1, { skus: rawSku ? [rawSku] : [], offset: windowOffset })
+      continue
+    }
     const { sku, row, priceUah, priceUsd, effectiveRate, winField, stockRaw } = built
-    if (seenSku.has(sku)) continue
+    if (seenSku.has(sku)) {
+      // Repeated SKU within the feed — first occurrence wins; count it so the
+      // report distinguishes benign feed dupes from real failures (not an error).
+      recordError(errorReport, 'duplicate_sku_in_feed', 1, { skus: [sku], offset: windowOffset })
+      continue
+    }
     seenSku.add(sku)
 
     if (winField === 'rate_missing') rateMissing++
     if (priceUah == null) noPrice++
+    // Data-quality: a row that built OK but has no usable price will be silently
+    // dropped from the catalog import (price_uah > 0 filter). Record it as
+    // invalid_price so the diagnostic can surface these unsellable rows.
+    const priceIssue = classifyPriceIssue(priceUah)
+    if (priceIssue) recordError(errorReport, priceIssue, 1, { skus: [sku], offset: windowOffset })
     if (!existingSkus.has(sku)) newSkusInBatch.add(sku)
 
     if (priceSamples.length < 5) {
@@ -770,13 +795,28 @@ async function upsertSupplierWindow(
   const newInSlice = (slice: Record<string, unknown>[]) =>
     slice.reduce((n, r) => n + (newSkusInBatch.has(String(r.supplier_sku)) ? 1 : 0), 0)
 
+  // Bounded retry for TRANSIENT db failures (serialization/deadlock/connection —
+  // never constraint violations). Up to 3 attempts; returns the final error (or
+  // null on success). Constraint errors short-circuit immediately (not retryable).
+  const upsertWithRetry = async (rows: Record<string, unknown>[]) => {
+    let lastErr: { code?: string | null; message?: string | null } | null = null
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      const { error } = await client.from('supplier_products').upsert(rows, { onConflict: 'supplier_sku' })
+      if (!error) return null
+      lastErr = error
+      if (!isRetryableDbError(error)) break
+    }
+    return lastErr
+  }
+
   let upserted = 0
   let inserted = 0
   const CHUNK = 200
   for (const batch of [rowsWithPrice, rowsWithoutPrice]) {
     for (let i = 0; i < batch.length; i += CHUNK) {
       const slice = batch.slice(i, i + CHUNK)
-      const { error } = await client.from('supplier_products').upsert(slice, { onConflict: 'supplier_sku' })
+      const sampleSkus = slice.map((r) => String(r.supplier_sku ?? '')).filter(Boolean).slice(0, 5)
+      const error = await upsertWithRetry(slice)
       if (error) {
         const missingCol = error.message?.includes('price_win_field') ||
           error.message?.includes('supplier_price_currency') ||
@@ -784,9 +824,13 @@ async function upsertSupplierWindow(
         if (missingCol) {
           const fallback = slice.map(({ price_win_field: _a, supplier_price_currency: _b, ...rest }) => rest)
           const { error: e2 } = await client.from('supplier_products').upsert(fallback, { onConflict: 'supplier_sku' })
-          if (e2) { errors += slice.length } else { upserted += slice.length; inserted += newInSlice(slice) }
+          if (e2) {
+            errors += slice.length
+            recordError(errorReport, classifyUpsertError(e2), slice.length, { skus: sampleSkus, code: (e2 as { code?: string }).code, message: e2.message, offset: windowOffset })
+          } else { upserted += slice.length; inserted += newInSlice(slice) }
         } else {
           errors += slice.length
+          recordError(errorReport, classifyUpsertError(error), slice.length, { skus: sampleSkus, code: (error as { code?: string }).code, message: error.message, offset: windowOffset })
         }
       } else {
         upserted += slice.length
@@ -795,7 +839,7 @@ async function upsertSupplierWindow(
     }
   }
 
-  return { upserted, inserted, errors, noPrice, rateMissing }
+  return { upserted, inserted, errors, noPrice, rateMissing, errorReport }
 }
 
 // Full supplier-products sync with BOUNDED, RESUMABLE windowing.
@@ -876,24 +920,30 @@ export async function syncSupplierProducts(options?: {
     let processed = 0
     let upserted = 0
     let inserted = 0
-    let errors = 0
     let noPriceCount = 0
     let rateMissingCount = 0
     let pages = 0
+    const errorReport = emptyErrorReport()
 
     while (offset < totalInFeed && pages < maxPages && (Date.now() - startedAt) < maxMillis) {
       const window = allProducts.slice(offset, offset + limit)
       if (window.length === 0) break
-      const r = await upsertSupplierWindow(client, window, rootCurrency, priceSamples)
+      const r = await upsertSupplierWindow(client, window, rootCurrency, priceSamples, offset)
       processed += window.length
       upserted += r.upserted
       inserted += r.inserted
-      errors += r.errors
       noPriceCount += r.noPrice
       rateMissingCount += r.rateMissing
+      mergeErrorReport(errorReport, r.errorReport)
       offset += window.length
       pages++
     }
+    // completedWithErrors is managed by recordError and reflects HARD DB/write
+    // failures ONLY (database_constraint / upsert_failed / unknown) — never the
+    // benign diagnostic categories (missing_sku, duplicate_sku_in_feed,
+    // invalid_record, invalid_price). No override here.
+    const hardErrors = errorReport.hardErrors
+    const diagnosticIssues = errorReport.diagnosticIssues
 
     const done = offset >= totalInFeed
     const nextOffset = done ? null : offset
@@ -914,12 +964,21 @@ export async function syncSupplierProducts(options?: {
       products_total: upserted,
       products_new: inserted,
       products_updated: updated,
-      products_errors: errors,
+      products_errors: hardErrors,
       error_details: {
         ...debugInfo,
-        synced: upserted, errors, new: inserted,
+        synced: upserted, new: inserted,
+        // Clear, separate meanings:
+        //   hard_errors      = real DB/write failures (a record was NOT persisted)
+        //   diagnostic_issues = non-fatal data-quality (skipped/priceless rows)
+        //   errorGroups       = per-category counts (always present)
+        hard_errors: hardErrors,
+        diagnostic_issues: diagnosticIssues,
         no_price: noPriceCount, rate_missing: rateMissingCount,
         total_in_feed: totalInFeed, processed, pages, next_offset: nextOffset, done,
+        completed_with_errors: errorReport.completedWithErrors,
+        errorGroups: errorReport.groups,
+        errorDetails: errorReport.details,
         duration_ms: Date.now() - startedAt,
       },
       completed_at: new Date().toISOString(),
@@ -935,8 +994,11 @@ export async function syncSupplierProducts(options?: {
     return {
       ok: upserted > 0,
       synced: upserted,
-      errors,
-      message: `Збережено ${upserted} (нових: ${inserted}, оброблено: ${processed} з ${totalInFeed}; ${tail})${errors > 0 ? `, помилок: ${errors}` : ''}`,
+      errors: hardErrors,
+      diagnosticIssues,
+      completedWithErrors: errorReport.completedWithErrors,
+      errorGroups: errorReport.groups,
+      message: `Збережено ${upserted} (нових: ${inserted}, оброблено: ${processed} з ${totalInFeed}; ${tail})${hardErrors > 0 ? `, DB-помилок: ${hardErrors} — див. errorGroups` : ''}${diagnosticIssues > 0 ? `, діагностичних: ${diagnosticIssues}` : ''}`,
       priceSample: priceSamples,
       priceWarning: warnings.length > 0 ? warnings.join('; ') : undefined,
       totalInFeed, processed, inserted, updated, nextOffset, done,

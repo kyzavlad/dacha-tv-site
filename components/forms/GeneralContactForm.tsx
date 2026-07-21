@@ -7,28 +7,32 @@ import { z } from 'zod'
 import { submitGeneralContact } from '@/actions/submitInquiry'
 import { CTAButton } from '@/components/shared/CTAButton'
 import { cn } from '@/lib/utils'
+import { DEFAULT_LOCALE, type Locale } from '@/lib/i18n'
+import { pageDict } from '@/lib/i18n/pages'
 
 const ukrainianPhone = /^(\+380|0)\d{9}$/
 
-const schema = z.object({
-  name: z.string().min(2, "Ім'я має містити щонайменше 2 символи"),
-  phone: z
-    .string()
-    .regex(ukrainianPhone, 'Введіть номер у форматі +380XXXXXXXXX або 0XXXXXXXXX'),
-  message: z.string().max(500).optional(),
-  source: z.string().optional(),
-  _honeypot: z.string().max(0).optional(),
-})
-
-type FormData = z.infer<typeof schema>
-
 interface GeneralContactFormProps {
   source?: string
+  locale?: Locale
 }
 
-export function GeneralContactForm({ source }: GeneralContactFormProps) {
+export function GeneralContactForm({ source, locale = DEFAULT_LOCALE }: GeneralContactFormProps) {
+  const t = pageDict(locale)
+  const f = t.forms
   const [submitState, setSubmitState] = useState<'idle' | 'loading' | 'success' | 'error'>('idle')
   const [errorMessage, setErrorMessage] = useState('')
+
+  // Locale-aware schema: validation messages are localized (the phone rule itself
+  // is unchanged — only its message is translated).
+  const schema = z.object({
+    name: z.string().min(2, f.errNameMin),
+    phone: z.string().regex(ukrainianPhone, f.errPhone),
+    message: z.string().max(500).optional(),
+    source: z.string().optional(),
+    _honeypot: z.string().max(0).optional(),
+  })
+  type FormData = z.infer<typeof schema>
 
   const {
     register,
@@ -69,17 +73,17 @@ export function GeneralContactForm({ source }: GeneralContactFormProps) {
           </svg>
         </div>
         <h3 className="font-serif text-xl font-semibold text-forest-800 mb-2">
-          Дякуємо!
+          {f.successTitle}
         </h3>
         <p className="text-forest-700">
-          Ми зв&apos;яжемося з вами найближчим часом.
+          {f.successBody}
         </p>
         <button
           type="button"
           onClick={() => setSubmitState('idle')}
           className="mt-4 text-sm text-forest-600 underline hover:no-underline"
         >
-          Надіслати ще одне повідомлення
+          {f.sendAnother}
         </button>
       </div>
     )
@@ -94,7 +98,7 @@ export function GeneralContactForm({ source }: GeneralContactFormProps) {
 
       <div>
         <label htmlFor="contact-name" className="block text-sm font-medium text-bark mb-1">
-          Ваше ім&apos;я <span className="text-red-500">*</span>
+          {f.nameLabel} <span className="text-red-500">*</span>
         </label>
         <input
           id="contact-name"
@@ -107,14 +111,14 @@ export function GeneralContactForm({ source }: GeneralContactFormProps) {
             'min-h-[48px] text-base',
             errors.name ? 'border-red-400' : 'border-honey-200'
           )}
-          placeholder="Ваше ім'я"
+          placeholder={f.namePlaceholder}
         />
         {errors.name && <p className="mt-1 text-sm text-red-600">{errors.name.message}</p>}
       </div>
 
       <div>
         <label htmlFor="contact-phone" className="block text-sm font-medium text-bark mb-1">
-          Телефон <span className="text-red-500">*</span>
+          {f.phoneLabel} <span className="text-red-500">*</span>
         </label>
         <input
           id="contact-phone"
@@ -134,7 +138,7 @@ export function GeneralContactForm({ source }: GeneralContactFormProps) {
 
       <div>
         <label htmlFor="contact-message" className="block text-sm font-medium text-bark mb-1">
-          Повідомлення
+          {f.messageLabel}
         </label>
         <textarea
           id="contact-message"
@@ -146,7 +150,7 @@ export function GeneralContactForm({ source }: GeneralContactFormProps) {
             'text-base resize-none',
             errors.message ? 'border-red-400' : 'border-honey-200'
           )}
-          placeholder="Ваше питання або повідомлення..."
+          placeholder={f.messagePlaceholder}
         />
         {errors.message && <p className="mt-1 text-sm text-red-600">{errors.message.message}</p>}
       </div>
@@ -163,11 +167,11 @@ export function GeneralContactForm({ source }: GeneralContactFormProps) {
         fullWidth
         size="lg"
       >
-        {submitState === 'loading' ? 'Надсилаємо...' : 'Надіслати'}
+        {submitState === 'loading' ? f.submitting : f.submit}
       </CTAButton>
 
       <p className="text-xs text-bark/50 text-center">
-        Відповідаємо протягом кількох годин
+        {f.footerNote}
       </p>
     </form>
   )

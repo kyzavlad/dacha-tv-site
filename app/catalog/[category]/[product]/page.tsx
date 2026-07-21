@@ -7,6 +7,7 @@ import {
   getCategoryBySlug,
   getRelatedCatalogProducts,
   getCatalogProductImages,
+  getCatalogProductImageEntries,
   getCatalogProductImage,
   displayProductName,
   hasDisplayablePrice,
@@ -17,6 +18,7 @@ import {
 } from '@/lib/supabase/catalog'
 import { buildSocialMetadata, buildAlternates, stripBrand } from '@/lib/seo'
 import { getRequestLocale } from '@/lib/i18n'
+import { stockStatus, stockLabel } from '@/lib/catalog/stock'
 import { resolveProductSeo } from '@/lib/catalog/localized-seo'
 import { breadcrumbSchema } from '@/lib/schema'
 import { Breadcrumb } from '@/components/catalog/Breadcrumb'
@@ -64,6 +66,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 export default async function ProductPage({ params }: Props) {
   const { category: categorySlug, product: productSlug } = await params
+  const locale = await getRequestLocale()
 
   const [cat, productByCat] = await Promise.all([
     getCategoryBySlug(categorySlug).catch(() => null),
@@ -87,10 +90,18 @@ export default async function ProductPage({ params }: Props) {
   // Resolve images from every known field (main_image_url may be null while the
   // URL lives in images[]/raw_data), normalized + deduped, primary first.
   const images: string[] = getCatalogProductImages(product)
+  // Gallery entries with saved per-image alt (own alt → main_image_alt →
+  // localized product name). Ordering matches `images` (primary first).
+  const imageEntries = getCatalogProductImageEntries(product, displayProductName(product, locale))
 
   const priceOk = hasDisplayablePrice(product)
   const buyable = canAddToCart(product)
   const priceLabel = formatCatalogPrice(product)
+
+  // Public stock availability (supplier rows only; manual/metal → unknown/"ask").
+  const stStatus = stockStatus(product)
+  const stockIsOut = stStatus === 'out_of_stock'
+  const stockText = stockLabel(stStatus, locale)
 
   // For made-to-order manual products that show a "від" price, explain that the
   // figure is a starting point so the price isn't read as final.
@@ -117,7 +128,7 @@ export default async function ProductPage({ params }: Props) {
             '@type': 'Offer',
             priceCurrency: 'UAH',
             price: product.price_uah,
-            availability: 'https://schema.org/InStock',
+            availability: stockIsOut ? 'https://schema.org/OutOfStock' : 'https://schema.org/InStock',
             url: `${process.env.NEXT_PUBLIC_SITE_URL ?? 'https://www.dachatv.com'}/catalog/${categorySlug}/${productSlug}`,
           },
         }
@@ -156,8 +167,8 @@ export default async function ProductPage({ params }: Props) {
           <div>
             <div className="relative aspect-square bg-white rounded-2xl overflow-hidden shadow-sm border border-honey-100">
               <SafeImage
-                src={images[0] ?? null}
-                alt={displayProductName(product)}
+                src={imageEntries[0]?.url ?? images[0] ?? null}
+                alt={imageEntries[0]?.alt || displayProductName(product)}
                 className="absolute inset-0 h-full w-full object-contain p-4"
                 fallback={
                   <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-honey-50 to-forest-50 gap-3">
@@ -169,13 +180,13 @@ export default async function ProductPage({ params }: Props) {
                 }
               />
             </div>
-            {images.length > 1 && (
+            {imageEntries.length > 1 && (
               <div className="flex gap-2 mt-3 overflow-x-auto">
-                {images.slice(1, 6).map((url, i) => (
-                  <div key={url} className="relative w-16 h-16 flex-shrink-0 rounded-xl overflow-hidden bg-white border border-honey-100">
+                {imageEntries.slice(1, 6).map((entry, i) => (
+                  <div key={entry.url} className="relative w-16 h-16 flex-shrink-0 rounded-xl overflow-hidden bg-white border border-honey-100">
                     <SafeImage
-                      src={url}
-                      alt={`${displayProductName(product)} фото ${i + 2}`}
+                      src={entry.url}
+                      alt={entry.alt || `${displayProductName(product)} фото ${i + 2}`}
                       className="absolute inset-0 h-full w-full object-contain p-1"
                       fallback={<div className="absolute inset-0 flex items-center justify-center text-lg opacity-30">📦</div>}
                     />
@@ -222,6 +233,18 @@ export default async function ProductPage({ params }: Props) {
               </p>
             )}
 
+            {/* Availability badge — supplier stock only (manual/metal excluded). */}
+            {stStatus !== 'unknown' && (
+              <div className="mb-4">
+                <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-sm font-medium ${
+                  stStatus === 'in_stock' ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500'
+                }`}>
+                  <span className={`w-2 h-2 rounded-full ${stStatus === 'in_stock' ? 'bg-green-500' : 'bg-gray-400'}`} aria-hidden="true" />
+                  {stockText}
+                </span>
+              </div>
+            )}
+
             {/* CTA */}
             <div className="space-y-3 mb-6">
               {buyable ? (
@@ -235,6 +258,8 @@ export default async function ProductPage({ params }: Props) {
                       price: product.price_uah as number,
                       imageUrl: images[0] ?? undefined,
                     }}
+                    outOfStock={stockIsOut}
+                    outOfStockLabel={stockText}
                   />
                   <BuyNowButton
                     item={{
@@ -245,6 +270,7 @@ export default async function ProductPage({ params }: Props) {
                       price: product.price_uah as number,
                       imageUrl: images[0] ?? undefined,
                     }}
+                    outOfStock={stockIsOut}
                   />
                 </>
               ) : product.status === 'published' ? (

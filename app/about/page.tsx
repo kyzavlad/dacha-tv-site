@@ -6,6 +6,8 @@ import { SocialIcons } from '@/components/shared/SocialIcons'
 import { CTAButton } from '@/components/shared/CTAButton'
 import { ApiaryTrust } from '@/components/shared/ApiaryTrust'
 import { getSiteSettings } from '@/lib/supabase/queries'
+import { getRequestLocale } from '@/lib/i18n'
+import { pageDict } from '@/lib/i18n/pages'
 
 export const metadata: Metadata = {
   title: 'Про нас',
@@ -27,6 +29,8 @@ export const metadata: Metadata = {
 const ABOUT_IMAGE = '/images/dacha-tv/about-apiary.jpg'
 
 export default async function AboutPage() {
+  const locale = await getRequestLocale()
+  const t = pageDict(locale)
   const siteSettings = await getSiteSettings().catch(() => null)
   const hasAboutImage = existsSync(join(process.cwd(), 'public', ABOUT_IMAGE))
 
@@ -35,12 +39,12 @@ export default async function AboutPage() {
       {/* Header */}
       <div className="bg-white border-b border-gray-100 py-12 md:py-16">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <span className="text-xs font-semibold text-honey-700 uppercase tracking-widest mb-3 block">Про нас</span>
+          <span className="text-xs font-semibold text-honey-700 uppercase tracking-widest mb-3 block">{t.about.eyebrow}</span>
           <h1 className="font-serif text-4xl md:text-5xl font-bold text-bark mb-4">
-            Наша пасіка, наша робота
+            {t.about.title}
           </h1>
           <p className="text-gray-500 text-lg max-w-2xl">
-            Сімейна пасіка на Харківщині: наша історія, наш підхід, наші бджоли.
+            {t.about.intro}
           </p>
         </div>
       </div>
@@ -50,7 +54,7 @@ export default async function AboutPage() {
         {/* Story */}
         <section aria-labelledby="story-heading">
           <h2 id="story-heading" className="font-serif text-3xl font-bold text-bark mb-6">
-            Наша історія
+            {t.about.storyTitle}
           </h2>
 
           {hasAboutImage && (
@@ -67,30 +71,17 @@ export default async function AboutPage() {
           )}
 
           <div className="space-y-5 text-bark/80 leading-relaxed text-lg">
-            <p>
-              Дача TV: це сімейна пасіка на Харківщині. Ми тримаємо бджіл вже багато років, і кожен крок нашого виробництва: від підготовки вуликів навесні до фасування осіннього меду: це наша власна праця.
-            </p>
-            <p>
-              Все починалося як особисте захоплення. Поступово кількість вуликів росла, якість меду покращувалася, і ми зрозуміли, що хочемо ділитися не лише продуктом, але й знаннями. Так з&apos;явився YouTube-канал.
-            </p>
-            <p>
-              Сьогодні ми виробляємо мед кількох сортів, продаємо бджолопакети та вулики, і продовжуємо відкрито розповідати про свою роботу. Бо чесність: це не маркетинг. Це наш спосіб.
-            </p>
+            {t.about.story.map((para, i) => <p key={i}>{para}</p>)}
           </div>
         </section>
 
         {/* Apiary */}
         <section aria-labelledby="apiary-heading">
           <h2 id="apiary-heading" className="font-serif text-3xl font-bold text-bark mb-6">
-            Наша пасіка
+            {t.about.apiaryTitle}
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {[
-              { label: 'Місцезнаходження', value: 'Коротич, Харківська область' },
-              { label: 'Формат', value: 'Сімейна пасіка, пряма поставка' },
-              { label: 'Продукти', value: 'Мед 6 сортів, пилок, прополіс, горіхи в меду' },
-              { label: 'Бджолопакети', value: 'Buckfast, Українська степова, Карніка' },
-            ].map(({ label, value }) => (
+            {t.about.apiaryFacts.map(({ label, value }) => (
               <div key={label} className="bg-white rounded-xl p-5 border border-honey-100">
                 <dt className="text-sm font-semibold text-honey-700 uppercase tracking-wider mb-1">{label}</dt>
                 <dd className="font-serif text-lg text-bark">{value}</dd>
@@ -102,28 +93,20 @@ export default async function AboutPage() {
         {/* Approach */}
         <section aria-labelledby="approach-heading">
           <h2 id="approach-heading" className="font-serif text-3xl font-bold text-bark mb-6">
-            Наш підхід
+            {t.about.approachTitle}
           </h2>
           <div className="space-y-4 text-bark/80 leading-relaxed text-lg">
-            <p>
-              Ми самі доглядаємо за вуликами, самі качаємо, самі пакуємо. Жодних посередників. Ніякого змішування сортів. Жодного підігріву меду вище природних температур.
-            </p>
-            <p>
-              Кожен сорт збирається у свій природний час: коли конкретна культура цвіте і нектар дозріває. Акація в травні, липа в липні, соняшник наприкінці серпня. Це й робить смак кожного сорту особливим.
-            </p>
-            <p>
-              Якщо меду немає: ми говоримо про це прямо. Сезонний продукт не може бути доступним цілий рік в необмеженій кількості. Ми не торгуємо тим, чого немає.
-            </p>
+            {t.about.approach.map((para, i) => <p key={i}>{para}</p>)}
           </div>
         </section>
 
         {/* YouTube */}
         <section aria-labelledby="youtube-about-heading">
           <h2 id="youtube-about-heading" className="font-serif text-3xl font-bold text-bark mb-4">
-            YouTube та контент
+            {t.about.youtubeTitle}
           </h2>
           <p className="text-bark/70 text-lg mb-8 leading-relaxed">
-            На нашому YouTube-каналі ми показуємо пасіку зсередини: підготовку до сезону, роботу з вуликами, збір та фасування меду. Підписуйтесь: ми нічого не приховуємо.
+            {t.about.youtubeBody}
           </p>
 
           {/* YouTube channel card */}
@@ -135,9 +118,9 @@ export default async function AboutPage() {
                 </svg>
               </div>
               <div className="flex-1">
-                <p className="font-serif text-xl font-bold text-cream mb-1">Дача TV на YouTube</p>
+                <p className="font-serif text-xl font-bold text-cream mb-1">{t.about.youtubeCardTitle}</p>
                 <p className="text-cream/60 text-sm leading-relaxed">
-                  Пасіка зсередини: підготовка вуликів, качка меду, робота з бджолопакетами: відкрито, без прикрас.
+                  {t.about.youtubeCardBody}
                 </p>
               </div>
               {siteSettings?.youtube_url && (
@@ -147,7 +130,7 @@ export default async function AboutPage() {
                   rel="noopener noreferrer"
                   className="flex-shrink-0 inline-flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white font-semibold px-6 py-3 rounded-full transition-colors min-h-[48px] whitespace-nowrap"
                 >
-                  Відкрити канал
+                  {t.about.openChannel}
                 </a>
               )}
             </div>
@@ -165,7 +148,7 @@ export default async function AboutPage() {
         {/* Apiary trust / passport */}
         <section aria-labelledby="trust-section-heading">
           <h2 id="trust-section-heading" className="font-serif text-3xl font-bold text-bark mb-6">
-            Довіра та прозорість
+            {t.about.trustTitle}
           </h2>
           <ApiaryTrust />
         </section>
@@ -173,10 +156,10 @@ export default async function AboutPage() {
         {/* CTA */}
         <section className="bg-honey-50 rounded-2xl p-8 text-center">
           <h2 className="font-serif text-2xl font-bold text-bark mb-3">
-            Готові замовити натуральний мед?
+            {t.about.ctaTitle}
           </h2>
-          <p className="text-bark/70 mb-6">Перегляньте наш каталог і оберіть улюблений сорт.</p>
-          <CTAButton href="/honey" size="lg">Перейти до каталогу</CTAButton>
+          <p className="text-bark/70 mb-6">{t.about.ctaBody}</p>
+          <CTAButton href="/honey" size="lg">{t.about.ctaButton}</CTAButton>
         </section>
       </div>
     </div>

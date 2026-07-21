@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { SafeImage } from '@/components/shared/SafeImage'
+import { DEFAULT_LOCALE, type Locale } from '@/lib/i18n'
+import { catalogDict } from '@/lib/i18n/sections/catalog'
 
 interface Suggestion {
   slug: string
@@ -17,8 +19,9 @@ interface Suggestion {
 // Storefront search with live typeahead. Still a real GET form (submits ?q= to
 // /catalog) so it works with JS disabled and preserves shareable search URLs;
 // the dropdown is progressive enhancement backed by /api/catalog/suggest.
-export function CatalogSearchBar({ defaultValue = '' }: { defaultValue?: string }) {
+export function CatalogSearchBar({ defaultValue = '', locale = DEFAULT_LOCALE }: { defaultValue?: string; locale?: Locale }) {
   const router = useRouter()
+  const t = catalogDict(locale)
   const [value, setValue] = useState(defaultValue)
   const [suggestions, setSuggestions] = useState<Suggestion[]>([])
   const [open, setOpen] = useState(false)
@@ -27,8 +30,12 @@ export function CatalogSearchBar({ defaultValue = '' }: { defaultValue?: string 
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null)
   const controller = useRef<AbortController | null>(null)
 
-  useEffect(() => {
-    const q = value.trim()
+  // Debounced fetch is triggered directly from the input's onChange handler
+  // (a user-initiated event, not an effect keyed on `value`) so state updates
+  // stay tied to the interaction that caused them.
+  function handleValueChange(next: string) {
+    setValue(next)
+    const q = next.trim()
     if (debounce.current) clearTimeout(debounce.current)
     if (q.length < 2) {
       setSuggestions([])
@@ -47,8 +54,11 @@ export function CatalogSearchBar({ defaultValue = '' }: { defaultValue?: string 
         /* aborted or offline — keep the plain form usable */
       }
     }, 220)
+  }
+
+  useEffect(() => {
     return () => { if (debounce.current) clearTimeout(debounce.current) }
-  }, [value])
+  }, [])
 
   // Close on outside click.
   useEffect(() => {
@@ -80,12 +90,12 @@ export function CatalogSearchBar({ defaultValue = '' }: { defaultValue?: string 
           type="search"
           name="q"
           value={value}
-          onChange={(e) => setValue(e.target.value)}
+          onChange={(e) => handleValueChange(e.target.value)}
           onFocus={() => suggestions.length > 0 && setOpen(true)}
           onKeyDown={onKeyDown}
           autoComplete="off"
-          placeholder="Пошук товарів за назвою або артикулом…"
-          aria-label="Пошук товарів"
+          placeholder={t.searchPlaceholder}
+          aria-label={t.searchAria}
           aria-expanded={open}
           className="flex-1 rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm text-bark placeholder:text-gray-400 focus:outline-none focus:border-honey-400"
         />
@@ -93,7 +103,7 @@ export function CatalogSearchBar({ defaultValue = '' }: { defaultValue?: string 
           type="submit"
           className="rounded-xl bg-honey-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-honey-800 transition-colors"
         >
-          Знайти
+          {t.searchButton}
         </button>
       </form>
 
@@ -130,7 +140,7 @@ export function CatalogSearchBar({ defaultValue = '' }: { defaultValue?: string 
               className="block px-3 py-2 text-center text-xs font-semibold text-honey-700 hover:bg-honey-50"
               onClick={() => setOpen(false)}
             >
-              Показати всі результати →
+              {t.showAllResults}
             </Link>
           </li>
         </ul>

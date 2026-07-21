@@ -5,6 +5,9 @@ import { join } from 'path'
 import { PhoneLink } from '@/components/shared/PhoneLink'
 import { LanguageSwitcher } from '@/components/shared/LanguageSwitcher'
 import { PRIMARY_NAV, FOOTER_SECONDARY_NAV } from '@/lib/navigation'
+import { getRequestLocale } from '@/lib/i18n'
+import { pageDict } from '@/lib/i18n/pages'
+import { navLabel } from '@/lib/i18n-ui'
 import {
   LAUNCH_PHONE,
   LAUNCH_PHONE_SECONDARY,
@@ -63,7 +66,9 @@ function TelegramIcon() {
   )
 }
 
-export function Footer({ siteSettings }: FooterProps) {
+export async function Footer({ siteSettings }: FooterProps) {
+  const locale = await getRequestLocale()
+  const t = pageDict(locale)
   const phone = siteSettings?.phone || LAUNCH_PHONE
   const phoneSecondary = siteSettings?.phone_secondary || LAUNCH_PHONE_SECONDARY
   const address = siteSettings?.address_full || LAUNCH_ADDRESS
@@ -100,9 +105,7 @@ export function Footer({ siteSettings }: FooterProps) {
               <span className="font-serif font-bold text-2xl text-bark">Дача TV</span>
             </Link>
             <p className="text-sm text-gray-500 leading-relaxed mb-5">
-              Натуральні продукти, товари для господарства та корисні рішення для дому.
-              Мед і продукти пасіки, квіти, лаванда, металопрофіль і магазин — напряму від
-              виробників та партнерів.
+              {t.footer.tagline}
             </p>
 
             {/* Social icons — circular border style */}
@@ -125,16 +128,16 @@ export function Footer({ siteSettings }: FooterProps) {
           {/* Navigation column — same primary nav as the header */}
           <div>
             <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-4">
-              Навігація
+              {t.footer.navigation}
             </h3>
-            <nav className="flex flex-col gap-2.5" aria-label="Нижнє меню">
+            <nav className="flex flex-col gap-2.5" aria-label={t.footer.navigation}>
               {PRIMARY_NAV.map(({ href, label }) => (
                 <Link
                   key={href}
                   href={href}
                   className="text-sm text-gray-600 hover:text-bark transition-colors"
                 >
-                  {label}
+                  {navLabel(href, locale, label)}
                 </Link>
               ))}
             </nav>
@@ -143,16 +146,16 @@ export function Footer({ siteSettings }: FooterProps) {
           {/* Info column */}
           <div>
             <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-4">
-              Інформація
+              {t.footer.information}
             </h3>
-            <nav className="flex flex-col gap-2.5" aria-label="Інформація">
+            <nav className="flex flex-col gap-2.5" aria-label={t.footer.information}>
               {FOOTER_SECONDARY_NAV.map(({ href, label }) => (
                 <Link
                   key={label}
                   href={href}
                   className="text-sm text-gray-600 hover:text-bark transition-colors"
                 >
-                  {label}
+                  {navLabel(href, locale, label)}
                 </Link>
               ))}
             </nav>
@@ -161,7 +164,7 @@ export function Footer({ siteSettings }: FooterProps) {
           {/* Contact column */}
           <div>
             <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-4">
-              Контакти
+              {t.footer.contacts}
             </h3>
             <div className="space-y-4">
               <div>
@@ -189,7 +192,7 @@ export function Footer({ siteSettings }: FooterProps) {
                   className="inline-flex items-center gap-1.5 text-sm text-gray-600 hover:text-bark transition-colors"
                 >
                   <TelegramIcon />
-                  Написати в Telegram
+                  {t.contact.telegramWrite}
                 </a>
               )}
             </div>
@@ -204,10 +207,10 @@ export function Footer({ siteSettings }: FooterProps) {
             </p>
             <div className="flex items-center gap-4">
               <Link href="/delivery" className="text-xs text-gray-400 hover:text-bark transition-colors">
-                Оплата та доставка
+                {navLabel('/delivery', locale, 'Доставка')}
               </Link>
               <Link href="/privacy" className="text-xs text-gray-400 hover:text-bark transition-colors">
-                Конфіденційність
+                {navLabel('/privacy', locale, 'Політика конфіденційності')}
               </Link>
             </div>
           </div>

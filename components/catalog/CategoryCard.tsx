@@ -2,10 +2,13 @@ import Link from 'next/link'
 import type { CatalogCategory } from '@/types'
 import { SafeImage } from '@/components/shared/SafeImage'
 import { categoryDisplayName } from '@/lib/supabase/catalog'
+import { DEFAULT_LOCALE, type Locale } from '@/lib/i18n'
+import { catalogDict } from '@/lib/i18n/sections/catalog'
 
 interface CategoryCardProps {
   category: CatalogCategory
   productCount?: number
+  locale?: Locale
 }
 
 function categoryIcon(slug: string): string {
@@ -25,7 +28,8 @@ function categoryIcon(slug: string): string {
   return '📦'
 }
 
-export function CategoryCard({ category, productCount }: CategoryCardProps) {
+export function CategoryCard({ category, productCount, locale = DEFAULT_LOCALE }: CategoryCardProps) {
+  const t = catalogDict(locale)
   const displayName = categoryDisplayName(category.name_ua)
   return (
     <Link
@@ -51,7 +55,7 @@ export function CategoryCard({ category, productCount }: CategoryCardProps) {
           {displayName}
         </h2>
         {productCount != null && productCount > 0 && (
-          <p className="text-xs text-gray-400">{productCount} товарів</p>
+          <p className="text-xs text-gray-400">{productCount} {t.items}</p>
         )}
         {category.description && (
           <p className="text-xs text-bark/50 line-clamp-2 mt-1">{category.description}</p>
