@@ -35,7 +35,11 @@ manual + metal protection; stock columns present; price/image lock counts. Run
 7. **Publish only SEO-ready drafts** — `publishDraftProducts({ quality: true })`:
    flips to `published` only rows with image + meta_title + meta_description.
 8. **Telegram report** — post per-cycle summary: processed / inserted / updated /
-   approved / failed / remaining / `errorGroups`, plus `completed_with_errors`.
+   approved / remaining, and the CLEARLY SEPARATED failure fields:
+   `hard_errors` (real DB/write failures), `diagnostic_issues` (non-fatal
+   data-quality: missing_sku/duplicate_sku_in_feed/invalid_record/invalid_price),
+   `errorGroups` (per-category counts, always present), and
+   `completed_with_errors` (true only when `hard_errors > 0`).
 
 ## Loop / cadence
 

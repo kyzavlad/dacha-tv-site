@@ -6,9 +6,14 @@ test('source=supplier is included', () => {
   assert.equal(isStorefrontProduct({ source: 'supplier', lead_type: null }), true)
 })
 
-test('legacy source=NULL supplier row is included', () => {
-  assert.equal(isStorefrontProduct({ source: null, lead_type: null }), true)
-  assert.equal(isStorefrontProduct({}), true) // absent source treated as legacy supplier
+test('legacy source=NULL row is included ONLY with supplier identity', () => {
+  // Has supplier identity → genuine legacy supplier row → included.
+  assert.equal(isStorefrontProduct({ source: null, supplier_sku: 'ABC-1' }), true)
+  assert.equal(isStorefrontProduct({ source: null, supplier_product_id: 'uuid-1' }), true)
+  // NULL source WITHOUT supplier identity → unknown legacy manual → EXCLUDED.
+  assert.equal(isStorefrontProduct({ source: null, lead_type: null }), false)
+  assert.equal(isStorefrontProduct({}), false)
+  assert.equal(isStorefrontProduct({ source: null, supplier_sku: null, supplier_product_id: null }), false)
 })
 
 test('manual + lead_type=metal is included', () => {
@@ -21,8 +26,8 @@ test('other manual products are excluded', () => {
 })
 
 test('the PostgREST scope clause encodes exactly this rule', () => {
-  // supplier OR null OR (manual AND metal)
+  // supplier OR (null AND has-supplier-identity) OR (manual AND metal)
   assert.match(STOREFRONT_SCOPE_OR, /source\.eq\.supplier/)
-  assert.match(STOREFRONT_SCOPE_OR, /source\.is\.null/)
+  assert.match(STOREFRONT_SCOPE_OR, /and\(source\.is\.null,or\(supplier_sku\.not\.is\.null,supplier_product_id\.not\.is\.null\)\)/)
   assert.match(STOREFRONT_SCOPE_OR, /and\(source\.eq\.manual,lead_type\.eq\.metal\)/)
 })

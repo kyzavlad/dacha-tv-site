@@ -159,6 +159,11 @@ async function main() {
     .in('slug', METAL_CONTENT_SLUGS)
   if (readErr) fail(`read metal rows: ${readErr.message}`)
   const rows = (rowsData ?? []) as Row[]
+  // Duplicate-slug guard: two rows sharing a metal slug is a data hazard — STOP.
+  const slugCounts = new Map<string, number>()
+  for (const r of rows) slugCounts.set(String(r.slug), (slugCounts.get(String(r.slug)) ?? 0) + 1)
+  const dupSlugs = [...slugCounts].filter(([, n]) => n > 1).map(([s]) => s)
+  if (dupSlugs.length) fail(`Duplicate slug(s) in catalog_products: ${dupSlugs.join(', ')} — refusing to proceed.`)
   const bySlug = new Map(rows.map((r) => [String(r.slug), r]))
 
   const missingSlugs = METAL_CONTENT_SLUGS.filter((s) => !bySlug.has(s))
@@ -166,12 +171,25 @@ async function main() {
 
   // Read existing ru/en translations for the found products.
   const ids = rows.map((r) => r.id)
-  const { data: transData } = ids.length
+  const { data: transData, error: transErr } = ids.length
     ? await client.from('catalog_product_translations')
         .select('product_id, locale, name, short_description, description, seo_description, meta_title, meta_description, seo_keywords')
         .in('product_id', ids).in('locale', ['ru', 'en'])
-    : { data: [] as TransRow[] }
+    : { data: [] as TransRow[], error: null }
+  if (transErr) fail(`read translations (check migration 20260721230000): ${transErr.message}`)
   const transByKey = new Map((transData as TransRow[] ?? []).map((t) => [`${t.product_id}:${t.locale}`, t]))
+
+  // APPLY guard: require exactly 11/11 rows present (never partially fill the set).
+  if (args.apply && rows.length !== METAL_CONTENT_SLUGS.length) {
+    fail(`APPLY requires all ${METAL_CONTENT_SLUGS.length} metal rows; found ${rows.length}. Missing: ${missingSlugs.join(', ')}.`)
+  }
+
+  // Fields the base UPDATE may touch — captured in full for a lossless rollback.
+  const BASE_ROLLBACK_FIELDS: (keyof Row)[] = [
+    'name_ua', 'short_description', 'description', 'description_ua', 'seo_description',
+    'meta_title', 'meta_description', 'seo_keywords', 'main_image_alt',
+    'attributes', 'image_metadata', 'source', 'lead_type', 'inquiry_only',
+  ]
 
   const plan: Array<{ slug: string; id: string; base: Change[]; ru: Change[]; en: Change[] }> = []
   const rollback: Record<string, unknown> = {}
@@ -185,23 +203,40 @@ async function main() {
     plan.push({ slug: entry.slug, id: row.id, base: base.changes, ru: ru.changes, en: en.changes })
 
     if (args.apply) {
-      // Rollback snapshot: prior values of every field about to change.
+      // ── RE-READ by exact id at write time (guards against a manual edit made
+      // between dry-run and apply). Verify identity, then RECOMPUTE the plan
+      // against the FRESH row so only fields STILL empty are filled. ─────────────
+      const { data: freshData, error: freshErr } = await client
+        .from('catalog_products')
+        .select('id, slug, name_ua, short_description, description, description_ua, seo_description, meta_title, meta_description, seo_keywords, main_image_url, main_image_alt, images, image_metadata, attributes, source, lead_type, inquiry_only')
+        .eq('id', row.id).maybeSingle()
+      if (freshErr) fail(`re-read ${entry.slug}: ${freshErr.message}`)
+      const fresh = freshData as Row | null
+      if (!fresh) fail(`row ${entry.slug} (${row.id}) vanished before write — aborting.`)
+      if (String(fresh.slug) !== entry.slug) fail(`slug changed for ${row.id}: expected ${entry.slug}, got ${fresh.slug} — aborting.`)
+      const stillMetal = fresh.lead_type === 'metal' || fresh.source === 'manual'
+      if (!stillMetal) fail(`row ${entry.slug} is no longer a manual/metal row — aborting.`)
+
+      // Full prior snapshot for lossless rollback (base + attributes + image_metadata + ru + en).
       rollback[entry.slug] = {
-        id: row.id,
-        base_prior: Object.fromEntries(base.changes.map((c) => [c.field, c.from])),
+        id: fresh.id,
+        base_prior: Object.fromEntries(BASE_ROLLBACK_FIELDS.map((f) => [f, fresh[f] ?? null])),
         ru_prior: transByKey.get(`${row.id}:ru`) ?? null,
         en_prior: transByKey.get(`${row.id}:en`) ?? null,
       }
-      // Apply base.
-      if (Object.keys(base.update).length) {
-        const { error } = await client.from('catalog_products').update(base.update).eq('id', row.id)
+
+      // Recompute against the fresh row — fill ONLY fields still empty at write time.
+      const freshBase = planBaseChanges(fresh, entry)
+      if (Object.keys(freshBase.update).length) {
+        const { error } = await client.from('catalog_products')
+          .update({ ...freshBase.update, updated_at: new Date().toISOString() })
+          .eq('id', fresh.id).eq('slug', entry.slug) // slug re-checked in the WHERE
         if (error) fail(`update ${entry.slug}: ${error.message}`)
       }
-      // Upsert ru/en (only when there is something to fill).
       for (const [locale, t] of [['ru', ru], ['en', en]] as const) {
         if (Object.keys(t.row).length) {
           const { error } = await client.from('catalog_product_translations')
-            .upsert({ product_id: row.id, locale, ...t.row, updated_at: new Date().toISOString() }, { onConflict: 'product_id,locale' })
+            .upsert({ product_id: fresh.id, locale, ...t.row, updated_at: new Date().toISOString() }, { onConflict: 'product_id,locale' })
           if (error) fail(`upsert ${entry.slug} ${locale}: ${error.message}`)
         }
       }

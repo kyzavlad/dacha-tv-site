@@ -59,8 +59,26 @@ export interface GroupDetail {
   firstOffset: number | null
 }
 
+// HARD errors = real database/write failures that mean a record was NOT persisted
+// as intended. Everything else is a non-fatal DIAGNOSTIC issue (malformed/benign
+// feed records that are safely skipped or written without a price). Only hard
+// errors flag the cycle as completed_with_errors.
+export const HARD_ERROR_GROUPS: ReadonlySet<SupplierErrorGroup> = new Set([
+  'database_constraint', 'upsert_failed', 'unknown',
+])
+export function isHardError(group: SupplierErrorGroup): boolean {
+  return HARD_ERROR_GROUPS.has(group)
+}
+
 export interface SupplierErrorReport {
+  // total = hardErrors + diagnosticIssues (kept for backward compatibility).
   total: number
+  // Real DB/write failures only (database_constraint / upsert_failed / unknown).
+  hardErrors: number
+  // Non-fatal data-quality issues (missing_sku / duplicate_sku_in_feed /
+  // invalid_record / invalid_price) — records skipped or written without a price.
+  diagnosticIssues: number
+  // True only when hardErrors > 0 — a benign diagnostic issue never flags this.
   completedWithErrors: boolean
   groups: Record<string, number>
   details: Record<string, GroupDetail>
@@ -69,11 +87,11 @@ export interface SupplierErrorReport {
 export const SAMPLE_CAP = 10
 
 export function emptyErrorReport(): SupplierErrorReport {
-  return { total: 0, completedWithErrors: false, groups: {}, details: {} }
+  return { total: 0, hardErrors: 0, diagnosticIssues: 0, completedWithErrors: false, groups: {}, details: {} }
 }
 
-// Record `count` failures of `group`. Mutates + returns the report so callers can
-// accumulate across feed windows. Samples/codes are bounded and sanitized.
+// Record `count` occurrences of `group`. Mutates + returns the report so callers
+// can accumulate across feed windows. Samples/codes are bounded and sanitized.
 export function recordError(
   report: SupplierErrorReport,
   group: SupplierErrorGroup,
@@ -82,7 +100,9 @@ export function recordError(
 ): SupplierErrorReport {
   if (count <= 0) return report
   report.total += count
-  report.completedWithErrors = report.total > 0
+  if (isHardError(group)) report.hardErrors += count
+  else report.diagnosticIssues += count
+  report.completedWithErrors = report.hardErrors > 0
   report.groups[group] = (report.groups[group] ?? 0) + count
   const d = report.details[group] ?? { count: 0, sampleSkus: [], code: null, message: null, firstOffset: null }
   d.count += count

@@ -44,11 +44,32 @@ npx tsx scripts/fill-metal-content.ts
 npx tsx scripts/fill-metal-content.ts --apply --current-ref=<liveref>
 ```
 
+## Apply-time safety (hardened)
+
+Before every production UPDATE the apply path:
+- requires **exactly 11/11** metal rows present (never partially fills the set);
+- **stops** on any duplicate slug in `catalog_products`;
+- **re-reads the row by exact id** at write time, verifies the **slug is unchanged**
+  and the row is **still manual/metal**, then **recomputes** the plan against the
+  fresh row so only fields *still empty at write time* are filled (a manual edit
+  made after the dry-run is never overwritten);
+- re-checks the slug in the UPDATE `WHERE` clause;
+- surfaces translation-read errors (fails fast if the v5 migration isn't applied).
+
 ## Rollback
 
-`metal-fill-rollback.json` captures, per slug, the prior value of every field the
-apply changed (base + the full prior ru/en translation rows). To revert, write
-those prior values back (empty/null restores the pre-fill state).
+`metal-fill-rollback.json` captures, per slug, the **full prior snapshot**: every
+writable base field (incl. `attributes` and `image_metadata`) plus the complete
+prior RU and EN translation rows. Reverse it with the executable script:
+
+```bash
+npx tsx scripts/rollback-metal-content.ts                       # dry run
+npx tsx scripts/rollback-metal-content.ts --apply --current-ref=<ref>
+```
+
+It restores base fields + attributes + image_metadata, and restores each RU/EN
+row to its prior state — or **deletes** a translation row the fill created where
+none existed before.
 
 ## Specs NOT invented — require manual entry
 

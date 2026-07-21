@@ -70,12 +70,25 @@ export const NATURAL_CATEGORY_SLUGS = ['naturalni-produkty', 'zhyvi-olii-holodno
 // product (natural products, cold-pressed oils, gift sets, …) is presented in its
 // own section and is excluded here. Source-based (not category-based) so it can
 // never leak a non-natural manual row the way the old category filter did.
-export const STOREFRONT_SCOPE_OR = `source.eq.supplier,source.is.null,and(source.eq.manual,lead_type.eq.metal)`
+// Storefront scope (PostgREST .or()): a supplier row, OR a genuine LEGACY supplier
+// row (source IS NULL but carrying supplier identity — supplier_sku or
+// supplier_product_id), OR a manual METAL row. A source=NULL row WITHOUT supplier
+// identity is unknown legacy manual content and is EXCLUDED (the old
+// `source.is.null` clause was too broad and leaked such rows).
+export const STOREFRONT_SCOPE_OR =
+  `source.eq.supplier,` +
+  `and(source.is.null,or(supplier_sku.not.is.null,supplier_product_id.not.is.null)),` +
+  `and(source.eq.manual,lead_type.eq.metal)`
 
 // Pure predicate mirror of STOREFRONT_SCOPE_OR for unit tests / in-memory checks.
-export function isStorefrontProduct(p: { source?: string | null; lead_type?: string | null }): boolean {
+export function isStorefrontProduct(p: {
+  source?: string | null; lead_type?: string | null
+  supplier_sku?: string | null; supplier_product_id?: string | null
+}): boolean {
   const src = p.source ?? null
-  if (src === 'supplier' || src === null) return true
+  if (src === 'supplier') return true
+  // Legacy supplier row: NULL source but proven supplier identity.
+  if (src === null) return p.supplier_sku != null || p.supplier_product_id != null
   return src === 'manual' && p.lead_type === 'metal'
 }
 

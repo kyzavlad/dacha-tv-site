@@ -51,9 +51,17 @@ export function CatalogImageManager({ initialImages, onUploadingChange, productI
   const anyUploading = slots.some((s) => s.uploading)
   useEffect(() => { onUploadingChange?.(anyUploading) }, [anyUploading, onUploadingChange])
 
-  // Revoke any outstanding object URLs on unmount to avoid leaking blob memory.
+  // Track the live object URLs in a ref so the unmount cleanup can revoke them
+  // WITHOUT calling setState during unmount (which React warns about and which
+  // does nothing on an unmounting component).
+  const blobUrlsRef = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    const live = new Set(slots.filter((s) => s.isBlob).map((s) => s.preview))
+    blobUrlsRef.current = live
+  }, [slots])
   useEffect(() => () => {
-    setSlots((prev) => { prev.forEach((s) => { if (s.isBlob) URL.revokeObjectURL(s.preview) }); return prev })
+    for (const url of blobUrlsRef.current) URL.revokeObjectURL(url)
+    blobUrlsRef.current.clear()
   }, [])
 
   // Patch by STABLE id (not array index): concurrent uploads reorder/append the

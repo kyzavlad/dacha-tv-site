@@ -73,3 +73,21 @@ test('recordError ignores non-positive counts', () => {
   assert.equal(r.total, 0)
   assert.deepEqual(r.groups, {})
 })
+
+test('hard errors vs diagnostic issues are separated; completed_with_errors is hard-only', () => {
+  const r = emptyErrorReport()
+  // Diagnostic (non-fatal) issues must NOT flag completed_with_errors.
+  recordError(r, 'invalid_price', 100)
+  recordError(r, 'duplicate_sku_in_feed', 50)
+  recordError(r, 'missing_sku', 5)
+  recordError(r, 'invalid_record', 3)
+  assert.equal(r.hardErrors, 0)
+  assert.equal(r.diagnosticIssues, 158)
+  assert.equal(r.completedWithErrors, false, 'diagnostic issues alone never flag completed_with_errors')
+  // A real DB failure flips it.
+  recordError(r, 'database_constraint', 2, { code: '23505' })
+  recordError(r, 'upsert_failed', 1, { code: '42883' })
+  assert.equal(r.hardErrors, 3)
+  assert.equal(r.completedWithErrors, true)
+  assert.equal(r.total, 161) // hard + diagnostic
+})

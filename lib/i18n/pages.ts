@@ -398,6 +398,22 @@ const DICT = {
     cartTotal: { uk: 'Разом', ru: 'Итого', en: 'Total' },
     checkout: { uk: 'Оформити замовлення', ru: 'Оформить заказ', en: 'Checkout' },
     remove: { uk: 'Видалити', ru: 'Удалить', en: 'Remove' },
+    // Checkout revalidation errors (authoritative, server-side).
+    errOutOfStock: {
+      uk: 'Деякі товари закінчились: {names}. Видаліть їх з кошика, щоб оформити замовлення.',
+      ru: 'Некоторые товары закончились: {names}. Удалите их из корзины, чтобы оформить заказ.',
+      en: 'Some items are out of stock: {names}. Remove them from the cart to place your order.',
+    },
+    errStockCheckFailed: {
+      uk: 'Не вдалося перевірити наявність. Спробуйте ще раз за хвилину.',
+      ru: 'Не удалось проверить наличие. Попробуйте ещё раз через минуту.',
+      en: 'Could not verify availability. Please try again in a minute.',
+    },
+    errItemUnavailable: {
+      uk: 'Деякі товари більше недоступні: {names}. Оновіть кошик і спробуйте ще раз.',
+      ru: 'Некоторые товары больше недоступны: {names}. Обновите корзину и попробуйте снова.',
+      en: 'Some items are no longer available: {names}. Update your cart and try again.',
+    },
   },
 } satisfies Record<string, TrTree | { [k: string]: Tr | Tr[] | TrTree }>
 

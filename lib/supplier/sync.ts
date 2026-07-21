@@ -259,7 +259,8 @@ async function handleActiveRuns(
 export interface SyncResult {
   ok: boolean
   synced: number
-  errors: number
+  errors: number              // HARD DB/write failures only (records not persisted)
+  diagnosticIssues?: number   // non-fatal data-quality issues (skipped/priceless rows)
   message: string
   alreadyRunning?: boolean
   priceSample?: Array<{ sku: string; rawFields: Record<string, unknown>; computedUah: number | null }>
@@ -919,7 +920,6 @@ export async function syncSupplierProducts(options?: {
     let processed = 0
     let upserted = 0
     let inserted = 0
-    let errors = 0
     let noPriceCount = 0
     let rateMissingCount = 0
     let pages = 0
@@ -932,16 +932,18 @@ export async function syncSupplierProducts(options?: {
       processed += window.length
       upserted += r.upserted
       inserted += r.inserted
-      errors += r.errors
       noPriceCount += r.noPrice
       rateMissingCount += r.rateMissing
       mergeErrorReport(errorReport, r.errorReport)
       offset += window.length
       pages++
     }
-    // completedWithErrors reflects REAL failures only (build + upsert), not the
-    // benign duplicate-SKU-in-feed category which is also tracked for diagnostics.
-    errorReport.completedWithErrors = errors > 0
+    // completedWithErrors is managed by recordError and reflects HARD DB/write
+    // failures ONLY (database_constraint / upsert_failed / unknown) — never the
+    // benign diagnostic categories (missing_sku, duplicate_sku_in_feed,
+    // invalid_record, invalid_price). No override here.
+    const hardErrors = errorReport.hardErrors
+    const diagnosticIssues = errorReport.diagnosticIssues
 
     const done = offset >= totalInFeed
     const nextOffset = done ? null : offset
@@ -962,13 +964,18 @@ export async function syncSupplierProducts(options?: {
       products_total: upserted,
       products_new: inserted,
       products_updated: updated,
-      products_errors: errors,
+      products_errors: hardErrors,
       error_details: {
         ...debugInfo,
-        synced: upserted, errors, new: inserted,
+        synced: upserted, new: inserted,
+        // Clear, separate meanings:
+        //   hard_errors      = real DB/write failures (a record was NOT persisted)
+        //   diagnostic_issues = non-fatal data-quality (skipped/priceless rows)
+        //   errorGroups       = per-category counts (always present)
+        hard_errors: hardErrors,
+        diagnostic_issues: diagnosticIssues,
         no_price: noPriceCount, rate_missing: rateMissingCount,
         total_in_feed: totalInFeed, processed, pages, next_offset: nextOffset, done,
-        // Truthful failure diagnosis (item 8): grouped counts + safe samples.
         completed_with_errors: errorReport.completedWithErrors,
         errorGroups: errorReport.groups,
         errorDetails: errorReport.details,
@@ -987,10 +994,11 @@ export async function syncSupplierProducts(options?: {
     return {
       ok: upserted > 0,
       synced: upserted,
-      errors,
+      errors: hardErrors,
+      diagnosticIssues,
       completedWithErrors: errorReport.completedWithErrors,
       errorGroups: errorReport.groups,
-      message: `Збережено ${upserted} (нових: ${inserted}, оброблено: ${processed} з ${totalInFeed}; ${tail})${errors > 0 ? `, помилок: ${errors} — див. errorGroups` : ''}`,
+      message: `Збережено ${upserted} (нових: ${inserted}, оброблено: ${processed} з ${totalInFeed}; ${tail})${hardErrors > 0 ? `, DB-помилок: ${hardErrors} — див. errorGroups` : ''}${diagnosticIssues > 0 ? `, діагностичних: ${diagnosticIssues}` : ''}`,
       priceSample: priceSamples,
       priceWarning: warnings.length > 0 ? warnings.join('; ') : undefined,
       totalInFeed, processed, inserted, updated, nextOffset, done,
