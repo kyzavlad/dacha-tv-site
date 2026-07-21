@@ -3,6 +3,8 @@ import { autoSlug } from '@/lib/catalog/csv-utils'
 import { fetchSupplierCategoryMap } from '@/lib/supplier/sync'
 import { buildSupplierUpdatePayload, planGuardedWrites, type CatalogUpdatePayload, type ExistingCatalogOwnership } from '@/lib/catalog/field-ownership'
 import { isValidHumanCategoryName, deterministicCategoryIntro } from '@/lib/catalog/category-fallback'
+import { AUTOMATION_MAX_PUBLISHED } from '@/lib/catalog/automation-config'
+import { normalizeStock } from '@/lib/catalog/stock'
 
 type AdminClient = ReturnType<typeof getAdminClient>
 
@@ -78,6 +80,13 @@ export interface SyncProductsResult {
   errorGroups: Record<string, number>
   duplicateSlugFixed?: number   // rows where slug was regenerated to avoid 23505
   message: string
+  // Truthful batch accounting (never conflate "inserted" with "did work").
+  processed?: number
+  approved?: number
+  failed?: number
+  insertsSkippedCap?: number
+  remaining?: number
+  errorSamples?: string[]
   // Populated on dry-run only
   wouldInsert?: number
   wouldUpdate?: number
@@ -397,16 +406,26 @@ export async function syncCatalogCategories(): Promise<SyncCategoriesResult> {
 //   targeted SEO-sheet-first import). Limit is still respected as a cap.
 export async function syncProductsToCatalog(
   limit: number,
-  opts: { dryRun?: boolean; skuFilter?: string[] } = {},
+  opts: { dryRun?: boolean; skuFilter?: string[]; capNewInserts?: boolean } = {},
 ): Promise<SyncProductsResult> {
   const dryRun = opts.dryRun === true
   const client = getAdminClient()
+  const nowIso = new Date().toISOString()
+
+  // The published cap blocks only NEW storefront insertion — never the daily
+  // price/image/stock refresh of rows that already exist in catalog_products.
+  let capReached = false
+  if (opts.capNewInserts) {
+    const { count: publishedCount } = await client
+      .from('catalog_products').select('id', { count: 'exact', head: true }).eq('status', 'published')
+    capReached = (publishedCount ?? 0) >= AUTOMATION_MAX_PUBLISHED
+  }
 
   // Load supplier products — either a targeted SKU list or the next unapproved batch.
-  let supplierProducts: Array<{
+  const supplierProducts: Array<{
     id: unknown; supplier_sku: unknown; name: unknown; name_ua: unknown; slug: unknown
     supplier_category_id: unknown; price_uah: unknown; supplier_price_usd: unknown
-    main_image_url: unknown; images: unknown
+    main_image_url: unknown; images: unknown; stock_quantity: unknown; is_in_stock: unknown
   }> = []
 
   if (opts.skuFilter && opts.skuFilter.length > 0) {
@@ -415,7 +434,7 @@ export async function syncProductsToCatalog(
     for (let i = 0; i < opts.skuFilter.length; i += FILTER_CHUNK) {
       const { data } = await client
         .from('supplier_products')
-        .select('id, supplier_sku, name, name_ua, slug, supplier_category_id, price_uah, supplier_price_usd, main_image_url, images')
+        .select('id, supplier_sku, name, name_ua, slug, supplier_category_id, price_uah, supplier_price_usd, main_image_url, images, stock_quantity, is_in_stock')
         .in('supplier_sku', opts.skuFilter.slice(i, i + FILTER_CHUNK))
         .not('name', 'is', null)
         .gt('price_uah', 0)
@@ -423,17 +442,31 @@ export async function syncProductsToCatalog(
       if (data) supplierProducts.push(...data)
     }
   } else {
-    const { data, error: fetchErr } = await client
-      .from('supplier_products')
-      .select('id, supplier_sku, name, name_ua, slug, supplier_category_id, price_uah, supplier_price_usd, main_image_url, images')
-      .eq('is_approved', false)
-      .not('name', 'is', null)
-      .gt('price_uah', 0)
-      .limit(limit)
-    if (fetchErr || !data) {
-      return { ok: false, inserted: 0, updated: 0, skipped: 0, errors: 0, errorGroups: {}, message: fetchErr?.message ?? 'Failed to fetch supplier products' }
+    // Paginate past the PostgREST 1000-row cap, bounded to `limit` — a single
+    // `.limit(10000)` silently returns only 1000, which is the root cause of the
+    // stuck import. Never loads the whole 112k backlog: we stop at `limit`.
+    const COLS = 'id, supplier_sku, name, name_ua, slug, supplier_category_id, price_uah, supplier_price_usd, main_image_url, images, stock_quantity, is_in_stock'
+    const PAGE = 1000
+    for (let from = 0; supplierProducts.length < limit; from += PAGE) {
+      const to = Math.min(from + PAGE, limit) - 1
+      const { data, error: fetchErr } = await client
+        .from('supplier_products')
+        .select(COLS)
+        .eq('is_approved', false)
+        .not('name', 'is', null)
+        .gt('price_uah', 0)
+        .order('id', { ascending: true })
+        .range(from, to)
+      if (fetchErr) {
+        if (supplierProducts.length === 0) {
+          return { ok: false, inserted: 0, updated: 0, skipped: 0, errors: 0, errorGroups: {}, message: fetchErr.message }
+        }
+        break // keep what we have; surface partial progress
+      }
+      if (!data || data.length === 0) break
+      supplierProducts.push(...data)
+      if (data.length < to - from + 1) break // last page
     }
-    supplierProducts = data
   }
 
   if (supplierProducts.length === 0) {
@@ -497,7 +530,13 @@ export async function syncProductsToCatalog(
       // never touching a fully manual row. buildSupplierUpdatePayload returns
       // null when there is nothing the import may write.
       const payload = buildSupplierUpdatePayload(
-        { price_uah: sp.price_uah as number, main_image_url: sp.main_image_url as string | null, images: sp.images },
+        {
+          price_uah: sp.price_uah as number,
+          main_image_url: sp.main_image_url as string | null,
+          images: sp.images,
+          stock_quantity: sp.stock_quantity as number | null,
+          is_in_stock: sp.is_in_stock as boolean | null,
+        },
         ownership,
       )
       if (payload) toUpdatePrice.push({ sku, payload })
@@ -525,6 +564,7 @@ export async function syncProductsToCatalog(
 
     const priceUah = sp.price_uah as number
     const isPriceSuspicious = priceUah < 100 && priceUah >= 10 && (sp.supplier_price_usd == null)
+    const stock = normalizeStock(sp.stock_quantity, sp.is_in_stock)
 
     toInsert.push({
       supplier_product_id: sp.id as string,
@@ -536,6 +576,9 @@ export async function syncProductsToCatalog(
       is_price_suspicious: isPriceSuspicious,
       main_image_url: sp.main_image_url as string | null,
       images: sp.images ?? null,
+      stock_quantity: stock.stock_quantity,
+      is_in_stock: stock.is_in_stock,
+      stock_synced_at: nowIso,
       status: 'draft',
       is_featured: false,
       display_order: 0,
@@ -570,7 +613,7 @@ export async function syncProductsToCatalog(
     }
   }
 
-  let inserted = 0, updated = 0, duplicateSlugFixed = 0
+  let inserted = 0, updated = 0, duplicateSlugFixed = 0, insertsSkippedCap = 0
   const errors: string[] = []
   const CHUNK = 200
 
@@ -580,11 +623,16 @@ export async function syncProductsToCatalog(
   // Rows whose insert failed are NOT approved so they stay in the queue and retry.
   const approvedIds = new Set<string>()
 
-  // Insert new products. Chunk upsert first; on any error fall back to per-row
-  // so one bad row cannot abort 200 good ones.
-  // Per-row fallback also handles residual 23505 slug collisions (e.g. from a
-  // concurrent import or a missed slug in selectAllRows) by regenerating the slug
-  // with numeric suffixes up to 10 attempts before giving up on that row.
+  // Insert new products — UNLESS the published cap is reached, in which case new
+  // storefront rows are deferred (counted, not inserted, left unapproved) while
+  // the existing-row refresh below still runs. This is the key separation: the
+  // cap gates NEW insertion/publication only, never the daily refresh.
+  if (capReached) {
+    insertsSkippedCap = toInsert.length
+  } else
+  // Chunk upsert first; on any error fall back to per-row so one bad row cannot
+  // abort 200 good ones. Per-row fallback also handles residual 23505 slug
+  // collisions by regenerating the slug with numeric suffixes.
   for (let i = 0; i < toInsert.length; i += CHUNK) {
     const chunk = toInsert.slice(i, i + CHUNK)
     const { error } = await client
@@ -645,12 +693,16 @@ export async function syncProductsToCatalog(
     let rowError: string | null = null
     let wrote = false
     for (const w of writes) {
-      const { error, count } = await client
+      // Stock (guardColumn === null) is operational — no manual lock guard, but it
+      // still stamps stock_synced_at and keeps the source!=manual guard below.
+      const extra = w.guardColumn === null ? { stock_synced_at: nowIso } : {}
+      let q = client
         .from('catalog_products')
-        .update({ ...w.columns, updated_at: new Date().toISOString() }, { count: 'exact' })
+        .update({ ...w.columns, ...extra, updated_at: nowIso }, { count: 'exact' })
         .eq('supplier_sku', sku)
         .or('source.is.null,source.neq.manual')
-        .eq(w.guardColumn, false)
+      if (w.guardColumn !== null) q = q.eq(w.guardColumn, false)
+      const { error, count } = await q
       if (error) { rowError = error.message; break }
       if ((count ?? 0) > 0) wrote = true
     }
@@ -676,17 +728,31 @@ export async function syncProductsToCatalog(
   const errorGroups: Record<string, number> = {}
   for (const e of errors) errorGroups[e] = (errorGroups[e] ?? 0) + 1
 
+  // Remaining actionable backlog AFTER this batch (unapproved supplier rows).
+  const { count: remainingCount } = await client
+    .from('supplier_products')
+    .select('id', { count: 'exact', head: true })
+    .eq('is_approved', false)
+    .not('name', 'is', null)
+    .gt('price_uah', 0)
+
+  const processed = supplierProducts.length
+  const approved = approvedIds.size
+  const failed = errors.length
+  const remaining = remainingCount ?? 0
+  const accounting = { processed, approved, failed, insertsSkippedCap, remaining, errorSamples: errors.slice(0, 5) }
+
   if (errors.length) {
     return {
-      ok: false, inserted, updated, skipped: 0, errors: errors.length, errorGroups,
-      duplicateSlugFixed,
+      ok: false, inserted, updated, skipped: insertsSkippedCap, errors: errors.length, errorGroups,
+      duplicateSlugFixed, ...accounting,
       message: `${errors.length} DB помилок: ${errors[0]}`,
     }
   }
   return {
-    ok: true, inserted, updated, skipped: 0, errors: 0, errorGroups: {},
-    duplicateSlugFixed,
-    message: `Додано ${inserted} нових товарів, оновлено ціни у ${updated} існуючих${duplicateSlugFixed > 0 ? `, виправлено ${duplicateSlugFixed} slug-колізій` : ''}`,
+    ok: true, inserted, updated, skipped: insertsSkippedCap, errors: 0, errorGroups: {},
+    duplicateSlugFixed, ...accounting,
+    message: `Оброблено ${processed}, додано ${inserted}, оновлено ${updated}, підтверджено ${approved}${insertsSkippedCap > 0 ? `, відкладено (ліміт) ${insertsSkippedCap}` : ''}, залишок ${remaining}`,
   }
 }
 

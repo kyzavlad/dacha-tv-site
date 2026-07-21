@@ -316,6 +316,11 @@ export interface CatalogProduct {
   // supplier import must not overwrite the corresponding storefront field.
   price_manual_lock?: boolean
   image_manual_lock?: boolean
+  // Public storefront stock, synced from supplier_products by the import
+  // (migration 20260720 v4). Manual/metal rows are never given supplier stock.
+  stock_quantity?: number | null
+  is_in_stock?: boolean | null
+  stock_synced_at?: string | null
   created_at: string
   updated_at: string
 }

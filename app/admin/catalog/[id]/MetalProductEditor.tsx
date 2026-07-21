@@ -117,7 +117,7 @@ export function MetalProductEditor({
       </Section>
 
       <Section title="Зображення">
-        <CatalogImageManager initialImages={initialImages} onUploadingChange={setUploading} />
+        <CatalogImageManager initialImages={initialImages} onUploadingChange={setUploading} productId={product.id} />
       </Section>
 
       <Section title="SEO (RU) — таблиця перекладів">

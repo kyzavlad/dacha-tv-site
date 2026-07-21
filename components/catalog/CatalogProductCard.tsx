@@ -3,6 +3,8 @@ import type { CatalogProduct } from '@/types'
 import { AddToCartButton } from '@/components/cart/AddToCartButton'
 import { SafeImage } from '@/components/shared/SafeImage'
 import { canAddToCart, displayProductName, formatCatalogPrice, getCatalogProductImage, hasDisplayablePrice } from '@/lib/supabase/catalog'
+import { stockStatus, stockLabel } from '@/lib/catalog/stock'
+import type { Locale } from '@/lib/i18n'
 
 interface CatalogProductCardProps {
   product: CatalogProduct
@@ -29,6 +31,9 @@ export function CatalogProductCard({ product, categorySlug, locale }: CatalogPro
   const priceOk = hasDisplayablePrice(product)
   const buyable = canAddToCart(product)
   const priceLabel = formatCatalogPrice(product)
+  const stStatus = stockStatus(product)
+  const stockIsOut = stStatus === 'out_of_stock'
+  const stockText = stockLabel(stStatus, (locale === 'ru' || locale === 'en' ? locale : 'uk') as Locale)
   const hasDiscount =
     priceOk && product.compare_price_uah != null && product.price_uah != null && product.compare_price_uah > product.price_uah
 
@@ -106,6 +111,8 @@ export function CatalogProductCard({ product, categorySlug, locale }: CatalogPro
                 price: product.price_uah as number,
                 imageUrl: imageUrl ?? undefined,
               }}
+              outOfStock={stockIsOut}
+              outOfStockLabel={stockText}
             />
           ) : product.status === 'published' ? (
             <Link

@@ -120,6 +120,14 @@ export interface ImportBatchResult {
   errors?: number
   errorGroups?: Record<string, number>
   message: string
+  // Truthful accounting so the caller loops on real progress, not on `imported`.
+  processed?: number
+  updated?: number
+  approved?: number
+  failed?: number
+  insertsSkippedCap?: number
+  remaining?: number
+  capReached?: boolean
 }
 
 // Import without publishing — allows SEO to run before products go live.
@@ -137,25 +145,26 @@ export async function importBatch(
     .select('id').single()
 
   try {
-    const { count: publishedCount } = await client
-      .from('catalog_products').select('id', { count: 'exact', head: true }).eq('status', 'published')
-
-    if (!opts.skipCap && (publishedCount ?? 0) >= AUTOMATION_MAX_PUBLISHED) {
-      await client.from('supplier_sync_log').update({
-        status: 'completed',
-        products_total: 0,
-        error_details: { skipped: true, reason: 'max_published_reached', duration_ms: Date.now() - startedAt },
-        completed_at: new Date().toISOString(),
-      }).eq('id', log?.id)
-      return { ok: true, imported: 0, published: 0, skipped: true, message: `Ліміт ${AUTOMATION_MAX_PUBLISHED} опублікованих — авто-імпорт призупинено` }
-    }
-
-    const result = await syncProductsToCatalog(limit)
+    // The published cap gates only NEW inserts (passed through to the import),
+    // NOT the whole batch — existing-row price/image/stock refresh must always
+    // run so the daily sync keeps working after the cap is reached. `skipCap`
+    // (manual bulk imports) disables even the new-insert gate.
+    const result = await syncProductsToCatalog(limit, { capNewInserts: !opts.skipCap })
+    const processed = result.processed ?? (result.inserted + result.updated)
+    const approved = result.approved ?? 0
+    const capReached = (result.insertsSkippedCap ?? 0) > 0
     await client.from('supplier_sync_log').update({
       status: result.ok ? 'completed' : 'failed',
-      products_total: result.inserted,
+      products_total: processed,           // truthful: total processed, not just inserts
       products_new: result.inserted,
-      error_details: { imported: result.inserted, updated: result.updated, errors: result.errors, errorGroups: result.errorGroups, message: result.message, duration_ms: Date.now() - startedAt },
+      products_updated: result.updated,
+      products_errors: result.failed ?? result.errors,
+      error_details: {
+        processed, inserted: result.inserted, updated: result.updated, approved,
+        insertsSkippedCap: result.insertsSkippedCap ?? 0, remaining: result.remaining ?? null,
+        errors: result.errors, errorGroups: result.errorGroups, errorSamples: result.errorSamples,
+        message: result.message, capReached, duration_ms: Date.now() - startedAt,
+      },
       completed_at: new Date().toISOString(),
     }).eq('id', log?.id)
     return {
@@ -163,6 +172,11 @@ export async function importBatch(
       errors: result.errors || undefined,
       errorGroups: result.errors ? result.errorGroups : undefined,
       message: result.message,
+      processed, updated: result.updated, approved,
+      failed: result.failed ?? result.errors,
+      insertsSkippedCap: result.insertsSkippedCap ?? 0,
+      remaining: result.remaining ?? undefined,
+      capReached,
     }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)

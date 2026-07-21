@@ -13,8 +13,10 @@ import { uploadMediaFile } from '@/app/admin/actions/upload'
 // fallback. Reports upload-in-progress so the parent can disable Save.
 
 interface Slot {
+  id: string        // stable identity — patches target this, never a mutable index
   url: string       // '' while a freshly-picked file is still uploading
   preview: string   // object URL while uploading, then the final URL
+  isBlob: boolean   // true while `preview` is an object URL that must be revoked
   uploading: boolean
   error: string | null
 }
@@ -22,11 +24,16 @@ interface Slot {
 interface Props {
   initialImages: string[]
   onUploadingChange?: (uploading: boolean) => void
+  // Groups uploaded media under catalog/{productId}/… for collision-free paths.
+  productId?: string
 }
 
-export function CatalogImageManager({ initialImages, onUploadingChange }: Props) {
+let slotSeq = 0
+const nextSlotId = () => `slot-${slotSeq++}-${Math.random().toString(36).slice(2, 7)}`
+
+export function CatalogImageManager({ initialImages, onUploadingChange, productId }: Props) {
   const [slots, setSlots] = useState<Slot[]>(
-    initialImages.filter(Boolean).map((u) => ({ url: u, preview: u, uploading: false, error: null })),
+    initialImages.filter(Boolean).map((u) => ({ id: nextSlotId(), url: u, preview: u, isBlob: false, uploading: false, error: null })),
   )
   const [urlInput, setUrlInput] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
@@ -34,25 +41,36 @@ export function CatalogImageManager({ initialImages, onUploadingChange }: Props)
   const anyUploading = slots.some((s) => s.uploading)
   useEffect(() => { onUploadingChange?.(anyUploading) }, [anyUploading, onUploadingChange])
 
-  const patch = useCallback((index: number, next: Partial<Slot>) => {
-    setSlots((prev) => prev.map((s, i) => (i === index ? { ...s, ...next } : s)))
+  // Revoke any outstanding object URLs on unmount to avoid leaking blob memory.
+  useEffect(() => () => {
+    setSlots((prev) => { prev.forEach((s) => { if (s.isBlob) URL.revokeObjectURL(s.preview) }); return prev })
+  }, [])
+
+  // Patch by STABLE id (not array index): concurrent uploads reorder/append the
+  // list, so an index captured when the upload started is stale by the time it
+  // resolves. Keying on id makes every resolution land on the right slot.
+  const patch = useCallback((id: string, next: Partial<Slot>) => {
+    setSlots((prev) => prev.map((s) => (s.id === id ? { ...s, ...next } : s)))
   }, [])
 
   async function onFiles(files: FileList | null) {
     if (!files || files.length === 0) return
-    const picked = Array.from(files)
-    // Reserve placeholder slots first so ordering + indices are stable.
+    const picked = Array.from(files).map((file) => ({ file, id: nextSlotId(), preview: URL.createObjectURL(file) }))
+    // Reserve placeholder slots first (each with a stable id).
     setSlots((prev) => [
       ...prev,
-      ...picked.map((f) => ({ url: '', preview: URL.createObjectURL(f), uploading: true, error: null as string | null })),
+      ...picked.map((p) => ({ id: p.id, url: '', preview: p.preview, isBlob: true, uploading: true, error: null as string | null })),
     ])
-    const base = slots.length
-    await Promise.all(picked.map(async (file, k) => {
+    await Promise.all(picked.map(async ({ file, id, preview }) => {
       const fd = new FormData()
       fd.set('file', file)
+      if (productId) fd.set('productId', productId)
       const res = await uploadMediaFile(fd)
-      if ('url' in res) patch(base + k, { url: res.url, preview: res.url, uploading: false, error: null })
-      else patch(base + k, { uploading: false, error: res.error })
+      // The blob preview is no longer needed once we have the final URL (or an
+      // error): revoke it to free memory regardless of outcome.
+      URL.revokeObjectURL(preview)
+      if ('url' in res) patch(id, { url: res.url, preview: res.url, isBlob: false, uploading: false, error: null })
+      else patch(id, { isBlob: false, uploading: false, error: res.error })
     }))
     if (fileRef.current) fileRef.current.value = ''
   }
@@ -60,18 +78,25 @@ export function CatalogImageManager({ initialImages, onUploadingChange }: Props)
   function addUrl() {
     const u = urlInput.trim()
     if (!u) return
-    setSlots((prev) => [...prev, { url: u, preview: u, uploading: false, error: null }])
+    setSlots((prev) => [...prev, { id: nextSlotId(), url: u, preview: u, isBlob: false, uploading: false, error: null }])
     setUrlInput('')
   }
-  const remove = (i: number) => setSlots((prev) => prev.filter((_, idx) => idx !== i))
-  const move = (i: number, dir: -1 | 1) => setSlots((prev) => {
+  const remove = (id: string) => setSlots((prev) => prev.filter((s) => {
+    if (s.id === id && s.isBlob) URL.revokeObjectURL(s.preview)
+    return s.id !== id
+  }))
+  const move = (id: string, dir: -1 | 1) => setSlots((prev) => {
+    const i = prev.findIndex((s) => s.id === id)
     const j = i + dir
-    if (j < 0 || j >= prev.length) return prev
+    if (i < 0 || j < 0 || j >= prev.length) return prev
     const next = [...prev]
     ;[next[i], next[j]] = [next[j], next[i]]
     return next
   })
-  const makePrimary = (i: number) => setSlots((prev) => (i === 0 ? prev : [prev[i], ...prev.slice(0, i), ...prev.slice(i + 1)]))
+  const makePrimary = (id: string) => setSlots((prev) => {
+    const i = prev.findIndex((s) => s.id === id)
+    return i <= 0 ? prev : [prev[i], ...prev.slice(0, i), ...prev.slice(i + 1)]
+  })
 
   const ready = slots.filter((s) => s.url && !s.uploading)
   const mainImage = ready[0]?.url ?? ''
@@ -86,7 +111,7 @@ export function CatalogImageManager({ initialImages, onUploadingChange }: Props)
       {slots.length > 0 && (
         <ul className="grid grid-cols-2 sm:grid-cols-3 gap-3">
           {slots.map((s, i) => (
-            <li key={i} className={`relative rounded-lg border p-2 ${i === 0 ? 'border-honey-400 ring-1 ring-honey-200' : 'border-gray-200'}`}>
+            <li key={s.id} className={`relative rounded-lg border p-2 ${i === 0 ? 'border-honey-400 ring-1 ring-honey-200' : 'border-gray-200'}`}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={s.preview} alt="" className="w-full h-24 object-cover rounded-md bg-gray-100" />
               {i === 0 && <span className="absolute top-1 left-1 text-[10px] font-semibold bg-honey-600 text-white px-1.5 py-0.5 rounded">Головне</span>}
@@ -94,12 +119,12 @@ export function CatalogImageManager({ initialImages, onUploadingChange }: Props)
               {s.error && <p className="text-[11px] text-red-500 mt-1">{s.error}</p>}
               <div className="flex items-center justify-between mt-1.5 text-gray-500">
                 <div className="flex items-center gap-1">
-                  <button type="button" onClick={() => move(i, -1)} disabled={i === 0} className="px-1 disabled:opacity-30 hover:text-gray-800" aria-label="Вгору">↑</button>
-                  <button type="button" onClick={() => move(i, 1)} disabled={i === slots.length - 1} className="px-1 disabled:opacity-30 hover:text-gray-800" aria-label="Вниз">↓</button>
+                  <button type="button" onClick={() => move(s.id, -1)} disabled={i === 0} className="px-1 disabled:opacity-30 hover:text-gray-800" aria-label="Вгору">↑</button>
+                  <button type="button" onClick={() => move(s.id, 1)} disabled={i === slots.length - 1} className="px-1 disabled:opacity-30 hover:text-gray-800" aria-label="Вниз">↓</button>
                 </div>
                 <div className="flex items-center gap-2 text-[11px]">
-                  {i !== 0 && <button type="button" onClick={() => makePrimary(i)} className="text-honey-700 hover:underline">Головне</button>}
-                  <button type="button" onClick={() => remove(i)} className="text-red-500 hover:underline">Видалити</button>
+                  {i !== 0 && <button type="button" onClick={() => makePrimary(s.id)} className="text-honey-700 hover:underline">Головне</button>}
+                  <button type="button" onClick={() => remove(s.id)} className="text-red-500 hover:underline">Видалити</button>
                 </div>
               </div>
             </li>

@@ -7,18 +7,22 @@ interface BuyNowButtonProps {
   item: Omit<CartItem, 'quantity'>
   quantity?: number
   className?: string
+  outOfStock?: boolean
 }
 
-export function BuyNowButton({ item, quantity = 1, className }: BuyNowButtonProps) {
+export function BuyNowButton({ item, quantity = 1, className, outOfStock }: BuyNowButtonProps) {
   const { clearCart, addItem, closeCart } = useCart()
   const router = useRouter()
 
   function handleClick() {
+    if (outOfStock) return
     clearCart()
     addItem({ ...item, quantity })
     closeCart()
     router.push('/checkout')
   }
+
+  if (outOfStock) return null
 
   return (
     <button

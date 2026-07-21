@@ -20,6 +20,8 @@
 //
 // This is a PURE function so the preservation rules can be unit-tested without a DB.
 
+import { normalizeStock } from '@/lib/catalog/stock'
+
 export interface ExistingCatalogOwnership {
   source?: string | null
   price_manual_lock?: boolean | null
@@ -30,12 +32,17 @@ export interface SupplierFacts {
   price_uah?: number | null
   main_image_url?: string | null
   images?: unknown
+  // Operational stock — always supplier-owned (no manual lock exists for it).
+  stock_quantity?: number | null
+  is_in_stock?: boolean | null
 }
 
 export interface CatalogUpdatePayload {
   price_uah?: number
   main_image_url?: string | null
   images?: unknown
+  stock_quantity?: number
+  is_in_stock?: boolean
 }
 
 // Returns the columns the supplier import may write for one existing catalog row,
@@ -58,6 +65,15 @@ export function buildSupplierUpdatePayload(
     payload.images = facts.images ?? null
   }
 
+  // Stock is operational and has no manual lock — it is always refreshed for
+  // supplier rows (source !== 'manual', already guaranteed above). Missing /
+  // invalid supplier stock normalizes to 0 / out-of-stock (the safe default).
+  if (facts.stock_quantity !== undefined || facts.is_in_stock !== undefined) {
+    const norm = normalizeStock(facts.stock_quantity, facts.is_in_stock)
+    payload.stock_quantity = norm.stock_quantity
+    payload.is_in_stock = norm.is_in_stock
+  }
+
   return Object.keys(payload).length > 0 ? payload : null
 }
 
@@ -67,7 +83,9 @@ export function buildSupplierUpdatePayload(
 // between candidate selection and the write still wins (no lost manual edit).
 export interface GuardedWrite {
   columns: Record<string, unknown>
-  guardColumn: 'price_manual_lock' | 'image_manual_lock'
+  // `null` = no lock guard (operational fact, e.g. stock). The write still keeps
+  // the source!=manual guard applied by every guarded write.
+  guardColumn: 'price_manual_lock' | 'image_manual_lock' | null
 }
 
 export function planGuardedWrites(payload: CatalogUpdatePayload): GuardedWrite[] {
@@ -81,6 +99,12 @@ export function planGuardedWrites(payload: CatalogUpdatePayload): GuardedWrite[]
     if (payload.images !== undefined) columns.images = payload.images
     writes.push({ columns, guardColumn: 'image_manual_lock' })
   }
+  if (payload.stock_quantity !== undefined || payload.is_in_stock !== undefined) {
+    const columns: Record<string, unknown> = {}
+    if (payload.stock_quantity !== undefined) columns.stock_quantity = payload.stock_quantity
+    if (payload.is_in_stock !== undefined) columns.is_in_stock = payload.is_in_stock
+    writes.push({ columns, guardColumn: null })
+  }
   return writes
 }
 
@@ -90,5 +114,6 @@ export function planGuardedWrites(payload: CatalogUpdatePayload): GuardedWrite[]
 // candidate selection but BEFORE the write is still honored — without a live DB.
 export function wouldGuardedWriteApply(write: GuardedWrite, currentRowAtWriteTime: ExistingCatalogOwnership): boolean {
   if (currentRowAtWriteTime.source === 'manual') return false
+  if (write.guardColumn === null) return true // operational (stock): no lock guard
   return currentRowAtWriteTime[write.guardColumn] !== true
 }

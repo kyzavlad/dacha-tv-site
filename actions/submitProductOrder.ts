@@ -295,10 +295,17 @@ export async function submitProductOrder(
       .map((i) => i.productSlug)
 
     const slugToSku: Map<string, string> = new Map()
+    // Authoritative stock revalidation: the cart snapshots availability at
+    // add-to-cart time, but stock can change before checkout. A SUPPLIER product
+    // whose catalog row is explicitly out of stock (is_in_stock=false after a real
+    // sync) must block the order. Manual/metal rows carry no supplier stock and are
+    // never rejected here. Missing rows/errors degrade to "allow" (fail-open) so a
+    // lookup glitch never blocks a legitimate order.
+    const outOfStockNames: string[] = []
     if (catalogSlugs.length > 0) {
       const { data: skuRows, error: skuError } = await client
         .from('catalog_products')
-        .select('slug, supplier_sku')
+        .select('slug, supplier_sku, source, is_in_stock, stock_synced_at, name_ua')
         .in('slug', catalogSlugs)
       if (skuError) {
         // Non-fatal: without SKUs we simply treat the items as manual.
@@ -306,6 +313,22 @@ export async function submitProductOrder(
       }
       for (const row of skuRows ?? []) {
         if (row.supplier_sku) slugToSku.set(row.slug as string, row.supplier_sku as string)
+        // Only a synced supplier row with is_in_stock=false blocks checkout.
+        const r = row as { source?: string | null; is_in_stock?: boolean | null; stock_synced_at?: string | null; name_ua?: string | null; slug?: string }
+        const isSupplierRow = r.source !== 'manual'
+        const isSynced = r.stock_synced_at != null || r.is_in_stock != null
+        if (isSupplierRow && isSynced && r.is_in_stock === false) {
+          outOfStockNames.push(String(r.name_ua ?? r.slug ?? ''))
+        }
+      }
+    }
+
+    if (outOfStockNames.length > 0) {
+      console.error(`[checkout-submit ${trace}] blocked — out of stock: ${outOfStockNames.join(', ')}`)
+      const list = outOfStockNames.slice(0, 5).join(', ')
+      return {
+        success: false,
+        error: `Деякі товари закінчились: ${list}. Видаліть їх з кошика, щоб оформити замовлення.`,
       }
     }
 
