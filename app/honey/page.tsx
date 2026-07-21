@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic'
 
 import type { Metadata } from 'next'
+import { buildAlternates } from '@/lib/seo'
 import { HoneyGrid } from '@/components/honey/HoneyGrid'
 import { CTAButton } from '@/components/shared/CTAButton'
 import { getAllHoneyProducts } from '@/lib/supabase/queries'
@@ -33,11 +34,12 @@ const HONEY_META: Record<'uk' | 'ru' | 'en', { title: string; description: strin
 
 export async function generateMetadata(): Promise<Metadata> {
   const locale = await getRequestLocale()
+  const { canonical, languages } = buildAlternates(locale, '/honey')
   const m = HONEY_META[locale]
   return {
     title: m.title,
     description: m.description,
-    alternates: { canonical: '/honey' },
+    alternates: { canonical, languages },
     openGraph: {
       title: m.title,
       description: m.ogDescription,

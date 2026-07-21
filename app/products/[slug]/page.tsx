@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { buildAlternates } from '@/lib/seo'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { AddToCartButton } from '@/components/cart/AddToCartButton'
@@ -21,6 +22,7 @@ export const dynamic = 'force-dynamic'
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params
   const locale = await getRequestLocale()
+  const { canonical, languages } = buildAlternates(locale, `/products/${slug}`)
   const t = manualDict(locale)
   const product = await getApiaryProductBySlug(slug).catch(() => null)
 
@@ -40,7 +42,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   return {
     title: name,
     description,
-    alternates: { canonical: siteUrl ? `${siteUrl}/products/${slug}` : `/products/${slug}` },
+    alternates: { canonical, languages },
     openGraph: {
       title: name,
       description: shortDesc || desc || name,

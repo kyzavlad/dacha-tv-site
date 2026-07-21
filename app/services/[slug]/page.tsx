@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
 import type { Metadata } from 'next'
+import { buildAlternates } from '@/lib/seo'
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { getServiceBySlug } from '@/lib/supabase/queries'
@@ -22,6 +23,7 @@ const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://www.dachatv.com'
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params
   const locale = await getRequestLocale()
+  const { canonical, languages } = buildAlternates(locale, `/services/${slug}`)
   const t = manualDict(locale)
   const service = await getServiceBySlug(slug).catch(() => null)
   if (!service) return { title: t.detailServiceNotFound }
@@ -31,7 +33,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   return {
     title: name,
     description,
-    alternates: { canonical: `${siteUrl}/services/${slug}`, languages: { uk: `${siteUrl}/services/${slug}`, ru: `${siteUrl}/ru/services/${slug}`, en: `${siteUrl}/en/services/${slug}` } },
+    alternates: { canonical, languages },
     openGraph: {
       title: name,
       description,

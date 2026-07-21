@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic'
 
 import type { Metadata } from 'next'
+import { buildAlternates } from '@/lib/seo'
 import type { BeekeeperProduct } from '@/types'
 import { BeekeeperCard } from '@/components/beekeeper/BeekeeperCard'
 import { BeekeeperInquiryForm } from '@/components/forms/BeekeeperInquiryForm'
@@ -36,11 +37,12 @@ const BEEKEEPER_META: Record<'uk' | 'ru' | 'en', { title: string; description: s
 
 export async function generateMetadata(): Promise<Metadata> {
   const locale = await getRequestLocale()
+  const { canonical, languages } = buildAlternates(locale, '/beekeeper')
   const m = BEEKEEPER_META[locale]
   return {
     title: m.title,
     description: m.description,
-    alternates: { canonical: '/beekeeper' },
+    alternates: { canonical, languages },
     openGraph: {
       title: m.title,
       description: m.ogDescription,
