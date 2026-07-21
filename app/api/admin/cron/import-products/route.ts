@@ -27,5 +27,24 @@ export async function GET(req: Request) {
   // imports are not silently skipped.
   const skipCap = !!limitRaw
   const result = await importBatch(limit, { skipCap })
-  return Response.json(result)
+
+  // Explicit, documented response contract: a 10,000-row existing-product
+  // refresh now runs as one set-based RPC call (see
+  // lib/catalog/existing-product-refresh.ts) instead of a sequential per-SKU
+  // update loop, so this endpoint completes well within the serverless
+  // timeout. Call repeatedly until `remaining` is 0.
+  return Response.json({
+    ok: result.ok,
+    processed: result.processed ?? 0,
+    inserted: result.inserted ?? result.imported ?? 0,
+    updated: result.updated ?? 0,
+    approved: result.approved ?? 0,
+    skipped: result.insertsSkippedCap ?? 0,
+    failed: result.failed ?? result.errors ?? 0,
+    remaining: result.remaining ?? 0,
+    remainingExisting: result.remainingExisting ?? 0,
+    remainingNew: result.remainingNew ?? 0,
+    errorGroups: result.errorGroups ?? {},
+    message: result.message,
+  })
 }
