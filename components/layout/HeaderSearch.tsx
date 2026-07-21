@@ -41,8 +41,12 @@ export function HeaderSearch({ compact = false }: { compact?: boolean }) {
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null)
   const controller = useRef<AbortController | null>(null)
 
-  useEffect(() => {
-    const q = value.trim()
+  // Debounced fetch is triggered directly from the input's onChange handler
+  // (a user-initiated event, not an effect keyed on `value`) so state updates
+  // stay tied to the interaction that caused them.
+  function handleValueChange(next: string) {
+    setValue(next)
+    const q = next.trim()
     if (debounce.current) clearTimeout(debounce.current)
     if (q.length < 2) {
       setSuggestions([])
@@ -61,8 +65,11 @@ export function HeaderSearch({ compact = false }: { compact?: boolean }) {
         /* aborted or offline — the plain form still submits */
       }
     }, 220)
+  }
+
+  useEffect(() => {
     return () => { if (debounce.current) clearTimeout(debounce.current) }
-  }, [value])
+  }, [])
 
   useEffect(() => {
     function onClick(e: MouseEvent) {
@@ -107,7 +114,7 @@ export function HeaderSearch({ compact = false }: { compact?: boolean }) {
             type="search"
             name="q"
             value={value}
-            onChange={(e) => setValue(e.target.value)}
+            onChange={(e) => handleValueChange(e.target.value)}
             onFocus={() => suggestions.length > 0 && setOpen(true)}
             onKeyDown={onKeyDown}
             autoComplete="off"

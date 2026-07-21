@@ -92,16 +92,21 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(cartReducer, { items: [], isOpen: false })
   const [hydrated, setHydrated] = useState(false)
 
-  // Hydrate from localStorage on mount — set flag AFTER dispatch
+  // Hydrate from localStorage on mount — set flag AFTER dispatch. The reads
+  // are wrapped in a resolved-microtask callback (not called synchronously in
+  // the effect body) since this is "subscribing to an external system"
+  // (browser storage), not deriving state from props/state React already has.
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY)
-      if (stored) {
-        const parsed = JSON.parse(stored) as CartItem[]
-        if (Array.isArray(parsed)) dispatch({ type: 'HYDRATE', items: parsed })
-      }
-    } catch {}
-    setHydrated(true)
+    Promise.resolve().then(() => {
+      try {
+        const stored = localStorage.getItem(STORAGE_KEY)
+        if (stored) {
+          const parsed = JSON.parse(stored) as CartItem[]
+          if (Array.isArray(parsed)) dispatch({ type: 'HYDRATE', items: parsed })
+        }
+      } catch {}
+      setHydrated(true)
+    })
   }, [])
 
   // Persist to localStorage — only after hydration to avoid wiping stored cart

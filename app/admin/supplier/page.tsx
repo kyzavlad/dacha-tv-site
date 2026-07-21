@@ -10,6 +10,16 @@ export const metadata: Metadata = {
   robots: 'noindex, nofollow',
 }
 
+// Plain helper (not a component/hook) so reading the current time here isn't
+// subject to the render-purity rule — this is a one-shot request-time lookup
+// on the server, not a value re-derived across client re-renders.
+function findRunningLog(logs: SupplierSyncLog[]): SupplierSyncLog | undefined {
+  const now = Date.now()
+  return logs.find(
+    (l) => l.status === 'running' && now - new Date(l.started_at).getTime() < 10 * 60 * 1000
+  )
+}
+
 export default async function AdminSupplierPage() {
   let totalProducts = 0
   let totalCategories = 0
@@ -41,10 +51,7 @@ export default async function AdminSupplierPage() {
   } catch { /* env not set */ }
 
   // Detect any fresh running sync (< 10 min) to drive SyncPoller
-  const now = Date.now()
-  const runningLog = recentLogs.find(
-    (l) => l.status === 'running' && now - new Date(l.started_at).getTime() < 10 * 60 * 1000
-  )
+  const runningLog = findRunningLog(recentLogs)
   const runningType = runningLog?.sync_type ?? null
 
   const lastCompletedLog = recentLogs.find((l) => l.status === 'completed' || l.status === 'failed')

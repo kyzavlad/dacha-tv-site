@@ -28,8 +28,14 @@ function normalizeUrl(raw: string): string {
   }
 }
 
-async function headCount(client: SupabaseClient, table: string, apply?: (q: any) => any): Promise<number | null> {
-  let q = client.from(table).select('id', { count: 'exact', head: true })
+type HeadCountQuery = ReturnType<ReturnType<SupabaseClient['from']>['select']>
+
+async function headCount(
+  client: SupabaseClient,
+  table: string,
+  apply?: (q: HeadCountQuery) => HeadCountQuery
+): Promise<number | null> {
+  let q: HeadCountQuery = client.from(table).select('id', { count: 'exact', head: true })
   if (apply) q = apply(q)
   const { count, error } = await q
   if (error) return null

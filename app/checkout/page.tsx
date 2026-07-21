@@ -57,17 +57,18 @@ function WarehousePicker({
   const [open, setOpen] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
   const boxRef = useRef<HTMLDivElement | null>(null)
-  // Prevents a re-search when query changes because the user just selected a warehouse.
-  const justSelectedRef = useRef(false)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const slowTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  useEffect(() => {
-    // Skip the search triggered by select() setting the query to the warehouse label.
-    if (justSelectedRef.current) {
-      justSelectedRef.current = false
-      return
-    }
+  // Debounced search is triggered directly from the input's onChange handler
+  // (a user-initiated event, not an effect keyed on `query`), so a
+  // programmatic query change (select() below) never needs to distinguish
+  // itself from a real search.
+  function search(raw: string) {
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    if (slowTimerRef.current) clearTimeout(slowTimerRef.current)
 
-    const trimmed = query.trim()
+    const trimmed = raw.trim()
     if (trimmed.length < 2) {
       abortRef.current?.abort()
       setResults([])
@@ -85,9 +86,9 @@ function WarehousePicker({
     setSlowLoad(false)
 
     // Slow-load hint: if the first fetch takes over 1.2s (cold cache), tell the user.
-    const slowTimer = setTimeout(() => setSlowLoad(true), 1200)
+    slowTimerRef.current = setTimeout(() => setSlowLoad(true), 1200)
 
-    const timer = setTimeout(async () => {
+    debounceRef.current = setTimeout(async () => {
       try {
         const res = await fetch(
           `/api/supplier/warehouses?q=${encodeURIComponent(trimmed)}`,
@@ -109,17 +110,20 @@ function WarehousePicker({
         setFetchError(t.warehouseErrConnection)
         setResults([])
       } finally {
-        clearTimeout(slowTimer)
+        if (slowTimerRef.current) clearTimeout(slowTimerRef.current)
         setSlowLoad(false)
         if (!ac.signal.aborted) setLoading(false)
       }
     }, 300)
+  }
 
+  useEffect(() => {
     return () => {
-      clearTimeout(timer)
-      clearTimeout(slowTimer)
+      abortRef.current?.abort()
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+      if (slowTimerRef.current) clearTimeout(slowTimerRef.current)
     }
-  }, [query, t])
+  }, [])
 
   // Close the dropdown on outside click.
   useEffect(() => {
@@ -134,11 +138,10 @@ function WarehousePicker({
     setQuery(val)
     // Any manual edit invalidates the previously selected warehouse.
     if (warehouseId) onChange('', '')
+    search(val)
   }
 
   function select(w: WarehouseResult) {
-    // Mark so the useEffect triggered by setQuery(w.label) below does NOT fire a search.
-    justSelectedRef.current = true
     onChange(w.internal_id, w.label)
     setQuery(w.label)
     setResults([])
@@ -251,11 +254,19 @@ export default function CheckoutPage() {
   // is enabled — preserving PR #16 payment lock.
   const hasSupplierItems = items.some((item) => item.productType === 'catalog')
 
-  useEffect(() => {
+  // Force the payment method back to cashondelivery whenever a supplier item
+  // is present and prepayment is (still) selected — e.g. a supplier item was
+  // added to the cart after prepayment was chosen. Adjusted directly during
+  // render rather than via an effect — see
+  // https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes
+  const lockKey = `${hasSupplierItems}:${methodPayment}`
+  const [prevLockKey, setPrevLockKey] = useState(lockKey)
+  if (lockKey !== prevLockKey) {
+    setPrevLockKey(lockKey)
     if (hasSupplierItems && methodPayment === 'prepayment') {
       setMethodPayment('cashondelivery')
     }
-  }, [hasSupplierItems, methodPayment])
+  }
 
   // GA4 begin_checkout — fire once when the cart is hydrated and non-empty.
   const beginCheckoutFired = useRef(false)

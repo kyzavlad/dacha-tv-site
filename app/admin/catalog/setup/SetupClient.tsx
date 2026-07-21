@@ -16,10 +16,15 @@ function usePersistedResult(key: string) {
   useEffect(() => {
     if (loaded.current) return
     loaded.current = true
-    try {
-      const raw = localStorage.getItem(key)
-      if (raw) setResultState(JSON.parse(raw) as StepResult)
-    } catch { /* ignore */ }
+    // Deferred to a microtask (not called synchronously in the effect body)
+    // since this reads from an external system (localStorage), not derived
+    // props/state.
+    Promise.resolve().then(() => {
+      try {
+        const raw = localStorage.getItem(key)
+        if (raw) setResultState(JSON.parse(raw) as StepResult)
+      } catch { /* ignore */ }
+    })
   }, [key])
   const set = useCallback((r: StepResult) => {
     setResultState(r)

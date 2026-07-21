@@ -17,6 +17,7 @@ import { extractYouTubeId } from '@/lib/youtube'
 import { getRequestLocale, localizedPath } from '@/lib/i18n'
 import { manualDict } from '@/lib/i18n/sections/manual'
 import { getManualTranslations, resolveManualField } from '@/lib/i18n/manual-translations'
+import { VARIETY_DETAILS } from '@/lib/honey/variety-details'
 
 interface Props {
   params: Promise<{ slug: string }>
@@ -58,56 +59,6 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   }
 }
 
-const VARIETY_DETAILS: Record<string, {
-  season: string
-  taste: string
-  crystallisation: string
-  storage: string
-  uses: string
-}> = {
-  Акація: {
-    season: 'Кінець травня: початок червня',
-    taste: 'Ніжний, квітковий, злегка вершковий. Один з найсвітліших сортів.',
-    crystallisation: 'Кристалізується дуже повільно: іноді залишається рідким до року і більше.',
-    storage: 'Зберігати в прохолодному темному місці. Не ставити в холодильник: зайва вологість.',
-    uses: 'Щоденне вживання, чай, дитяче харчування, подарунки. Ідеальний для тих, хто не любить дуже насиченого смаку.',
-  },
-  Липа: {
-    season: 'Липень',
-    taste: 'Насичений, квітковий аромат з легкою гірчинкою. Традиційно вважається найбільш корисним.',
-    crystallisation: 'Кристалізується за 2–3 місяці після відкачки. Кристали середнього розміру.',
-    storage: 'Зберігати в прохолодному темному місці при температурі до +20°C.',
-    uses: 'Підтримка імунітету, чай при застуді, щоденне вживання. Класичний вибір.',
-  },
-  Сонях: {
-    season: 'Серпень: початок вересня',
-    taste: 'Насичений, жирний, з характерним смаком соняшника. Дуже ситний.',
-    crystallisation: 'Кристалізується дуже швидко: вже через 2–4 тижні після відкачки. Кристали дрібні та тверді.',
-    storage: 'Зберігати при кімнатній температурі. Після кристалізації можна злегка підігріти на водяній бані.',
-    uses: 'Намазати на хліб, додати в кашу. Ідеально підходить для тривалого зберігання.',
-  },
-  "Різнотрав'я": {
-    season: 'Червень: серпень',
-    taste: 'Складний, багатошаровий смак від різноманіття польових квітів. Кожна партія трохи відрізняється.',
-    crystallisation: 'Кристалізується за 1–3 місяці. Залежить від складу нектару.',
-    storage: 'Зберігати в прохолодному темному місці.',
-    uses: 'Універсальний. Щоденне вживання, випічка, чай.',
-  },
-  Сади: {
-    season: 'Квітень: травень',
-    taste: "Ніжний, квітковий, з легким яблуневим або грушевим нотками залежно від садів.",
-    crystallisation: "Кристалізується за 2–3 місяці. Кристали м'які та дрібні.",
-    storage: 'Зберігати в прохолодному темному місці.',
-    uses: 'Ідеально в чай, з сиром, як добавка до десертів.',
-  },
-  Ліс: {
-    season: 'Червень: серпень',
-    taste: "Темний, комплексний, з мінеральними та деревними нотками. Яскраво виражений характер.",
-    crystallisation: 'Кристалізується повільно. Може зберігатися рідким тривалий час.',
-    storage: 'Зберігати в прохолодному темному місці.',
-    uses: "Для цінителів: самостійно або в блюдах з м'ясом та сирами.",
-  },
-}
 
 const BLUR_DATA_URL =
   'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjQwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmJiZjI0Ii8+PC9zdmc+'
@@ -127,7 +78,7 @@ export default async function HoneyProductPage({ params }: Props) {
   const name = resolveManualField(product.name, tr, 'name', locale)
   const shortDesc = resolveManualField(product.short_description ?? null, tr, 'short_description', locale)
   const fullDesc = resolveManualField(product.full_description ?? null, tr, 'description', locale)
-  const details = VARIETY_DETAILS[product.variety]
+  const details = VARIETY_DETAILS[product.variety]?.[locale]
   const media = product.media ?? []
   const primaryImg = media.find((m) => m.media_type === 'image' && m.is_primary) ?? media.find((m) => m.media_type === 'image') ?? null
   const galleryImgs = media.filter((m) => m.media_type === 'image' && m !== primaryImg)

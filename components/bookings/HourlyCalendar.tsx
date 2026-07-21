@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useTransition } from 'react'
+import { useState, useEffect, useRef, useTransition } from 'react'
 import { submitHourlyBooking } from '@/actions/submitBooking'
 import { computeBookingPrice, type HourlyPricingConfig } from '@/lib/bookings/pricing'
 import { DEFAULT_LOCALE, type Locale } from '@/lib/i18n'
@@ -190,7 +190,10 @@ export function HourlyCalendar({
   // Current Kyiv time (UTC+3, Ukraine is on this offset year-round since 2022).
   // Used to grey-out elapsed time slots on today's date before the API responds,
   // and to block a past-slot submit on the client before it reaches the server.
-  const kyivNow = new Date(Date.now() + 3 * 60 * 60 * 1000)
+  // Captured once at mount (impure Date.now() must not run during render) — this
+  // is only a display hint; the submit handler below re-reads the real clock,
+  // and the server is the authoritative check.
+  const [kyivNow] = useState(() => new Date(Date.now() + 3 * 60 * 60 * 1000))
   const todayKyivStr = `${kyivNow.getUTCFullYear()}-${String(kyivNow.getUTCMonth() + 1).padStart(2, '0')}-${String(kyivNow.getUTCDate()).padStart(2, '0')}`
   const nowKyivHour = kyivNow.getUTCHours()
 
@@ -221,18 +224,34 @@ export function HourlyCalendar({
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
 
-  useEffect(() => {
-    if (!selectedDate) return
+  // Cancels the in-flight availability fetch, if any — used when a new date
+  // is picked, the month changes, or the component unmounts.
+  const availabilityAbort = useRef<{ controller: AbortController; timer: ReturnType<typeof setTimeout> } | null>(null)
+  function cancelAvailabilityFetch() {
+    if (availabilityAbort.current) {
+      clearTimeout(availabilityAbort.current.timer)
+      availabilityAbort.current.controller.abort()
+      availabilityAbort.current = null
+    }
+  }
+
+  // Triggered directly from the day-selection click handler (a user event, not
+  // an effect) so loading/selection state updates stay tied to the interaction
+  // that caused them.
+  function selectDate(d: Date) {
+    cancelAvailabilityFetch()
+    setSelectedDate(d)
     setLoading(true)
     setSelectedHour(null)
     setAvailabilityWarning(false)
-    const dateStr = toISODate(selectedDate)
+    const dateStr = toISODate(d)
 
-    // Client-side only, after render. Abort after 4s so a slow API never leaves
-    // the calendar stuck on "Завантаження…" — we fall back to "all free" and
-    // show a notice; the booking is confirmed by phone anyway.
+    // Abort after 4s so a slow API never leaves the calendar stuck on
+    // "Завантаження…" — we fall back to "all free" and show a notice; the
+    // booking is confirmed by phone anyway.
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), 4000)
+    availabilityAbort.current = { controller, timer }
 
     fetch(`/api/bookings/availability?slug=${serviceSlug}&date=${dateStr}`, { signal: controller.signal })
       .then(r => r.json())
@@ -249,21 +268,22 @@ export function HourlyCalendar({
         clearTimeout(timer)
         setLoading(false)
       })
+  }
 
-    return () => {
-      clearTimeout(timer)
-      controller.abort()
-    }
-  }, [selectedDate, serviceSlug])
+  useEffect(() => {
+    return () => cancelAvailabilityFetch()
+  }, [])
 
   const daysInMonth = new Date(viewMonth.getFullYear(), viewMonth.getMonth() + 1, 0).getDate()
   const firstDow = (new Date(viewMonth.getFullYear(), viewMonth.getMonth(), 1).getDay() + 6) % 7
 
   function prevMonth() {
+    cancelAvailabilityFetch()
     setViewMonth(m => new Date(m.getFullYear(), m.getMonth() - 1, 1))
     setSelectedDate(null)
   }
   function nextMonth() {
+    cancelAvailabilityFetch()
     setViewMonth(m => new Date(m.getFullYear(), m.getMonth() + 1, 1))
     setSelectedDate(null)
   }
@@ -279,10 +299,16 @@ export function HourlyCalendar({
   }
   const maxDur = selectedHour != null ? maxDurationFrom(selectedHour) : 1
 
-  // Keep duration within the valid range whenever the start hour changes.
-  useEffect(() => {
+  // Keep duration within the valid range whenever the start hour or the
+  // computed max (from freshly-loaded availability) changes. Adjusted
+  // directly during render rather than via an effect — see
+  // https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes
+  const clampKey = `${selectedHour}:${maxDur}`
+  const [prevClampKey, setPrevClampKey] = useState(clampKey)
+  if (clampKey !== prevClampKey) {
+    setPrevClampKey(clampKey)
     setDuration(d => Math.min(Math.max(1, d), maxDur))
-  }, [selectedHour, maxDur])
+  }
 
   const cfg: HourlyPricingConfig = {
     flatPricePerHour: pricePerHour,
@@ -359,7 +385,7 @@ export function HourlyCalendar({
           {successMessage ?? c.successBody}
         </p>
         <button
-          onClick={() => { setSuccess(false); setSuccessMessage(null); setSelectedDate(null); setSelectedHour(null); setDuration(1); setName(''); setPhone(''); setComment(''); setGuestCount(1); setBouquetWanted(false); setBouquetQty(1); setRulesAccepted(false) }}
+          onClick={() => { cancelAvailabilityFetch(); setSuccess(false); setSuccessMessage(null); setSelectedDate(null); setSelectedHour(null); setDuration(1); setName(''); setPhone(''); setComment(''); setGuestCount(1); setBouquetWanted(false); setBouquetQty(1); setRulesAccepted(false) }}
           className="mt-4 text-xs text-purple-600 underline"
         >
           {c.bookAgain}
@@ -398,7 +424,7 @@ export function HourlyCalendar({
               <button
                 key={i}
                 disabled={disabled}
-                onClick={() => setSelectedDate(d)}
+                onClick={() => selectDate(d)}
                 className={[
                   'py-2 text-sm transition-colors',
                   disabled ? 'text-gray-300 cursor-not-allowed' : 'hover:bg-purple-50 cursor-pointer',
