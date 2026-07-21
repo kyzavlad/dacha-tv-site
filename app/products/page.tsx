@@ -4,24 +4,47 @@ import { CTAButton } from '@/components/shared/CTAButton'
 import { ProductsCatalog } from '@/components/products/ProductsCatalog'
 import { getAllHoneyProducts, getAllApiaryProducts } from '@/lib/supabase/queries'
 import { getNaturalProducts } from '@/lib/supabase/catalog'
+import { getRequestLocale } from '@/lib/i18n'
+import { manualDict } from '@/lib/i18n/sections/manual'
 
-export const metadata: Metadata = {
-  title: 'Продукти',
-  description:
-    'Натуральні продукти, продукти пасіки та сезонні товари господарства з Харківщини: мед, пилок, прополіс, жимолость, живі олії, Іван-чай, часник, саджанці та інше.',
-  alternates: { canonical: '/products' },
-  openGraph: {
+const PRODUCTS_META: Record<'uk' | 'ru' | 'en', { title: string; description: string; ogDescription: string }> = {
+  uk: {
     title: 'Продукти',
-    description: 'Натуральні продукти, продукти пасіки та сезонні товари господарства з Харківщини.',
-    siteName: 'Дача TV',
-    type: 'website',
-    images: [{ url: '/images/dacha-tv/logo-square.png', width: 1200, height: 1200, alt: 'Дача TV' }],
+    description: 'Натуральні продукти, продукти пасіки та сезонні товари господарства з Харківщини: мед, пилок, прополіс, жимолость, живі олії, Іван-чай, часник, саджанці та інше.',
+    ogDescription: 'Натуральні продукти, продукти пасіки та сезонні товари господарства з Харківщини.',
   },
-  twitter: {
-    card: 'summary_large_image',
-    title: 'Продукти',
-    description: 'Натуральні продукти, продукти пасіки та сезонні товари господарства з Харківщини.',
+  ru: {
+    title: 'Продукты',
+    description: 'Натуральные продукты, продукты пасеки и сезонные товары хозяйства с Харьковщины: мёд, пыльца, прополис, жимолость, живые масла, Иван-чай, чеснок, саженцы и другое.',
+    ogDescription: 'Натуральные продукты, продукты пасеки и сезонные товары хозяйства с Харьковщины.',
   },
+  en: {
+    title: 'Products',
+    description: 'Natural products, apiary products and seasonal farm goods from the Kharkiv region: honey, pollen, propolis, honeysuckle, cold-pressed oils, Ivan tea, garlic, seedlings and more.',
+    ogDescription: 'Natural products, apiary products and seasonal farm goods from the Kharkiv region.',
+  },
+}
+
+export async function generateMetadata(): Promise<Metadata> {
+  const locale = await getRequestLocale()
+  const m = PRODUCTS_META[locale]
+  return {
+    title: m.title,
+    description: m.description,
+    alternates: { canonical: '/products' },
+    openGraph: {
+      title: m.title,
+      description: m.ogDescription,
+      siteName: 'Дача TV',
+      type: 'website',
+      images: [{ url: '/images/dacha-tv/logo-square.png', width: 1200, height: 1200, alt: 'Дача TV' }],
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title: m.title,
+      description: m.ogDescription,
+    },
+  }
 }
 
 // /products is the CURRENT offer, not an archive. Inclusion is therefore by
@@ -43,6 +66,8 @@ const CURATED_NATURAL_SLUGS = new Set(['medovyi-shokolad'])
 const ORDERABLE_STATUS = new Set(['available', 'preorder'])
 
 export default async function ProductsPage() {
+  const locale = await getRequestLocale()
+  const t = manualDict(locale)
   const [honeyAll, apiaryAll, naturalAll] = await Promise.all([
     getAllHoneyProducts().catch(() => []),
     getAllApiaryProducts().catch(() => []),
@@ -70,12 +95,12 @@ export default async function ProductsPage() {
       {/* Page header */}
       <div className="bg-white border-b border-gray-100 py-12 md:py-16">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <span className="text-xs font-semibold text-honey-700 uppercase tracking-widest mb-3 block">Продукти</span>
+          <span className="text-xs font-semibold text-honey-700 uppercase tracking-widest mb-3 block">{t.productsEyebrow}</span>
           <h1 className="font-serif text-4xl md:text-5xl font-bold text-bark mb-4">
-            Продукти господарства
+            {t.productsH1}
           </h1>
           <p className="text-gray-500 text-lg max-w-2xl">
-            Натуральні продукти, продукти пасіки та сезонні товари господарства з Харківщини.
+            {t.productsIntro}
           </p>
         </div>
       </div>
@@ -89,13 +114,13 @@ export default async function ProductsPage() {
       <div className="bg-bark py-12">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <h2 className="font-serif text-2xl md:text-3xl font-bold text-cream mb-4">
-            Потрібна допомога у виборі?
+            {t.productsCtaTitle}
           </h2>
           <p className="text-cream/70 mb-6">
-            Зателефонуйте або залиште заявку: ми відповімо на всі питання
+            {t.productsCtaBody}
           </p>
           <CTAButton href="/contact" variant="white">
-            Зв&apos;язатись з нами
+            {t.productsCtaButton}
           </CTAButton>
         </div>
       </div>

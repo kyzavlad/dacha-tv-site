@@ -2,9 +2,12 @@
 
 import { useMemo, useState } from 'react'
 import type { Review } from '@/types'
+import { DEFAULT_LOCALE, type Locale } from '@/lib/i18n'
+import { homeDict } from '@/lib/i18n/sections/home'
 
 interface ReviewsProps {
   reviews?: Review[]
+  locale?: Locale
 }
 
 const CURATED_REVIEWS: Array<{ quote: string; name: string; city: string; tag: string; rating: number }> = [
@@ -20,9 +23,9 @@ const CURATED_REVIEWS: Array<{ quote: string; name: string; city: string; tag: s
   { quote: 'Замовлення зібрали швидко, тримали в курсі, відправили того ж дня. Все чесно.', name: 'Володимир', city: 'Чугуїв', tag: 'Доставка', rating: 5 },
 ]
 
-function StarRating({ rating }: { rating: number }) {
+function StarRating({ rating, ariaLabel }: { rating: number; ariaLabel: string }) {
   return (
-    <div className="flex gap-0.5" aria-label={`Оцінка: ${rating} з 5 зірок`}>
+    <div className="flex gap-0.5" aria-label={ariaLabel}>
       {[1, 2, 3, 4, 5].map((star) => (
         <svg key={star} className={`w-4 h-4 ${star <= rating ? 'text-honey-500' : 'text-gray-200'}`} fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
           <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
@@ -40,11 +43,11 @@ function ReviewerInitial({ name }: { name: string }) {
   )
 }
 
-function ReviewCard({ review }: { review: { quote: string; name: string; city: string; tag: string; rating: number } }) {
+function ReviewCard({ review, ratingAria }: { review: { quote: string; name: string; city: string; tag: string; rating: number }; ratingAria: string }) {
   return (
     <blockquote className="bg-white rounded-2xl p-6 border border-gray-100 hover:border-gray-200 hover:shadow-lg transition-all duration-300 flex flex-col min-h-[260px]">
       <div className="flex items-center justify-between gap-2 mb-4">
-        <StarRating rating={review.rating} />
+        <StarRating rating={review.rating} ariaLabel={ratingAria} />
         {review.tag && (
           <span className="text-[0.7rem] font-semibold uppercase tracking-wide text-honey-700 bg-honey-50 border border-honey-100 rounded-full px-2.5 py-1">
             {review.tag}
@@ -63,7 +66,8 @@ function ReviewCard({ review }: { review: { quote: string; name: string; city: s
   )
 }
 
-export function Reviews({ reviews }: ReviewsProps) {
+export function Reviews({ reviews, locale = DEFAULT_LOCALE }: ReviewsProps) {
+  const t = homeDict(locale)
   const items = useMemo(() => {
     return (reviews && reviews.length >= 3)
       ? reviews.slice(0, 10).map((r) => ({ quote: r.quote, name: r.reviewer_name, city: r.city ?? '', tag: '', rating: r.rating }))
@@ -87,12 +91,12 @@ export function Reviews({ reviews }: ReviewsProps) {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-10">
           <div>
-            <span className="text-xs font-semibold text-honey-700 uppercase tracking-widest mb-4 block">Відгуки</span>
+            <span className="text-xs font-semibold text-honey-700 uppercase tracking-widest mb-4 block">{t.reviewsEyebrow}</span>
             <h2 id="reviews-heading" className="font-serif text-3xl md:text-4xl font-bold text-bark mb-3">
-              Що кажуть наші покупці
+              {t.reviewsTitle}
             </h2>
             <p className="text-gray-500 text-base max-w-xl">
-              Відгуки про мед, продукти, квіти, лаванду, металопрофіль і доставку
+              {t.reviewsIntro}
             </p>
           </div>
 
@@ -101,7 +105,7 @@ export function Reviews({ reviews }: ReviewsProps) {
             <button
               type="button"
               onClick={prev}
-              aria-label="Попередні відгуки"
+              aria-label={t.reviewsPrevAria}
               className="w-11 h-11 rounded-full border border-gray-200 bg-white flex items-center justify-center text-bark/60 hover:text-bark hover:border-bark/30 transition-colors"
             >
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
@@ -111,7 +115,7 @@ export function Reviews({ reviews }: ReviewsProps) {
             <button
               type="button"
               onClick={next}
-              aria-label="Наступні відгуки"
+              aria-label={t.reviewsNextAria}
               className="w-11 h-11 rounded-full border border-gray-200 bg-white flex items-center justify-center text-bark/60 hover:text-bark hover:border-bark/30 transition-colors"
             >
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
@@ -123,7 +127,7 @@ export function Reviews({ reviews }: ReviewsProps) {
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
           {visible.map((review, i) => (
-            <ReviewCard key={`${index}-${i}-${review.name}`} review={review} />
+            <ReviewCard key={`${index}-${i}-${review.name}`} review={review} ratingAria={t.reviewsRatingAria.replace('{n}', String(review.rating))} />
           ))}
         </div>
 
@@ -133,7 +137,7 @@ export function Reviews({ reviews }: ReviewsProps) {
               key={i}
               type="button"
               onClick={() => setIndex(i)}
-              aria-label={`Показати відгук ${i + 1}`}
+              aria-label={t.reviewsDotAria.replace('{n}', String(i + 1))}
               className={`h-2 rounded-full transition-all ${i === index ? 'w-8 bg-honey-600' : 'w-2 bg-gray-300 hover:bg-gray-400'}`}
             />
           ))}

@@ -1,4 +1,6 @@
 import Link from 'next/link'
+import { getRequestLocale } from '@/lib/i18n'
+import { homeDict } from '@/lib/i18n/sections/home'
 
 // "Зараз доступно" — a small, calm availability strip. Because much of the range
 // is seasonal or made-to-order, this block states plainly what a visitor can get
@@ -11,25 +13,27 @@ interface AvailableItem {
   href: string
 }
 
-const ITEMS: AvailableItem[] = [
-  { emoji: '🍯', title: 'Липовий мед', note: '600 грн / 1 л · є в наявності', href: '/honey' },
-  { emoji: '🍫', title: 'Шоколад на меду', note: '250 грн · готуємо на замовлення', href: '/products' },
-  { emoji: '🌱', title: 'Масло холодного віджиму', note: 'від 500 грн / 1 л · на деревʼяному пресі', href: '/products' },
-  { emoji: '🐝', title: 'Бджолосімʼї та відводки', note: 'для пасічників · за наявністю', href: '/beekeeper' },
-]
+export async function AvailableNow() {
+  const t = homeDict(await getRequestLocale())
 
-export function AvailableNow() {
+  const ITEMS: AvailableItem[] = [
+    { emoji: '🍯', title: t.availHoneyTitle, note: t.availHoneyNote, href: '/honey' },
+    { emoji: '🍫', title: t.availChocolateTitle, note: t.availChocolateNote, href: '/products' },
+    { emoji: '🌱', title: t.availOilTitle, note: t.availOilNote, href: '/products' },
+    { emoji: '🐝', title: t.availBeesTitle, note: t.availBeesNote, href: '/beekeeper' },
+  ]
+
   return (
     <section className="bg-cream py-16 md:py-20">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <span className="text-xs font-semibold text-honey-700 uppercase tracking-widest mb-3 block">
-          Зараз доступно
+          {t.availEyebrow}
         </span>
         <h2 className="font-serif text-3xl md:text-4xl font-bold text-bark mb-3">
-          Що можна замовити просто зараз
+          {t.availTitle}
         </h2>
         <p className="text-gray-500 text-base max-w-2xl mb-8">
-          Частина продуктів сезонна або виготовляється на замовлення. Тут — те, що доступно сьогодні.
+          {t.availIntro}
         </p>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
@@ -45,7 +49,7 @@ export function AvailableNow() {
               </h3>
               <p className="text-sm text-bark/60 mb-4">{item.note}</p>
               <span className="mt-auto text-sm font-medium text-honey-700">
-                Дивитись →
+                {t.availView}
               </span>
             </Link>
           ))}

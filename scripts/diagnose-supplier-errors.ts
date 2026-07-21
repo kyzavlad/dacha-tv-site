@@ -35,13 +35,22 @@ async function main() {
     // Normalize into the canonical 7 groups.
     const counts: Record<string, number> = {}
     for (const g of GROUPS) counts[g] = Number(groups[g] ?? 0)
+    // A row is a LEGACY run if it predates the classifier (errorGroups absent /
+    // null while products_errors > 0). Its exact classification is UNAVAILABLE —
+    // never fabricate it. New runs always carry errorGroups.
+    const hasGroups = details.errorGroups != null && Object.keys(groups).length > 0
+    const legacyUnclassified = !hasGroups && Number(row.products_errors) > 0
     logsOut.push({
       sync_type: row.sync_type,
       status: row.status,
-      completed_with_errors: details.completedWithErrors ?? details.completed_with_errors ?? (Number(row.products_errors) > 0),
+      legacy_unclassified: legacyUnclassified,
+      classification_available: hasGroups,
+      completed_with_errors: details.completed_with_errors ?? details.completedWithErrors ?? null,
+      hard_errors: details.hard_errors ?? null,
+      diagnostic_issues: details.diagnostic_issues ?? null,
       products_total: row.products_total,
       products_errors: row.products_errors,
-      errorGroups: counts,
+      errorGroups: hasGroups ? counts : null,
       // Sample details are already bounded + sanitized by recordError.
       details: details.errorDetails ?? details.details ?? null,
       started_at: row.started_at,
@@ -66,9 +75,15 @@ async function main() {
     note: 'invalid_price rows are harmless UNSELLABLE supplier rows (no price) — excluded from the catalog import, not a failure. missing_name rows likewise.',
   }
 
+  const anyLegacy = logsOut.some((l) => (l as { legacy_unclassified?: boolean }).legacy_unclassified)
+  report.historical_note = anyLegacy
+    ? 'One or more legacy runs have products_errors > 0 but NO stored errorGroups. Their exact classification (e.g. the historical 1767) is UNAVAILABLE and was not reconstructed. New runs always emit errorGroups + hard_errors/diagnostic_issues; live_data_quality below counts no-price/missing-name rows independently.'
+    : 'All inspected runs carry errorGroups (classifier active).'
+
   const path = writeArtifact('supplier-error-diagnosis.json', report)
   log(JSON.stringify(report, null, 2))
   log(`\n  report: ${path}`)
+  log(`\n  Historical note: ${report.historical_note}`)
   log(`\n  Interpretation:`)
   log(`   • missing_sku / invalid_record       → malformed feed records (skipped, safe)`)
   log(`   • invalid_price / missing_name        → unsellable supplier rows (excluded from import, safe)`)

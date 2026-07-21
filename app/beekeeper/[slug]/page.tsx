@@ -10,17 +10,23 @@ import { BeekeeperInquiryForm } from '@/components/forms/BeekeeperInquiryForm'
 import { BeekeeperCard } from '@/components/beekeeper/BeekeeperCard'
 import { getBeekeeperProductBySlug, getAllBeekeeperProducts } from '@/lib/supabase/queries'
 import { extractYouTubeId } from '@/lib/youtube'
+import { getRequestLocale, localizedPath } from '@/lib/i18n'
+import { manualDict, type ManualDict } from '@/lib/i18n/sections/manual'
+import { getManualTranslations, resolveManualField } from '@/lib/i18n/manual-translations'
 
 interface Props {
   params: Promise<{ slug: string }>
 }
 
-const TYPE_LABELS: Record<string, string> = {
-  bee_packages: 'Бджолопакети',
-  bee_colonies: "Бджолосім'ї",
-  empty_hives: 'Порожні вулики',
-  hives_with_bees: 'Вулики з бджолами',
-  apiary_supply: 'Товари пасічника',
+function typeLabel(t: ManualDict, type: string): string {
+  switch (type) {
+    case 'bee_packages': return t.beekeeperTypeBeePackages
+    case 'bee_colonies': return t.beekeeperTypeBeeColonies
+    case 'empty_hives': return t.beekeeperTypeEmptyHives
+    case 'hives_with_bees': return t.beekeeperTypeHivesWithBees
+    case 'apiary_supply': return t.beekeeperTypeApiarySupply
+    default: return type
+  }
 }
 
 const BLUR_DATA_URL =
@@ -28,28 +34,33 @@ const BLUR_DATA_URL =
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params
+  const locale = await getRequestLocale()
+  const t = manualDict(locale)
   const product = await getBeekeeperProductBySlug(slug).catch(() => null)
-  if (!product) return { title: 'Продукт не знайдено' }
+  if (!product) return { title: t.detailNotFound }
 
+  const tr = locale === 'uk' ? null : (await getManualTranslations('beekeeper_product', [product.id], locale)).get(product.id)
+  const name = resolveManualField(product.name, tr, 'name', locale)
   const media = product.media ?? []
   const primaryImg = media.find((m) => m.media_type === 'image' && m.is_primary) ?? media.find((m) => m.media_type === 'image')
   const ogImage = primaryImg?.url ?? product.image_url ?? null
 
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? ''
-  const description = product.description || `${product.name} від пасіки Дача TV на Харківщині. Пряма комунікація з пасічником: без посередників.`
+  const description = resolveManualField(product.description ?? null, tr, 'description', locale)
+    || `${name} — Дача TV`
   return {
-    title: product.name,
+    title: name,
     description,
     alternates: { canonical: siteUrl ? `${siteUrl}/beekeeper/${slug}` : `/beekeeper/${slug}` },
     openGraph: {
-      title: `${product.name}`,
+      title: name,
       description,
       images: ogImage ? [{ url: ogImage, width: 1200, height: 630 }] : [],
       type: 'website',
     },
     twitter: {
       card: 'summary_large_image',
-      title: `${product.name}`,
+      title: name,
       description,
       images: ogImage ? [ogImage] : [],
     },
@@ -58,6 +69,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 export default async function BeekeeperProductPage({ params }: Props) {
   const { slug } = await params
+  const locale = await getRequestLocale()
+  const t = manualDict(locale)
 
   const [product, allProducts] = await Promise.all([
     getBeekeeperProductBySlug(slug).catch(() => null),
@@ -65,6 +78,10 @@ export default async function BeekeeperProductPage({ params }: Props) {
   ])
 
   if (!product) notFound()
+  const tr = locale === 'uk' ? null : (await getManualTranslations('beekeeper_product', [product.id], locale)).get(product.id)
+  const name = resolveManualField(product.name, tr, 'name', locale)
+  const description = resolveManualField(product.description ?? null, tr, 'description', locale)
+  const fullDesc = resolveManualField(product.full_description ?? null, tr, 'seo_description', locale) || product.full_description
 
   const media = product.media ?? []
   const primaryImg = media.find((m) => m.media_type === 'image' && m.is_primary) ?? media.find((m) => m.media_type === 'image') ?? null
@@ -74,12 +91,12 @@ export default async function BeekeeperProductPage({ params }: Props) {
 
   const heroImageSrc = primaryImg?.url ?? product.image_url ?? null
   const heroImage = heroImageSrc?.startsWith('http') ? heroImageSrc : null
-  const heroImageAlt = primaryImg?.alt ?? product.image_alt ?? product.name
+  const heroImageAlt = primaryImg?.alt ?? product.image_alt ?? name
 
   const allImages = heroImage
     ? [
         { src: heroImage, alt: heroImageAlt },
-        ...galleryImgs.map((m) => ({ src: m.url, alt: m.alt ?? product.name })),
+        ...galleryImgs.map((m) => ({ src: m.url, alt: m.alt ?? name })),
       ]
     : []
 
@@ -118,12 +135,12 @@ export default async function BeekeeperProductPage({ params }: Props) {
 
       {/* Breadcrumb */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-        <nav aria-label="Навігація" className="text-sm text-bark/50">
-          <Link href="/" className="hover:text-honey-700">Головна</Link>
+        <nav aria-label={t.detailBreadcrumbHome} className="text-sm text-bark/50">
+          <Link href={localizedPath(locale, '/')} className="hover:text-honey-700">{t.detailBreadcrumbHome}</Link>
           <span className="mx-2">›</span>
-          <Link href="/beekeeper" className="hover:text-honey-700">Для пасічників</Link>
+          <Link href={localizedPath(locale, '/beekeeper')} className="hover:text-honey-700">{t.beekeeperEyebrow}</Link>
           <span className="mx-2">›</span>
-          <span className="text-bark">{product.name}</span>
+          <span className="text-bark">{name}</span>
         </nav>
       </div>
 
@@ -136,12 +153,12 @@ export default async function BeekeeperProductPage({ params }: Props) {
             blurDataURL={BLUR_DATA_URL}
             priority
             isUnavailable={isUnavailable}
-            featuredLabel={product.is_featured ? 'Популярне' : undefined}
+            featuredLabel={product.is_featured ? t.catalogFeatured : undefined}
             featuredBadgeClass="bg-honey-600"
           >
             <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-forest-50 to-forest-200">
               <span className="text-forest-600 font-serif font-bold text-3xl text-center px-6">
-                {product.name}
+                {name}
               </span>
             </div>
           </ProductGallery>
@@ -150,23 +167,23 @@ export default async function BeekeeperProductPage({ params }: Props) {
           <div>
             {product.product_type && (
               <span className="text-xs font-semibold text-forest-700 uppercase tracking-widest mb-2 block">
-                {TYPE_LABELS[product.product_type] ?? product.product_type}
+                {typeLabel(t, product.product_type)}
               </span>
             )}
 
             <h1 className="font-serif text-3xl md:text-4xl font-bold text-bark mb-3">
-              {product.name}
+              {name}
             </h1>
 
-            {product.description && (
+            {description && (
               <p className="text-bark/70 text-lg leading-relaxed mb-4">
-                {product.description}
+                {description}
               </p>
             )}
 
             {isUnavailable && (
               <div className="bg-gray-100 text-gray-700 rounded-lg px-4 py-3 mb-4 text-sm font-medium">
-                Наразі немає в наявності. Залиште заявку: ми повідомимо, коли з&apos;явиться.
+                {t.detailOutOfStockNote}
               </div>
             )}
 
@@ -182,7 +199,7 @@ export default async function BeekeeperProductPage({ params }: Props) {
             {product.breeds && product.breeds.length > 0 && (
               <div className="mb-5">
                 <p className="text-xs font-semibold text-bark/50 uppercase tracking-widest mb-2">
-                  Доступні породи
+                  {t.detailAvailableBreeds}
                 </p>
                 <div className="flex flex-wrap gap-2">
                   {product.breeds.map((breed) => (
@@ -208,16 +225,16 @@ export default async function BeekeeperProductPage({ params }: Props) {
               </div>
             )}
 
-            {product.full_description && (
+            {fullDesc && (
               <div className="text-bark/70 leading-relaxed mb-6">
-                <p>{product.full_description}</p>
+                <p>{fullDesc}</p>
               </div>
             )}
 
             {videoUrl && (
               <div className="mb-6">
                 <p className="text-xs font-semibold text-bark/50 uppercase tracking-widest mb-2">
-                  Відео про цей продукт
+                  {t.detailVideoAboutProduct}
                 </p>
                 <video src={videoUrl} controls className="w-full rounded-xl" />
               </div>
@@ -226,25 +243,25 @@ export default async function BeekeeperProductPage({ params }: Props) {
             {youtubeId && (
               <div className="mb-6">
                 <p className="text-xs font-semibold text-bark/50 uppercase tracking-widest mb-2">
-                  {videoUrl ? 'Також на YouTube' : 'Відео про цей продукт'}
+                  {videoUrl ? t.detailAlsoOnYoutube : t.detailVideoAboutProduct}
                 </p>
-                <YouTubeFacade videoId={youtubeId} title={`Відео: ${product.name}`} />
+                <YouTubeFacade videoId={youtubeId} title={`${name} — Дача TV`} />
               </div>
             )}
 
             {extraYoutubeIds.map((vid, i) => (
               <div key={i} className="mb-4">
-                <YouTubeFacade videoId={vid} title={`Відео ${i + 2}: ${product.name}`} />
+                <YouTubeFacade videoId={vid} title={`${name} — Дача TV (${i + 2})`} />
               </div>
             ))}
 
             {/* Inquiry form */}
             <div id="inquiry-form" className="bg-forest-50 rounded-2xl p-6 border border-forest-200">
               <h2 className="font-serif text-2xl font-bold text-bark mb-1">
-                Залишити заявку
+                {t.beekeeperFormTitle}
               </h2>
               <p className="text-bark/60 text-sm mb-5">
-                Щоб дізнатись наявність та вартість: залиште заявку або зателефонуйте
+                {t.beekeeperFormBody}
               </p>
               <BeekeeperInquiryForm source={`/beekeeper/${slug}`} />
             </div>
@@ -255,7 +272,7 @@ export default async function BeekeeperProductPage({ params }: Props) {
         {related.length > 0 && (
           <div className="mt-16 pt-12 border-t border-forest-100">
             <h2 className="font-serif text-2xl font-bold text-bark mb-8">
-              Також може зацікавити
+              {t.detailAlsoInterested}
             </h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
               {related.map((p) => (

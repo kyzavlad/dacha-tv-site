@@ -1,6 +1,8 @@
 import Link from 'next/link'
 import { CTAButton } from '@/components/shared/CTAButton'
 import { PhoneLink } from '@/components/shared/PhoneLink'
+import { getRequestLocale } from '@/lib/i18n'
+import { homeDict } from '@/lib/i18n/sections/home'
 import type { SiteSettings } from '@/types'
 
 interface HeroProps {
@@ -9,14 +11,13 @@ interface HeroProps {
   siteSettings: SiteSettings | null
 }
 
-export function Hero({ tagline, subtext, siteSettings }: HeroProps) {
-  const displayTagline = tagline || 'Товари для дому, саду та господарства — з Дача TV.'
-  const displaySubtext =
-    subtext ||
-    'Магазин корисних товарів, продукція нашого господарства, квіти, лаванда та послуги садиби — все в одному місці з доставкою по Україні.'
+export async function Hero({ tagline, subtext, siteSettings }: HeroProps) {
+  const t = homeDict(await getRequestLocale())
+  const displayTagline = tagline || t.heroTitle
+  const displaySubtext = subtext || t.heroSubtext
 
   return (
-    <section className="relative min-h-[90vh] flex items-center overflow-hidden" aria-label="Головний банер">
+    <section className="relative min-h-[90vh] flex items-center overflow-hidden" aria-label={t.heroAria}>
       {/* Background */}
       <div
         className="absolute inset-0 bg-gradient-to-br from-bark via-honey-950 to-bark"
@@ -44,7 +45,7 @@ export function Hero({ tagline, subtext, siteSettings }: HeroProps) {
           <div className="inline-flex items-center gap-2.5 bg-white/10 border border-white/15 rounded-full px-4 py-2 mb-8 backdrop-blur-sm">
             <span className="w-2 h-2 rounded-full bg-honey-400 animate-pulse flex-shrink-0" aria-hidden="true" />
             <span className="text-honey-200 text-sm font-medium tracking-wide">
-              Дача TV · магазин, господарство, лаванда, квіти та послуги садиби
+              {t.heroBadge}
             </span>
           </div>
 
@@ -61,13 +62,13 @@ export function Hero({ tagline, subtext, siteSettings }: HeroProps) {
           {/* CTA row */}
           <div className="flex flex-col sm:flex-row gap-4 items-start">
             <CTAButton href="/catalog" size="lg" variant="primary">
-              Перейти в магазин
+              {t.heroCta}
             </CTAButton>
             <Link
               href="#ecosystem"
               className="inline-flex items-center justify-center gap-2 px-9 py-4 text-lg text-white/70 hover:text-white border border-white/20 hover:border-white/40 rounded-full transition-all min-h-[56px]"
             >
-              Переглянути напрямки
+              {t.heroSecondary}
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
               </svg>
@@ -77,7 +78,7 @@ export function Hero({ tagline, subtext, siteSettings }: HeroProps) {
           {/* Phone — shown when available */}
           {siteSettings?.phone && (
             <div className="mt-10 pt-10 border-t border-white/10 flex items-center gap-3">
-              <span className="text-white/40 text-sm">або зателефонуйте:</span>
+              <span className="text-white/40 text-sm">{t.heroPhonePrefix}</span>
               <PhoneLink
                 phone={siteSettings.phone}
                 showIcon

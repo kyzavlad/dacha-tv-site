@@ -3,6 +3,7 @@
 import { useState, useEffect, useTransition } from 'react'
 import { submitHourlyBooking } from '@/actions/submitBooking'
 import { computeBookingPrice, type HourlyPricingConfig } from '@/lib/bookings/pricing'
+import { DEFAULT_LOCALE, type Locale } from '@/lib/i18n'
 
 interface Props {
   serviceSlug: string
@@ -13,6 +14,7 @@ interface Props {
   slotStartHour: number
   slotEndHour: number
   source?: string
+  locale?: Locale
   // Optional limits/extras (used by the lavender field rental). Omitted →
   // current generic behaviour for other hourly services.
   maxDateISO?: string          // latest selectable date, e.g. '2026-07-20'
@@ -36,17 +38,152 @@ function toISODate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-function formatDateUA(d: Date): string {
-  return d.toLocaleDateString('uk-UA', { day: 'numeric', month: 'long', year: 'numeric' })
+const DATE_LOCALE: Record<Locale, string> = { uk: 'uk-UA', ru: 'ru-RU', en: 'en-US' }
+function formatLocalDate(d: Date, locale: Locale): string {
+  return d.toLocaleDateString(DATE_LOCALE[locale], { day: 'numeric', month: 'long', year: 'numeric' })
+}
+
+// Static, visible booking-calendar UI copy — self-contained (mirrors the
+// CAT_STRINGS pattern used by the category page) since this component is
+// shared across /lavender and /services/[slug].
+const CAL: Record<Locale, {
+  weekdays: string[]
+  slotsHeading: (date: string) => string
+  availabilityWarning: string
+  loading: string
+  durationLabel: string
+  hours: (n: number) => string
+  nameLabel: string
+  namePlaceholder: string
+  phoneLabel: string
+  guestsLabel: string
+  people: (n: number) => string
+  includedNote: (included: number, extraPrice: number) => string
+  extraNote: (count: number, total: string) => string
+  bouquetLabel: (price: number) => string
+  bouquetQtyLabel: string
+  bouquetTotal: (total: string) => string
+  rentLabel: (hours: number) => string
+  extraGuestsLine: (count: number) => string
+  bouquetLine: (qty: number) => string
+  total: string
+  rulesDefault: string
+  commentLabel: string
+  commentPlaceholder: string
+  submitting: string
+  submit: string
+  successTitle: string
+  successBody: string
+  bookAgain: string
+  pastTimeError: string
+  rulesRequiredError: string
+}> = {
+  uk: {
+    weekdays: ['Пн','Вт','Ср','Чт','Пт','Сб','Нд'],
+    slotsHeading: (date) => `Початок · ${date}`,
+    availabilityWarning: 'Не вдалося швидко перевірити зайнятість. Залиште заявку — підтвердимо час дзвінком.',
+    loading: 'Завантаження…',
+    durationLabel: 'Тривалість',
+    hours: (n) => `${n} ${n === 1 ? 'година' : n < 5 ? 'години' : 'годин'}`,
+    nameLabel: "Ваше ім'я *",
+    namePlaceholder: "Ім'я",
+    phoneLabel: 'Телефон *',
+    guestsLabel: 'Кількість гостей *',
+    people: (n) => `${n} ${n === 1 ? 'особа' : n < 5 ? 'особи' : 'осіб'}`,
+    includedNote: (included, extraPrice) => `Включено ${included} осіб; кожна понад ${included} — +${extraPrice} ₴.`,
+    extraNote: (count, total) => ` Додатково ${count}: +${total} ₴.`,
+    bouquetLabel: (price) => `Хочете придбати букети лаванди? ${price} грн/шт`,
+    bouquetQtyLabel: 'Кількість:',
+    bouquetTotal: (total) => `= +${total} ₴`,
+    rentLabel: (hours) => `Оренда${hours > 1 ? ` · ${hours} год` : ''}`,
+    extraGuestsLine: (count) => `Додатково гостей: +${count}`,
+    bouquetLine: (qty) => `Букети лаванди: ${qty} шт`,
+    total: 'Разом',
+    rulesDefault: 'З правилами відвідування лавандового поля ознайомлений(а)',
+    commentLabel: "Коментар (необов'язково)",
+    commentPlaceholder: 'Побажання або запитання',
+    submitting: 'Надсилаємо…',
+    submit: 'Забронювати',
+    successTitle: 'Заявку відправлено!',
+    successBody: 'Заявку на бронювання відправлено. Ми звʼяжемося з вами для підтвердження та реквізитів передплати.',
+    bookAgain: 'Забронювати ще',
+    pastTimeError: 'Обраний час вже минув. Будь ласка, оберіть пізніший час на сьогодні.',
+    rulesRequiredError: 'Підтвердіть, що ознайомлені з правилами',
+  },
+  ru: {
+    weekdays: ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'],
+    slotsHeading: (date) => `Начало · ${date}`,
+    availabilityWarning: 'Не удалось быстро проверить занятость. Оставьте заявку — подтвердим время звонком.',
+    loading: 'Загрузка…',
+    durationLabel: 'Длительность',
+    hours: (n) => `${n} ${n === 1 ? 'час' : n < 5 ? 'часа' : 'часов'}`,
+    nameLabel: 'Ваше имя *',
+    namePlaceholder: 'Имя',
+    phoneLabel: 'Телефон *',
+    guestsLabel: 'Количество гостей *',
+    people: (n) => `${n} ${n === 1 ? 'человек' : n < 5 ? 'человека' : 'человек'}`,
+    includedNote: (included, extraPrice) => `Включено ${included} человек; каждый сверх ${included} — +${extraPrice} ₴.`,
+    extraNote: (count, total) => ` Дополнительно ${count}: +${total} ₴.`,
+    bouquetLabel: (price) => `Хотите купить букеты лаванды? ${price} грн/шт`,
+    bouquetQtyLabel: 'Количество:',
+    bouquetTotal: (total) => `= +${total} ₴`,
+    rentLabel: (hours) => `Аренда${hours > 1 ? ` · ${hours} ч` : ''}`,
+    extraGuestsLine: (count) => `Дополнительно гостей: +${count}`,
+    bouquetLine: (qty) => `Букеты лаванды: ${qty} шт`,
+    total: 'Итого',
+    rulesDefault: 'С правилами посещения лавандового поля ознакомлен(а)',
+    commentLabel: 'Комментарий (необязательно)',
+    commentPlaceholder: 'Пожелания или вопросы',
+    submitting: 'Отправляем…',
+    submit: 'Забронировать',
+    successTitle: 'Заявка отправлена!',
+    successBody: 'Заявка на бронирование отправлена. Мы свяжемся с вами для подтверждения и реквизитов предоплаты.',
+    bookAgain: 'Забронировать ещё',
+    pastTimeError: 'Выбранное время уже прошло. Пожалуйста, выберите более позднее время на сегодня.',
+    rulesRequiredError: 'Подтвердите, что ознакомлены с правилами',
+  },
+  en: {
+    weekdays: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'],
+    slotsHeading: (date) => `Start · ${date}`,
+    availabilityWarning: 'Could not quickly verify availability. Leave a request — we’ll confirm the time by phone.',
+    loading: 'Loading…',
+    durationLabel: 'Duration',
+    hours: (n) => `${n} ${n === 1 ? 'hour' : 'hours'}`,
+    nameLabel: 'Your name *',
+    namePlaceholder: 'Name',
+    phoneLabel: 'Phone *',
+    guestsLabel: 'Number of guests *',
+    people: (n) => `${n} ${n === 1 ? 'guest' : 'guests'}`,
+    includedNote: (included, extraPrice) => `${included} guests included; each guest above that is +${extraPrice} UAH.`,
+    extraNote: (count, total) => ` Extra ${count}: +${total} UAH.`,
+    bouquetLabel: (price) => `Would you like lavender bouquets? ${price} UAH each`,
+    bouquetQtyLabel: 'Quantity:',
+    bouquetTotal: (total) => `= +${total} UAH`,
+    rentLabel: (hours) => `Rental${hours > 1 ? ` · ${hours} h` : ''}`,
+    extraGuestsLine: (count) => `Extra guests: +${count}`,
+    bouquetLine: (qty) => `Lavender bouquets: ${qty}`,
+    total: 'Total',
+    rulesDefault: 'I have read the rules for visiting the lavender field',
+    commentLabel: 'Comment (optional)',
+    commentPlaceholder: 'Wishes or questions',
+    submitting: 'Sending…',
+    submit: 'Book now',
+    successTitle: 'Request sent!',
+    successBody: 'Your booking request has been sent. We’ll contact you to confirm and share prepayment details.',
+    bookAgain: 'Book again',
+    pastTimeError: 'The selected time has already passed. Please choose a later time today.',
+    rulesRequiredError: 'Please confirm you have read the rules',
+  },
 }
 
 export function HourlyCalendar({
   serviceSlug, serviceName, pricePerHour, extraGuestPrice,
-  slotStartHour, slotEndHour, source,
+  slotStartHour, slotEndHour, source, locale = DEFAULT_LOCALE,
   maxDateISO, enableBouquets = false, bouquetPrice = 100,
   requireRules = false, rulesLabel, eveningStartHour, eveningPriceUah,
   includedGuests = 5, maxGuests = 0, maxDurationHours = 1,
 }: Props) {
+  const c = CAL[locale]
   const today = new Date()
   today.setHours(0, 0, 0, 0)
 
@@ -173,7 +310,7 @@ export function HourlyCalendar({
     setServerError(null)
 
     if (requireRules && !rulesAccepted) {
-      setFieldErrors({ rulesAccepted: ['Підтвердіть, що ознайомлені з правилами'] })
+      setFieldErrors({ rulesAccepted: [c.rulesRequiredError] })
       return
     }
 
@@ -182,7 +319,7 @@ export function HourlyCalendar({
     const kyivNowDate = new Date(kyivNowMs)
     const nowDateStr = `${kyivNowDate.getUTCFullYear()}-${String(kyivNowDate.getUTCMonth() + 1).padStart(2, '0')}-${String(kyivNowDate.getUTCDate()).padStart(2, '0')}`
     if (toISODate(selectedDate) === nowDateStr && selectedHour <= kyivNowDate.getUTCHours()) {
-      setServerError('Обраний час вже минув. Будь ласка, оберіть пізніший час на сьогодні.')
+      setServerError(c.pastTimeError)
       return
     }
 
@@ -217,15 +354,15 @@ export function HourlyCalendar({
     return (
       <div className="bg-purple-50 border border-purple-200 rounded-2xl p-6 text-center">
         <div className="text-2xl mb-2">💜</div>
-        <h3 className="font-serif text-lg font-bold text-purple-900 mb-1">Заявку відправлено!</h3>
+        <h3 className="font-serif text-lg font-bold text-purple-900 mb-1">{c.successTitle}</h3>
         <p className="text-purple-700 text-sm">
-          {successMessage ?? 'Заявку на бронювання відправлено. Ми звʼяжемося з вами для підтвердження та реквізитів передплати.'}
+          {successMessage ?? c.successBody}
         </p>
         <button
           onClick={() => { setSuccess(false); setSuccessMessage(null); setSelectedDate(null); setSelectedHour(null); setDuration(1); setName(''); setPhone(''); setComment(''); setGuestCount(1); setBouquetWanted(false); setBouquetQty(1); setRulesAccepted(false) }}
           className="mt-4 text-xs text-purple-600 underline"
         >
-          Забронювати ще
+          {c.bookAgain}
         </button>
       </div>
     )
@@ -240,12 +377,12 @@ export function HourlyCalendar({
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
           <button onClick={prevMonth} className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-500">‹</button>
           <span className="font-semibold text-sm text-gray-800 capitalize">
-            {viewMonth.toLocaleDateString('uk-UA', { month: 'long', year: 'numeric' })}
+            {viewMonth.toLocaleDateString(DATE_LOCALE[locale], { month: 'long', year: 'numeric' })}
           </span>
           <button onClick={nextMonth} disabled={!canGoNext} className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-500 disabled:opacity-30 disabled:cursor-not-allowed">›</button>
         </div>
         <div className="grid grid-cols-7 text-center text-xs font-medium text-gray-400 border-b border-gray-100">
-          {['Пн','Вт','Ср','Чт','Пт','Сб','Нд'].map(d => (
+          {c.weekdays.map(d => (
             <div key={d} className="py-2">{d}</div>
           ))}
         </div>
@@ -279,15 +416,15 @@ export function HourlyCalendar({
       {selectedDate && (
         <div>
           <p className="text-sm font-semibold text-gray-700 mb-3">
-            Початок · {formatDateUA(selectedDate)}
+            {c.slotsHeading(formatLocalDate(selectedDate, locale))}
           </p>
           {!loading && availabilityWarning && (
             <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-              Не вдалося швидко перевірити зайнятість. Залиште заявку — підтвердимо час дзвінком.
+              {c.availabilityWarning}
             </div>
           )}
           {loading ? (
-            <p className="text-xs text-gray-400">Завантаження…</p>
+            <p className="text-xs text-gray-400">{c.loading}</p>
           ) : (
             <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
               {slots.map(h => {
@@ -321,36 +458,36 @@ export function HourlyCalendar({
       {selectedDate && selectedHour !== null && (
         <form onSubmit={handleSubmit} className="bg-gray-50 rounded-2xl p-5 space-y-4">
           <div className="text-sm font-semibold text-gray-800">
-            {formatDateUA(selectedDate)} · {String(selectedHour).padStart(2, '0')}:00–{String(endHour).padStart(2, '0')}:00
+            {formatLocalDate(selectedDate, locale)} · {String(selectedHour).padStart(2, '0')}:00–{String(endHour).padStart(2, '0')}:00
           </div>
 
           {/* Duration */}
           {maxDurationHours > 1 && (
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Тривалість</label>
+              <label className="block text-xs font-medium text-gray-600 mb-1">{c.durationLabel}</label>
               <select
                 value={duration} onChange={e => setDuration(Number(e.target.value))}
                 className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-purple-500"
               >
                 {Array.from({ length: maxDur }, (_, i) => i + 1).map(h => (
-                  <option key={h} value={h}>{h} {h === 1 ? 'година' : h < 5 ? 'години' : 'годин'}</option>
+                  <option key={h} value={h}>{c.hours(h)}</option>
                 ))}
               </select>
             </div>
           )}
 
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Ваше ім'я *</label>
+            <label className="block text-xs font-medium text-gray-600 mb-1">{c.nameLabel}</label>
             <input
               type="text" value={name} onChange={e => setName(e.target.value)} required
               className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-purple-500"
-              placeholder="Ім'я"
+              placeholder={c.namePlaceholder}
             />
             {fieldErrors.name && <p className="text-xs text-red-500 mt-0.5">{fieldErrors.name[0]}</p>}
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Телефон *</label>
+            <label className="block text-xs font-medium text-gray-600 mb-1">{c.phoneLabel}</label>
             <input
               type="tel" value={phone} onChange={e => setPhone(e.target.value)} required
               className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-purple-500"
@@ -362,18 +499,18 @@ export function HourlyCalendar({
           {/* Total guests — included free up to includedGuests, then +price each */}
           {maxGuests > 0 && (
             <div className="rounded-xl border border-purple-100 bg-purple-50/50 p-3">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Кількість гостей *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{c.guestsLabel}</label>
               <select
                 value={guestCount} onChange={e => setGuestCount(Number(e.target.value))}
                 className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-purple-500"
               >
                 {Array.from({ length: Math.max(1, maxGuests) }, (_, i) => i + 1).map(n => (
-                  <option key={n} value={n}>{n} {n === 1 ? 'особа' : n < 5 ? 'особи' : 'осіб'}</option>
+                  <option key={n} value={n}>{c.people(n)}</option>
                 ))}
               </select>
               <p className="text-xs text-gray-400 mt-1">
-                Включено {includedGuests} осіб; кожна понад {includedGuests} — +{extraGuestPrice} ₴.
-                {price.extraGuests > 0 && <> Додатково {price.extraGuests}: +{price.extraTotal.toLocaleString('uk-UA')} ₴.</>}
+                {c.includedNote(includedGuests, extraGuestPrice)}
+                {price.extraGuests > 0 && c.extraNote(price.extraGuests, price.extraTotal.toLocaleString(DATE_LOCALE[locale]))}
               </p>
             </div>
           )}
@@ -387,17 +524,17 @@ export function HourlyCalendar({
                   onChange={e => setBouquetWanted(e.target.checked)}
                   className="w-4 h-4 accent-purple-700"
                 />
-                Хочете придбати букети лаванди? {bouquetPrice} грн/шт
+                {c.bouquetLabel(bouquetPrice)}
               </label>
               {bouquetWanted && (
                 <div className="mt-3 flex items-center gap-2">
-                  <span className="text-xs text-gray-600">Кількість:</span>
+                  <span className="text-xs text-gray-600">{c.bouquetQtyLabel}</span>
                   <input
                     type="number" min={1} max={99} step={1} value={bouquetQty}
                     onChange={e => setBouquetQty(Math.max(1, Math.floor(Number(e.target.value) || 1)))}
                     className="w-20 border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:border-purple-500"
                   />
-                  <span className="text-xs text-gray-500">= +{price.bouquetTotal.toLocaleString('uk-UA')} ₴</span>
+                  <span className="text-xs text-gray-500">{c.bouquetTotal(price.bouquetTotal.toLocaleString(DATE_LOCALE[locale]))}</span>
                 </div>
               )}
             </div>
@@ -406,24 +543,24 @@ export function HourlyCalendar({
           {/* Price breakdown */}
           <div className="rounded-xl border border-gray-200 bg-white p-3 text-sm text-gray-700 space-y-1">
             <div className="flex justify-between">
-              <span>Оренда{duration > 1 ? ` · ${duration} год` : ''}</span>
-              <span>{price.base.toLocaleString('uk-UA')} ₴</span>
+              <span>{c.rentLabel(duration)}</span>
+              <span>{price.base.toLocaleString(DATE_LOCALE[locale])} ₴</span>
             </div>
             {price.extraTotal > 0 && (
               <div className="flex justify-between text-gray-500">
-                <span>Додатково гостей: +{price.extraGuests}</span>
-                <span>+{price.extraTotal.toLocaleString('uk-UA')} ₴</span>
+                <span>{c.extraGuestsLine(price.extraGuests)}</span>
+                <span>+{price.extraTotal.toLocaleString(DATE_LOCALE[locale])} ₴</span>
               </div>
             )}
             {price.bouquetTotal > 0 && (
               <div className="flex justify-between text-gray-500">
-                <span>Букети лаванди: {price.bouquetQty} шт</span>
-                <span>+{price.bouquetTotal.toLocaleString('uk-UA')} ₴</span>
+                <span>{c.bouquetLine(price.bouquetQty)}</span>
+                <span>+{price.bouquetTotal.toLocaleString(DATE_LOCALE[locale])} ₴</span>
               </div>
             )}
             <div className="flex justify-between font-bold text-gray-900 border-t border-gray-100 pt-1 mt-1">
-              <span>Разом</span>
-              <span>{price.total.toLocaleString('uk-UA')} ₴</span>
+              <span>{c.total}</span>
+              <span>{price.total.toLocaleString(DATE_LOCALE[locale])} ₴</span>
             </div>
           </div>
 
@@ -436,18 +573,18 @@ export function HourlyCalendar({
                   onChange={e => setRulesAccepted(e.target.checked)}
                   className="w-4 h-4 mt-0.5 accent-purple-700 flex-shrink-0"
                 />
-                <span>{rulesLabel ?? 'З правилами відвідування лавандового поля ознайомлений(а)'}</span>
+                <span>{rulesLabel ?? c.rulesDefault}</span>
               </label>
               {fieldErrors.rulesAccepted && <p className="text-xs text-red-500 mt-0.5">{fieldErrors.rulesAccepted[0]}</p>}
             </div>
           )}
 
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Коментар (необов'язково)</label>
+            <label className="block text-xs font-medium text-gray-600 mb-1">{c.commentLabel}</label>
             <textarea
               value={comment} onChange={e => setComment(e.target.value)} rows={2}
               className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-purple-500 resize-none"
-              placeholder="Побажання або запитання"
+              placeholder={c.commentPlaceholder}
             />
           </div>
 
@@ -457,7 +594,7 @@ export function HourlyCalendar({
             type="submit" disabled={pending || (requireRules && !rulesAccepted)}
             className="w-full bg-purple-700 text-white py-3 rounded-xl font-semibold text-sm hover:bg-purple-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
-            {pending ? 'Надсилаємо…' : 'Забронювати'}
+            {pending ? c.submitting : c.submit}
           </button>
         </form>
       )}

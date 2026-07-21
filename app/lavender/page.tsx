@@ -1,16 +1,20 @@
-// Ads point here, so the page MUST render fast even when Supabase/API is slow.
-// It is fully static: no server-side DB/API call blocks the render. The booking
-// calendar fetches availability client-side after load, with its own timeout
-// and a graceful fallback. Lavender service config is fixed business data, so we
-// use the shared constants instead of a per-request DB lookup.
-export const dynamic = 'force-static'
-export const revalidate = 3600
+// Ads point here, so the page must render fast even when Supabase/API is slow —
+// the booking calendar fetches availability client-side after load, with its own
+// timeout and a graceful fallback, and lavender service config is fixed business
+// data (no DB lookup on this page). It was previously `force-static`, which
+// meant /ru/lavender and /en/lavender silently served the SAME prebuilt
+// Ukrainian HTML regardless of locale (static output can't vary by request
+// header). Correctness requires `force-dynamic` so the locale header actually
+// reaches the render; nothing here does a slow DB/API call, so this stays fast.
+export const dynamic = 'force-dynamic'
 
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { HourlyCalendar } from '@/components/bookings/HourlyCalendar'
 import { YouTubeFacade } from '@/components/shared/YouTubeFacade'
 import { LAVENDER_INSTAGRAM_URL, LAVENDER_INSTAGRAM_HANDLE } from '@/lib/launch-defaults'
+import { getRequestLocale, localizedPath } from '@/lib/i18n'
+import { manualDict } from '@/lib/i18n/sections/manual'
 import {
   LAVENDER_SLUG,
   LAVENDER_DAY_PRICE_UAH,
@@ -34,17 +38,42 @@ const LAVENDER = {
   slotEndHour: 21,
 } as const
 
-export const metadata: Metadata = {
-  title: 'Лавандове поле',
-  description: 'Оренда лавандового поля на Харківщині для фотосесій і відпочинку: від 1000 ₴/год. Букети лаванди під замовлення. Сезон: червень–липень.',
-  alternates: { canonical: '/lavender' },
-  openGraph: {
+const LAVENDER_META: Record<'uk' | 'ru' | 'en', { title: string; description: string; ogDescription: string; ogAlt: string }> = {
+  uk: {
     title: 'Лавандове поле',
-    description: 'Оренда лавандового поля для фотосесій і відпочинку на Харківщині. Букети лаванди під замовлення.',
-    siteName: 'Дача TV',
-    type: 'website',
-    images: [{ url: '/images/dacha-tv/logo-square.png', width: 1200, height: 1200, alt: 'Дача TV: лавандове поле' }],
+    description: 'Оренда лавандового поля на Харківщині для фотосесій і відпочинку: від 1000 ₴/год. Букети лаванди під замовлення. Сезон: червень–липень.',
+    ogDescription: 'Оренда лавандового поля для фотосесій і відпочинку на Харківщині. Букети лаванди під замовлення.',
+    ogAlt: 'Дача TV: лавандове поле',
   },
+  ru: {
+    title: 'Лавандовое поле',
+    description: 'Аренда лавандового поля на Харьковщине для фотосессий и отдыха: от 1000 ₴/час. Букеты лаванды под заказ. Сезон: июнь–июль.',
+    ogDescription: 'Аренда лавандового поля для фотосессий и отдыха на Харьковщине. Букеты лаванды под заказ.',
+    ogAlt: 'Дача TV: лавандовое поле',
+  },
+  en: {
+    title: 'Lavender field',
+    description: 'Rent a lavender field in the Kharkiv region for photo shoots and relaxation: from 1000 UAH/hour. Lavender bouquets to order. Season: June–July.',
+    ogDescription: 'Rent a lavender field for photo shoots and relaxation in the Kharkiv region. Lavender bouquets to order.',
+    ogAlt: 'Dacha TV: lavender field',
+  },
+}
+
+export async function generateMetadata(): Promise<Metadata> {
+  const locale = await getRequestLocale()
+  const m = LAVENDER_META[locale]
+  return {
+    title: m.title,
+    description: m.description,
+    alternates: { canonical: '/lavender' },
+    openGraph: {
+      title: m.title,
+      description: m.ogDescription,
+      siteName: 'Дача TV',
+      type: 'website',
+      images: [{ url: '/images/dacha-tv/logo-square.png', width: 1200, height: 1200, alt: m.ogAlt }],
+    },
+  }
 }
 
 // Static Instagram gallery cards — shown when no Instagram API token is
@@ -52,15 +81,17 @@ export const metadata: Metadata = {
 // gradient + emoji so the section always renders gracefully and on-brand for
 // lavender, without any fragile third-party embed.
 const INSTAGRAM_CARDS = [
-  { gradient: 'from-[#6b3fa0] via-[#7c4db8] to-[#9b6fd4]', accent: 'from-fuchsia-500/30 to-transparent', emoji: '🪻', caption: 'Цвітіння лавандового поля', tag: '#лавандовеполе' },
-  { gradient: 'from-[#4a2d7a] via-[#6b3fa0] to-[#8b5cc7]', accent: 'from-violet-300/20 to-transparent', emoji: '💜', caption: 'Фотосесія серед лаванди', tag: '#lavender_stories' },
-  { gradient: 'from-[#3c2466] via-[#5b3a93] to-[#7c4db8]', accent: 'from-purple-300/20 to-transparent', emoji: '📸', caption: 'Світанок над полем', tag: '#коротич' },
-  { gradient: 'from-[#5b3a93] via-[#7c4db8] to-[#a37dd4]', accent: 'from-white/10 to-transparent', emoji: '💐', caption: 'Свіжі букети лаванди', tag: '#букетлаванди' },
-  { gradient: 'from-[#8b3a8b] via-[#9b4db8] to-[#7c4db8]', accent: 'from-fuchsia-400/25 to-transparent', emoji: '🌅', caption: 'Захід сонця в полі', tag: '#харківщина' },
-  { gradient: 'from-[#2d1f5e] via-[#4a2d7a] to-[#6b4fa0]', accent: 'from-indigo-300/20 to-transparent', emoji: '🌿', caption: 'Сезон лаванди', tag: '#lavanda' },
-]
+  { gradient: 'from-[#6b3fa0] via-[#7c4db8] to-[#9b6fd4]', accent: 'from-fuchsia-500/30 to-transparent', emoji: '🪻', captionKey: 'lavenderCard1', tag: '#лавандовеполе' },
+  { gradient: 'from-[#4a2d7a] via-[#6b3fa0] to-[#8b5cc7]', accent: 'from-violet-300/20 to-transparent', emoji: '💜', captionKey: 'lavenderCard2', tag: '#lavender_stories' },
+  { gradient: 'from-[#3c2466] via-[#5b3a93] to-[#7c4db8]', accent: 'from-purple-300/20 to-transparent', emoji: '📸', captionKey: 'lavenderCard3', tag: '#коротич' },
+  { gradient: 'from-[#5b3a93] via-[#7c4db8] to-[#a37dd4]', accent: 'from-white/10 to-transparent', emoji: '💐', captionKey: 'lavenderCard4', tag: '#букетлаванди' },
+  { gradient: 'from-[#8b3a8b] via-[#9b4db8] to-[#7c4db8]', accent: 'from-fuchsia-400/25 to-transparent', emoji: '🌅', captionKey: 'lavenderCard5', tag: '#харківщина' },
+  { gradient: 'from-[#2d1f5e] via-[#4a2d7a] to-[#6b4fa0]', accent: 'from-indigo-300/20 to-transparent', emoji: '🌿', captionKey: 'lavenderCard6', tag: '#lavanda' },
+] as const
 
-export default function LavenderPage() {
+export default async function LavenderPage() {
+  const locale = await getRequestLocale()
+  const t = manualDict(locale)
   const service = LAVENDER
   const maxDateISO = `${new Date().getFullYear()}-07-20`
 
@@ -69,35 +100,34 @@ export default function LavenderPage() {
       {/* ── Hero ─────────────────────────────────────────────────────────── */}
       <div style={{ backgroundColor: '#4a2d7a' }} className="text-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-10 pb-14 md:pt-14 md:pb-20">
-          <nav aria-label="Навігація" className="text-sm text-white/40 mb-8">
-            <Link href="/" className="hover:text-white/70 transition-colors">Головна</Link>
+          <nav aria-label={t.lavenderBreadcrumbCurrent} className="text-sm text-white/40 mb-8">
+            <Link href={localizedPath(locale, '/')} className="hover:text-white/70 transition-colors">{t.lavenderBreadcrumbHome}</Link>
             <span className="mx-2">›</span>
-            <span className="text-white/70">Лаванда</span>
+            <span className="text-white/70">{t.lavenderBreadcrumbCurrent}</span>
           </nav>
           <div className="max-w-2xl">
             <p className="text-xs font-semibold text-white/40 uppercase tracking-widest mb-4">
-              Садиба Дача TV · Харківщина
+              {t.lavenderEyebrow}
             </p>
             <h1 className="font-serif text-4xl md:text-5xl font-bold mb-5 leading-tight">
-              Лавандове поле
+              {t.lavenderH1}
             </h1>
             <p className="text-white/65 text-lg leading-relaxed mb-8">
-              Сезон цвітіння: червень–липень. Оренда поля для фотосесій і відпочинку.
-              Букети лаванди під замовлення.
+              {t.lavenderHeroIntro}
             </p>
             <div className="flex flex-col sm:flex-row sm:items-center gap-3">
               <a
                 href="#orenda"
                 className="group inline-flex items-center justify-center gap-2.5 px-8 py-4 bg-white text-purple-900 font-bold text-base md:text-lg rounded-2xl shadow-xl shadow-black/25 ring-2 ring-white/60 hover:bg-purple-50 hover:ring-white hover:scale-[1.02] active:scale-100 transition-all duration-200 w-full sm:w-auto"
               >
-                Забронювати поле
+                {t.lavenderBookField}
                 <span aria-hidden="true" className="text-xl group-hover:translate-x-1 transition-transform">→</span>
               </a>
               <a
                 href="#instagram"
                 className="inline-flex items-center justify-center gap-2 px-6 py-4 border border-white/25 text-white/80 font-medium text-sm rounded-2xl hover:bg-white/10 transition-colors w-full sm:w-auto"
               >
-                Фото в Instagram
+                {t.lavenderPhotoInstagram}
               </a>
             </div>
           </div>
@@ -110,31 +140,30 @@ export default function LavenderPage() {
         {/* Lavender field rental */}
         <section id="orenda" className="scroll-mt-20">
             <div className="mb-8">
-              <span className="text-xs font-semibold text-purple-500 uppercase tracking-widest mb-2 block">Оренда локації</span>
-              <h2 className="font-serif text-2xl md:text-3xl font-bold text-gray-900">Лавандове поле</h2>
+              <span className="text-xs font-semibold text-purple-500 uppercase tracking-widest mb-2 block">{t.lavenderRentEyebrow}</span>
+              <h2 className="font-serif text-2xl md:text-3xl font-bold text-gray-900">{t.lavenderRentTitle}</h2>
             </div>
 
             <div className="grid lg:grid-cols-2 gap-8 lg:gap-12 items-start">
               {/* Left: info */}
               <div className="space-y-6">
                 <p className="text-gray-600 leading-relaxed">
-                  Орендуйте лавандове поле на нашій садибі для фотосесій, освітніх, культурних і
-                  оздоровчих заходів. Вартість включає 5 осіб, кожна додаткова — 200 ₴.
+                  {t.lavenderRentIntro}
                 </p>
 
                 {/* Price tiers */}
                 <div className="space-y-2">
-                  <p className="text-xs font-semibold text-purple-500 uppercase tracking-widest">Вартість оренди</p>
+                  <p className="text-xs font-semibold text-purple-500 uppercase tracking-widest">{t.lavenderPriceLabel}</p>
                   <div className="grid grid-cols-2 gap-2">
                     <div className="rounded-2xl bg-gradient-to-br from-purple-50 to-violet-100 border border-purple-100 p-4">
-                      <p className="text-xs text-purple-500 font-medium mb-1">Ранок / день</p>
+                      <p className="text-xs text-purple-500 font-medium mb-1">{t.lavenderMorningDay}</p>
                       <p className="text-lg font-bold text-purple-900 leading-none">1 000 ₴</p>
-                      <p className="text-xs text-purple-600 mt-1">за годину · 06:00–15:00</p>
+                      <p className="text-xs text-purple-600 mt-1">{t.lavenderPerHourDay}</p>
                     </div>
                     <div className="rounded-2xl bg-gradient-to-br from-violet-50 to-fuchsia-100 border border-violet-100 p-4">
-                      <p className="text-xs text-violet-500 font-medium mb-1">Вечір</p>
+                      <p className="text-xs text-violet-500 font-medium mb-1">{t.lavenderEvening}</p>
                       <p className="text-lg font-bold text-violet-900 leading-none">1 200 ₴</p>
-                      <p className="text-xs text-violet-600 mt-1">за годину · 15:00–21:00</p>
+                      <p className="text-xs text-violet-600 mt-1">{t.lavenderPerHourEvening}</p>
                     </div>
                   </div>
                 </div>
@@ -143,40 +172,40 @@ export default function LavenderPage() {
                 <div className="rounded-2xl border border-purple-100 bg-purple-50/40 divide-y divide-purple-100/60">
                   <div className="flex items-center justify-between px-4 py-3">
                     <span className="text-sm text-gray-500 flex items-center gap-2">
-                      <span aria-hidden="true">👥</span> Включено гостей
+                      <span aria-hidden="true">👥</span> {t.lavenderIncludedGuests}
                     </span>
-                    <span className="text-sm font-semibold text-gray-800">до {service.capacity} осіб</span>
+                    <span className="text-sm font-semibold text-gray-800">{t.lavenderUpToGuests.replace('{count}', String(service.capacity))}</span>
                   </div>
                   <div className="flex items-center justify-between px-4 py-3">
                     <span className="text-sm text-gray-500 flex items-center gap-2">
-                      <span aria-hidden="true">➕</span> Додатковий гість
+                      <span aria-hidden="true">➕</span> {t.lavenderExtraGuest}
                     </span>
-                    <span className="text-sm font-semibold text-gray-800">+{service.extraGuestPrice} ₴/особа</span>
+                    <span className="text-sm font-semibold text-gray-800">{t.lavenderExtraGuestValue.replace('{price}', String(service.extraGuestPrice))}</span>
                   </div>
                   <div className="flex items-center justify-between px-4 py-3">
                     <span className="text-sm text-gray-500 flex items-center gap-2">
-                      <span aria-hidden="true">🕐</span> Час роботи
+                      <span aria-hidden="true">🕐</span> {t.lavenderWorkTime}
                     </span>
                     <span className="text-sm font-semibold text-gray-800">{String(service.slotStartHour).padStart(2, '0')}:00–{String(service.slotEndHour).padStart(2, '0')}:00</span>
                   </div>
                   <div className="flex items-center justify-between px-4 py-3">
                     <span className="text-sm text-gray-500 flex items-center gap-2">
-                      <span aria-hidden="true">🪻</span> Сезон
+                      <span aria-hidden="true">🪻</span> {t.lavenderSeason}
                     </span>
-                    <span className="text-sm font-semibold text-gray-800">Червень – Липень</span>
+                    <span className="text-sm font-semibold text-gray-800">{t.lavenderSeasonValue}</span>
                   </div>
                 </div>
 
                 <div className="rounded-2xl border border-amber-100 bg-amber-50/60 p-4 text-sm text-gray-700">
-                  <p className="font-semibold text-amber-800 mb-1">💳 Передплата 100%</p>
-                  <p>Реквізити для оплати надійдуть у повідомленні після підтвердження.</p>
+                  <p className="font-semibold text-amber-800 mb-1">{t.lavenderPrepayTitle}</p>
+                  <p>{t.lavenderPrepayBody}</p>
                 </div>
 
                 <div className="rounded-2xl border border-gray-100 overflow-hidden">
                   <div className="px-4 py-3 bg-gray-50 border-b border-gray-100">
-                    <p className="font-semibold text-gray-800 text-sm">📍 Адреса</p>
-                    <p className="text-gray-600 text-sm mt-0.5">Харківська обл., смт Коротич, вул. Дачна, 27</p>
-                    <p className="text-gray-500 text-xs mt-0.5">Щодня 06:00–21:00</p>
+                    <p className="font-semibold text-gray-800 text-sm">{t.lavenderAddressTitle}</p>
+                    <p className="text-gray-600 text-sm mt-0.5">{t.lavenderAddressValue}</p>
+                    <p className="text-gray-500 text-xs mt-0.5">{t.lavenderDaily}</p>
                   </div>
                   <a
                     href="https://www.google.com/maps/dir/?api=1&destination=49.9420503,36.0561702"
@@ -184,7 +213,7 @@ export default function LavenderPage() {
                     rel="noopener noreferrer"
                     className="flex items-center justify-center gap-2 py-3 bg-white text-purple-700 font-semibold text-sm hover:bg-purple-50 transition-colors"
                   >
-                    Прокласти маршрут →
+                    {t.lavenderRoute}
                   </a>
                 </div>
               </div>
@@ -192,12 +221,13 @@ export default function LavenderPage() {
               {/* Right: booking calendar */}
               <div>
                 <div className="mb-4">
-                  <h3 className="font-semibold text-gray-900 text-base">Забронювати час</h3>
-                  <p className="text-xs text-gray-500 mt-0.5">Оберіть дату та годину — підтвердимо дзвінком.</p>
+                  <h3 className="font-semibold text-gray-900 text-base">{t.lavenderBookTimeTitle}</h3>
+                  <p className="text-xs text-gray-500 mt-0.5">{t.lavenderBookTimeBody}</p>
                 </div>
                 <HourlyCalendar
                   serviceSlug={service.slug}
                   serviceName={service.name}
+                  locale={locale}
                   pricePerHour={LAVENDER_DAY_PRICE_UAH}
                   capacity={service.capacity}
                   extraGuestPrice={service.extraGuestPrice}
@@ -211,7 +241,7 @@ export default function LavenderPage() {
                   enableBouquets
                   bouquetPrice={LAVENDER_BOUQUET_PRICE_UAH}
                   requireRules
-                  rulesLabel="З правилами відвідування лавандового поля ознайомлений(а)"
+                  rulesLabel={t.lavenderRulesLabel}
                   eveningStartHour={LAVENDER_EVENING_FROM_HOUR}
                   eveningPriceUah={LAVENDER_EVENING_PRICE_UAH}
                 />
@@ -223,13 +253,13 @@ export default function LavenderPage() {
         <section id="route" className="scroll-mt-20">
           <div className="text-center mb-8">
             <span className="text-xs font-semibold text-purple-500 uppercase tracking-widest mb-2 block">
-              Як нас знайти
+              {t.lavenderRouteEyebrow}
             </span>
             <h2 className="font-serif text-2xl md:text-3xl font-bold text-gray-900 mb-3">
-              Як доїхати до лавандової локації
+              {t.lavenderRouteTitle}
             </h2>
             <p className="text-gray-500 max-w-xl mx-auto text-sm leading-relaxed">
-              Відео покаже орієнтири по дорозі, а карта — точну адресу з можливістю прокласти маршрут.
+              {t.lavenderRouteIntro}
             </p>
           </div>
 
@@ -242,7 +272,7 @@ export default function LavenderPage() {
                 title="Як доїхати до лавандового поля Дача TV"
                 className="shadow-xl"
               />
-              <p className="text-xs text-gray-400 text-center">Відео: маршрут від Харкова до поля</p>
+              <p className="text-xs text-gray-400 text-center">{t.lavenderVideoCaption}</p>
             </div>
 
             {/* Map card */}
@@ -262,8 +292,8 @@ export default function LavenderPage() {
                 {/* Address + CTA row */}
                 <div className="p-4 flex items-center justify-between gap-3 flex-wrap">
                   <div>
-                    <p className="text-sm font-semibold text-gray-800">📍 Харківська обл., смт Коротич</p>
-                    <p className="text-xs text-gray-500 mt-0.5">вул. Дачна, 27 · щодня 06:00–21:00</p>
+                    <p className="text-sm font-semibold text-gray-800">{t.lavenderMapAddress1}</p>
+                    <p className="text-xs text-gray-500 mt-0.5">{t.lavenderMapAddress2}</p>
                   </div>
                   <a
                     href="https://www.google.com/maps/dir/?api=1&destination=49.9420503,36.0561702"
@@ -274,11 +304,11 @@ export default function LavenderPage() {
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4" aria-hidden="true">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M9 6.75V15m6-6v8.25m.503 3.498l4.875-2.437c.381-.19.622-.58.622-1.006V4.82c0-.836-.88-1.38-1.628-1.006l-3.869 1.934c-.317.159-.69.159-1.006 0L9.503 3.252a1.125 1.125 0 00-1.006 0L3.622 5.689C3.24 5.88 3 6.27 3 6.695V19.18c0 .836.88 1.38 1.628 1.006l3.869-1.934c.317-.159.69-.159 1.006 0l4.994 2.497c.317.158.69.158 1.006 0z" />
                     </svg>
-                    Маршрут
+                    {t.lavenderRouteBtn}
                   </a>
                 </div>
               </div>
-              <p className="text-xs text-gray-400 text-center">Карта: смт Коротич, вул. Дачна, 27</p>
+              <p className="text-xs text-gray-400 text-center">{t.lavenderMapCaption}</p>
             </div>
           </div>
         </section>
@@ -308,10 +338,10 @@ export default function LavenderPage() {
                   {LAVENDER_INSTAGRAM_HANDLE}
                 </a>
                 <h2 className="font-serif text-2xl md:text-3xl font-bold text-white mb-3">
-                  Лаванда в Instagram
+                  {t.lavenderInstaTitle}
                 </h2>
                 <p className="text-white/60 max-w-md mx-auto text-sm leading-relaxed">
-                  Цвітіння, фотосесії та живі сторіс просто з поля. Підписуйтесь, щоб не пропустити сезон.
+                  {t.lavenderInstaBody}
                 </p>
               </div>
 
@@ -323,7 +353,7 @@ export default function LavenderPage() {
                     target="_blank"
                     rel="noopener noreferrer"
                     className="group relative overflow-hidden rounded-2xl aspect-square ring-1 ring-white/15 focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
-                    aria-label={`${card.caption} — Instagram`}
+                    aria-label={`${t[card.captionKey]} — Instagram`}
                   >
                     {/* Base gradient */}
                     <div className={`absolute inset-0 bg-gradient-to-br ${card.gradient} transition-transform duration-500 group-hover:scale-[1.06]`} />
@@ -337,7 +367,7 @@ export default function LavenderPage() {
                     </div>
                     {/* Caption bar */}
                     <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent px-3 py-3 translate-y-0.5 group-hover:translate-y-0 transition-transform duration-200">
-                      <p className="text-white text-xs font-semibold leading-snug">{card.caption}</p>
+                      <p className="text-white text-xs font-semibold leading-snug">{t[card.captionKey]}</p>
                       <p className="text-white/55 text-[10px] mt-0.5 tracking-wide">{card.tag}</p>
                     </div>
                   </a>
@@ -354,7 +384,7 @@ export default function LavenderPage() {
                   <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 flex-shrink-0" aria-hidden="true">
                     <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 1 0 0 12.324 6.162 6.162 0 0 0 0-12.324zM12 16a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm6.406-11.845a1.44 1.44 0 1 0 0 2.881 1.44 1.44 0 0 0 0-2.881z" />
                   </svg>
-                  Підписатися в Instagram
+                  {t.lavenderInstaSubscribe}
                 </a>
               </div>
             </div>

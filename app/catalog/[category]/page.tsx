@@ -215,7 +215,7 @@ export default async function CategoryPage({ params, searchParams }: Props) {
                   {chip(withImage, filterUrl({ buyable, withImage: !withImage }), st.photoFilter)}
                 </div>
               </div>
-              {total > CATALOG_PAGE_SIZE / 4 && <CatalogSortSelect value={sort} />}
+              {total > CATALOG_PAGE_SIZE / 4 && <CatalogSortSelect value={sort} locale={locale} />}
             </div>
           )
         })()}

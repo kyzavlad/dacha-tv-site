@@ -1,80 +1,83 @@
 import Link from 'next/link'
+import { getRequestLocale } from '@/lib/i18n'
+import { homeDict } from '@/lib/i18n/sections/home'
 
-// The full Dacha TV ecosystem — the homepage is no longer a honey-only landing.
-// Each card links into one pillar of the site.
-const SECTIONS = [
-  {
-    href: '/catalog',
-    emoji: '🛒',
-    title: 'Магазин товарів',
-    text: 'Товари для дому, саду та господарства з доставкою по Україні.',
-    accent: 'from-amber-50 to-amber-100 border-amber-200',
-  },
-  {
-    href: '/honey',
-    emoji: '🍯',
-    title: 'Мед і продукти пасіки',
-    text: 'Сезонний мед, пилок, прополіс та бджолопакети напряму від сімейної пасіки.',
-    accent: 'from-honey-50 to-honey-100 border-honey-200',
-  },
-  {
-    href: '/products',
-    emoji: '🌿',
-    title: 'Натуральні продукти господарства',
-    text: 'Жимолість, живі олії холодного віджиму, ферментований Іван-чай, озимий часник.',
-    accent: 'from-forest-50 to-forest-100 border-forest-200',
-  },
-  {
-    href: '/flowers',
-    emoji: '🌸',
-    title: 'Квіти',
-    text: 'Сезонні квіти та композиції під замовлення.',
-    accent: 'from-rose-50 to-rose-100 border-rose-200',
-  },
-  {
-    href: '/lavender',
-    emoji: '💜',
-    title: 'Лаванда',
-    text: 'Оренда лавандового поля для фотосесій, фотозйомка та лавандові продукти.',
-    accent: 'from-violet-50 to-violet-100 border-violet-200',
-  },
-  {
-    href: '/services',
-    emoji: '🛠️',
-    title: 'Послуги',
-    text: 'Послуги нашого господарства — перегляньте напрями та залиште заявку.',
-    accent: 'from-sky-50 to-sky-100 border-sky-200',
-  },
-  {
-    href: '/catalog/metaloprofil-pokrivlia-komplektuiuchi',
-    emoji: '🏗️',
-    title: 'Металопрофіль і покрівля',
-    text: 'Профнастил, металочерепиця, штахетник, комплектуючі та саморізи під розмір.',
-    accent: 'from-slate-50 to-slate-100 border-slate-200',
-  },
-  {
-    href: '/beekeeper',
-    emoji: '🐝',
-    title: 'Для пасічників',
-    text: 'Бджолопакети Buckfast, Карніка, Українська степова, бджолосім\'ї та вулики.',
-    accent: 'from-orange-50 to-amber-50 border-orange-200',
-  },
-]
+export async function EcosystemSections() {
+  const t = homeDict(await getRequestLocale())
 
-export function EcosystemSections() {
+  // The full Dacha TV ecosystem — the homepage is no longer a honey-only landing.
+  // Each card links into one pillar of the site.
+  const SECTIONS = [
+    {
+      href: '/catalog',
+      emoji: '🛒',
+      title: t.ecoShopTitle,
+      text: t.ecoShopText,
+      accent: 'from-amber-50 to-amber-100 border-amber-200',
+    },
+    {
+      href: '/honey',
+      emoji: '🍯',
+      title: t.ecoHoneyTitle,
+      text: t.ecoHoneyText,
+      accent: 'from-honey-50 to-honey-100 border-honey-200',
+    },
+    {
+      href: '/products',
+      emoji: '🌿',
+      title: t.ecoProductsTitle,
+      text: t.ecoProductsText,
+      accent: 'from-forest-50 to-forest-100 border-forest-200',
+    },
+    {
+      href: '/flowers',
+      emoji: '🌸',
+      title: t.ecoFlowersTitle,
+      text: t.ecoFlowersText,
+      accent: 'from-rose-50 to-rose-100 border-rose-200',
+    },
+    {
+      href: '/lavender',
+      emoji: '💜',
+      title: t.ecoLavenderTitle,
+      text: t.ecoLavenderText,
+      accent: 'from-violet-50 to-violet-100 border-violet-200',
+    },
+    {
+      href: '/services',
+      emoji: '🛠️',
+      title: t.ecoServicesTitle,
+      text: t.ecoServicesText,
+      accent: 'from-sky-50 to-sky-100 border-sky-200',
+    },
+    {
+      href: '/catalog/metaloprofil-pokrivlia-komplektuiuchi',
+      emoji: '🏗️',
+      title: t.ecoMetalTitle,
+      text: t.ecoMetalText,
+      accent: 'from-slate-50 to-slate-100 border-slate-200',
+    },
+    {
+      href: '/beekeeper',
+      emoji: '🐝',
+      title: t.ecoBeekeeperTitle,
+      text: t.ecoBeekeeperText,
+      accent: 'from-orange-50 to-amber-50 border-orange-200',
+    },
+  ]
+
   return (
     <section id="ecosystem" className="scroll-mt-20 py-20 md:py-28 bg-white" aria-labelledby="ecosystem-heading">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="max-w-2xl mb-12">
           <span className="text-xs font-semibold text-honey-700 uppercase tracking-widest mb-3 block">
-            Усе на одному сайті
+            {t.ecoEyebrow}
           </span>
           <h2 id="ecosystem-heading" className="font-serif text-3xl md:text-4xl font-bold text-bark mb-3">
-            Що ми пропонуємо
+            {t.ecoTitle}
           </h2>
           <p className="text-gray-500 text-base leading-relaxed">
-            Дача TV — це більше, ніж мед. Натуральні продукти, квіти, лаванда, послуги, будівельні
-            матеріали та магазин товарів для господарства.
+            {t.ecoIntro}
           </p>
         </div>
 
@@ -89,7 +92,7 @@ export function EcosystemSections() {
               <h3 className="font-serif text-xl font-bold text-bark mb-2">{title}</h3>
               <p className="text-sm text-bark/60 leading-relaxed flex-1">{text}</p>
               <span className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-bark/80 group-hover:text-bark">
-                Перейти
+                {t.ecoGo}
                 <svg className="w-4 h-4 transition-transform group-hover:translate-x-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
                 </svg>

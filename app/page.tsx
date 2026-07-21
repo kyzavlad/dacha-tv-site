@@ -19,6 +19,7 @@ import {
   LAUNCH_INSTAGRAM_URL,
   LAUNCH_TIKTOK_URL,
 } from '@/lib/launch-defaults'
+import { getRequestLocale } from '@/lib/i18n'
 export const metadata: Metadata = {
   title: { absolute: 'Дача TV: товари, продукти й послуги' },
   description:
@@ -37,6 +38,10 @@ export default async function HomePage() {
     getVisibleReviews().catch(() => []),
     getSiteSettings().catch(() => null),
   ])
+
+  // Locale is read once here and passed to client sections (which can't call
+  // getRequestLocale). Server sections read the request locale themselves.
+  const locale = await getRequestLocale()
 
   const localBusinessSchema = {
     '@context': 'https://schema.org',
@@ -85,7 +90,7 @@ export default async function HomePage() {
 
       <HowToOrder siteSettings={siteSettings} />
 
-      <Reviews reviews={reviews} />
+      <Reviews reviews={reviews} locale={locale} />
 
       <ApiaryTrustStrip />
 
