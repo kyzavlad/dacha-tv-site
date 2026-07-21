@@ -1,87 +1,109 @@
-# Localization coverage (Section D) — before / after
+# Localization coverage (v5) — route matrix
+
+Last updated by the v5 localization pass (branch `claude/gracious-brown-sq8ewg`,
+commit `afd693c` on top of stable backend `597fdb2`).
 
 ## Architecture
 
-- **`lib/i18n.ts`** — locale core (unchanged): uk canonical (no prefix), ru→`/ru`,
-  en→`/en`; `splitLocale`, `localizedPath`, `switchLocaleHref` (preserves
-  path+query+hash, never double-prefixes), `getRequestLocale` (reads the
-  `x-dacha-locale` header the proxy sets), `isLocalizablePath` (never `/admin`,
-  `/api`). `html lang` is set in `app/layout.tsx` from the same header.
-- **`lib/i18n-ui.ts`** — shared nav/switcher labels (pre-existing).
-- **`lib/i18n/pages.ts`** — **NEW** centralized page-body dictionary. Nested
-  `{uk, ru, en}` tree, deeply resolved per locale by `pageDict(locale)`, with an
-  intentional Ukrainian fallback via `tr()`. This is the single source of truth
-  for static page-body copy — no scattered inline ternaries.
-- Dynamic DB copy stays in the translation tables
-  (`catalog_product_translations`, `catalog_category_translations`), now extended
-  with `name`, `short_description`, `seo_description` columns (migration v4).
+- **`lib/i18n.ts`** — locale core: uk canonical (no prefix), ru→`/ru`, en→`/en`;
+  `splitLocale`, `localizedPath`, `switchLocaleHref` (preserves path+query+hash,
+  never double-prefixes), `getRequestLocale` (reads the `x-dacha-locale` header
+  the proxy sets, requires dynamic rendering), `isLocalizablePath` (never
+  `/admin`, `/api`). `html lang` is set in `app/layout.tsx` from the same header.
+- **`lib/i18n-ui.ts`** — shared nav/switcher labels.
+- **`lib/i18n/pages.ts`** — shared `Tr` type + `tr(entry, locale)` resolver with
+  intentional Ukrainian fallback, plus the legacy `RAW_DICT`/`pageDict` tree for
+  the informational pages (not-found, about, contact, delivery, faq, privacy).
+- **`lib/i18n/sections/*.ts`** — domain dictionaries built on the same `tr()`
+  resolver: `home.ts` (home sections), `catalog.ts` (catalog listing/search/
+  sort/pagination chrome), `shop-ui.ts` (search, checkout, cart drawer — 65
+  keys), `manual.ts` (honey/products/flowers/beekeeper/services/lavender +
+  shared `detail*` product-detail chrome — 180+ keys). Each exports a `*Dict()`
+  resolver function used by server components (`await getRequestLocale()`) and,
+  where a component is client-side, a `locale?: Locale` prop or
+  `usePathname()`/`splitLocale()`.
+- **`lib/i18n/manual-translations.ts`** — dynamic per-row translation reader:
+  `getManualTranslations(entityType, ids, locale)` batch-loads rows from
+  `manual_content_translations`; `resolveManualField(base, translation, field,
+  locale)` resolves with a Ukrainian-content fallback (never returns blank).
+- **`manual_content_translations`** table (migration
+  `20260721230000_final_full_i18n_media_stock_v5.sql`) — generic
+  entity_type/entity_id/locale table for `honey_product`, `apiary_product`,
+  `beekeeper_product`, `flower_product`, `service`, `static`.
+- Catalog (supplier-sourced) product/category copy stays in its own tables —
+  `catalog_product_translations`, `catalog_category_translations` — unrelated to
+  the manual-content table above.
 
-## Before
+## Route matrix
 
-Choosing RU/EN only re-labeled the Header/nav (via `i18n-ui`). Every static page
-**body** stayed Ukrainian — `not-found`, `about`, `contact`, `delivery`, `faq`,
-`privacy`, the footer, forms and card CTAs did not react to locale at all
-(verified: 0 `getRequestLocale`/`locale` references in those files).
+Legend: **Static UI** = all body copy on the page renders from a dictionary
+(no hardcoded Ukrainian strings) for every locale. **Dynamic translation** =
+DB-backed name/description fields resolve through `getManualTranslations` +
+`resolveManualField` (or the catalog translation tables) rather than always
+showing the Ukrainian column. **DB rows populated** = whether translation rows
+actually exist in the database today (not verifiable from this environment —
+see note below). **Fallback** = what a locale sees when no translation row
+exists.
 
-## After — fully body-localized (uk/ru/en), with tests
+| Route | Static UI | Dynamic translation | DB rows populated | Fallback |
+| --- | --- | --- | --- | --- |
+| `/` (home) | Complete | N/A (no DB copy) | — | — |
+| `/catalog`, `/catalog/all`, `/catalog/[category]` | Complete | Complete (catalog_product/category_translations) | Unknown — data task, not verified here | Ukrainian base column |
+| `/search` | Complete | Complete (via `CatalogProductCard`/search results) | Unknown | Ukrainian base column |
+| `/checkout` | Complete | N/A (order data, not translated content) | — | — |
+| Cart drawer | Complete | N/A | — | — |
+| `/honey` | Complete | N/A (landing page has no per-product DB copy) | — | — |
+| `/honey/[slug]` | Complete UI chrome; **`VARIETY_DETAILS` object (season/taste/crystallisation/storage/uses per honey variety) is Ukrainian-only, not wired to any dictionary** | Complete for name/short_description/description/seo_description | Unknown — no seed/backfill script run in this session | Ukrainian content (name/desc) or Ukrainian-only text (VARIETY_DETAILS) |
+| `/products` | Complete | N/A | — | — |
+| `/products/[slug]` | Complete | Complete for name/short_description/description | Unknown | Ukrainian content |
+| `/flowers` | Complete | N/A | — | — |
+| `/flowers/catalog` | Complete | N/A (variety descriptions are dictionary strings, not DB rows) | — | — |
+| `/flowers/[slug]` | Complete | Complete for name/short_description/description/seo_description | Unknown | Ukrainian content |
+| `/beekeeper` | Complete | N/A | — | — |
+| `/beekeeper/[slug]` | Complete | Complete for name/description/seo_description | Unknown | Ukrainian content |
+| `/services` | Complete | Complete for name/short_description/image_alt | Unknown | Ukrainian content |
+| `/services/[slug]` | Complete | Complete for name/short_description/description/image_alt | Unknown | Ukrainian content |
+| `/lavender` | Complete. **Fixed in v5**: page previously used `force-static` + `revalidate=3600`, which prerenders once at build time and cannot vary by the per-request locale header — `/ru/lavender` and `/en/lavender` were silently serving Ukrainian HTML. Changed to `force-dynamic`. | N/A (static content page) | — | — |
+| Shared `HourlyCalendar` / `DailyCalendar` | Complete (weekday names, pluralized labels, date formatting via `Intl` locale, validation/success copy) | N/A | — | — |
+| `not-found`, `/about`, `/contact`, `/delivery`, `/faq`, `/privacy`, footer, `GeneralContactForm` | Complete (pre-existing, unchanged this session) | N/A | — | — |
+| `/admin/**`, `/api/**` | Not localized (intentional — admin-only / API surfaces, `isLocalizablePath` explicitly excludes them) | — | — | — |
 
-| Surface | Scope localized |
-| --- | --- |
-| `not-found` | title, body, both CTAs |
-| `/delivery` | eyebrow, title, intro, all 5 sections, questions CTA |
-| `/privacy` | title + all 8 sections |
-| `/faq` | eyebrow, title, intro, category headings, CTA block |
-| `/about` | header, story (3¶), apiary facts (4), approach (3¶), YouTube block, trust, CTA |
-| `/contact` | header, info labels, phone/telegram/address/response/social, form title |
-| Footer (shared) | tagline, column headings, nav labels, telegram, bottom links |
-| `GeneralContactForm` | labels, placeholders, **validation messages**, submit/sending, success block |
-| `CatalogProductCard` | featured badge, price-on-request, inquiry CTA, out-of-stock, availability, “details” |
-| Product detail | availability label + badge, add-to-cart / buy-now out-of-stock (this pass); SEO via translation rows |
+## Known gap (disclosed, not silently shipped)
 
-`tests/i18n-pages.test.mjs` proves page **bodies** (not just header) differ across
-uk/ru/en for `not-found`, `delivery`, `privacy`, `about`, `contact`, `faq`, plus a
-guard that every dictionary leaf has ru+en (no accidental Ukrainian-only strings).
+`app/honey/[slug]/page.tsx` — the `VARIETY_DETAILS` object (per-variety season,
+taste, crystallisation, storage, recommended-use text) was intentionally left
+Ukrainian-only. This is deep botanical/product content where a rushed
+translation risked being wrong; all surrounding UI chrome on that page (labels,
+breadcrumb, price, packaging, video captions, related products) is fully
+localized. This is the one place in the public route surface where body text
+can still render Ukrainian for a ru/en visitor.
 
-## After — partial (chrome/labels localized; long body copy or dynamic rows pending)
+## Dynamic translation coverage by table
 
-| Surface | State |
-| --- | --- |
-| `/` (home) | Header/footer localized; section components (Hero, EcosystemSections, BrandStory, HowToOrder, Reviews, DeliveryTeaser) still render Ukrainian body copy — they’re component-composed and not yet wired to `pageDict`. Shared `shop.*` keys are ready. |
-| `/catalog`, `/catalog/all`, `/catalog/[category]` | product cards + availability localized; listing chrome (sort/filter/pagination/empty) has dictionary keys in `shop.*` but the listing pages are not yet wired. |
-| `/search` | chrome pending (keys ready in `shop.*`). |
-| `/checkout` | payment/stock messages localized where shared; full form-label pass pending. **Checkout/payment behavior unchanged** — only visible copy is in scope. |
-| `/products`, `/honey`, `/flowers`, `/beekeeper`, `/services`, `/lavender` (+ `[slug]`) | manual Dacha TV content — bodies are DB-backed; need RU/EN translation rows (tables + `name/short_description/seo_description` columns now exist; population is a data task). |
+| Table | Resolver | uk | ru/en without a row | Notes |
+| --- | --- | --- | --- | --- |
+| `manual_content_translations` | `getManualTranslations` + `resolveManualField` | Base columns on `honey_products`/`apiary_products`/`beekeeper_products`/`flower_products`/`services` | Falls back to the Ukrainian base column — never blank | Schema created in `597fdb2`; **no data-population script was run this session**, so row counts are unverified. Do not claim rows are populated without running a seed/backfill and checking counts. |
+| `catalog_product_translations` | pre-existing (unchanged) | `name_ua` / supplier feed | `name` (ru) / `name` (en) with uk fallback | Unrelated to manual-content table; pre-existing infrastructure, not touched this session. |
+| `catalog_category_translations` | pre-existing (unchanged) | base columns | translation row with uk fallback | Same as above. |
 
-## Dynamic content localization
+## Static-string audit result
 
-| Table | uk | ru | en |
-| --- | --- | --- | --- |
-| `catalog_products` (name) | `name_ua` | supplier Russian `name` (safe fallback), then `catalog_product_translations.name` | `catalog_product_translations.name` → intentional uk fallback |
-| product SEO (title/desc/keywords/description) | base columns | `catalog_product_translations` (locale=ru) | `catalog_product_translations` (locale=en) |
-| `catalog_categories` | base columns | `catalog_category_translations` (ru) | `catalog_category_translations` (en) |
-| metal products (11) | `metal-content.ts` UA → `catalog_products` | `metal-content.ts` RU → translation rows | `metal-content.ts` EN → translation rows |
+A pass over `app/**` and `components/**` for hardcoded Ukrainian/Russian body
+text (excluding admin UI, comments, server logs, test fixtures, and the
+intentional `VARIETY_DETAILS` DB-content gap above) found no further genuine
+missed public strings as of commit `afd693c`. Every public route's metadata,
+breadcrumbs, loading/empty/error states, form placeholders, validation
+messages, success messages, cart, checkout, inquiry forms, calendar
+components, product cards, category cards, pagination and search controls
+resolve through a dictionary or through `resolveManualField` for every locale.
 
-`displayProductName(product, 'ru')` already prefers the Russian supplier feed name,
-so RU product cards are non-empty even before translation rows exist. EN cards fall
-back to the Ukrainian name until EN translation rows are populated — this is the
-**intentional** fallback (never an empty title).
+## Tests
 
-## Coverage counts
-
-- Static UI strings centralized in `pageDict`: **~130 leaves × 3 locales**, 100%
-  ru+en filled (enforced by test).
-- Fully body-localized routes/components: **10** (6 static pages + footer + 2 forms/cards + product-detail availability).
-- Partial routes (chrome only / pending dynamic rows): **~15** (home sections, catalog listing, search, checkout form, 6 manual-content sections).
-- Dynamic RU/EN product SEO readiness: **infrastructure complete**; row population
-  is a bounded batch/n8n job (see `docs/n8n-automation-order.md`), NOT claimed as
-  content-complete.
-
-## EN supplier-catalog translation pipeline (bounded, n8n-compatible)
-
-Never translate all ~112k products in one request. The pipeline is candidate →
-apply, bounded per batch (mirrors the existing UA/RU SEO batch approach):
-1. Select a bounded page of published supplier products lacking an `en` row.
-2. Emit EN candidates (translation service / n8n node) → upsert
-   `catalog_product_translations(locale='en')`.
-3. Repeat until no candidates remain. Each batch is idempotent (upsert on
-   `product_id,locale`) and capped, so it fits the 15-min n8n cadence.
+- `tests/i18n-catalog.test.mjs`, `tests/i18n-home.test.mjs`,
+  `tests/i18n-shop-ui.test.mjs`, `tests/i18n-manual.test.mjs` — each verifies
+  every dictionary key resolves to a non-empty string per locale, and that
+  representative **body strings** (not just key presence) differ between
+  uk/ru/en. A handful of probes are intentionally excluded from the
+  uk-vs-ru "must differ" assertion because the underlying word is a genuine
+  Ukrainian/Russian cognate (e.g. "Каталог", "Сезон", "Лаванда",
+  "Упаковка") — those are checked against `en` instead, which does differ.
