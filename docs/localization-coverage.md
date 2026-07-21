@@ -1,7 +1,7 @@
 # Localization coverage (v5) — route matrix
 
 Last updated by the v5 localization pass (branch `claude/gracious-brown-sq8ewg`,
-commit `afd693c` on top of stable backend `597fdb2`).
+commit `b2c976b` on top of stable backend `597fdb2`).
 
 ## Architecture
 
@@ -53,7 +53,7 @@ exists.
 | `/checkout` | Complete | N/A (order data, not translated content) | — | — |
 | Cart drawer | Complete | N/A | — | — |
 | `/honey` | Complete | N/A (landing page has no per-product DB copy) | — | — |
-| `/honey/[slug]` | Complete UI chrome; **`VARIETY_DETAILS` object (season/taste/crystallisation/storage/uses per honey variety) is Ukrainian-only, not wired to any dictionary** | Complete for name/short_description/description/seo_description | Unknown — no seed/backfill script run in this session | Ukrainian content (name/desc) or Ukrainian-only text (VARIETY_DETAILS) |
+| `/honey/[slug]` | Complete — `VARIETY_DETAILS` (season/taste/crystallisation/storage/uses per honey variety) now lives in `lib/honey/variety-details.ts` with real per-locale uk/ru/en copy for all 6 varieties, resolved by the visitor's locale | Complete for name/short_description/description/seo_description | Unknown — no seed/backfill script run in this session | Ukrainian content (name/desc) |
 | `/products` | Complete | N/A | — | — |
 | `/products/[slug]` | Complete | Complete for name/short_description/description | Unknown | Ukrainian content |
 | `/flowers` | Complete | N/A | — | — |
@@ -68,15 +68,15 @@ exists.
 | `not-found`, `/about`, `/contact`, `/delivery`, `/faq`, `/privacy`, footer, `GeneralContactForm` | Complete (pre-existing, unchanged this session) | N/A | — | — |
 | `/admin/**`, `/api/**` | Not localized (intentional — admin-only / API surfaces, `isLocalizablePath` explicitly excludes them) | — | — | — |
 
-## Known gap (disclosed, not silently shipped)
+## Known gaps (disclosed, not silently shipped)
 
-`app/honey/[slug]/page.tsx` — the `VARIETY_DETAILS` object (per-variety season,
-taste, crystallisation, storage, recommended-use text) was intentionally left
-Ukrainian-only. This is deep botanical/product content where a rushed
-translation risked being wrong; all surrounding UI chrome on that page (labels,
-breadcrumb, price, packaging, video captions, related products) is fully
-localized. This is the one place in the public route surface where body text
-can still render Ukrainian for a ru/en visitor.
+None on the static-UI surface as of `b2c976b` — the previously-open gap
+(`VARIETY_DETAILS` on `/honey/[slug]`) was resolved: see
+`lib/honey/variety-details.ts` and `tests/i18n-honey-variety-details.test.mjs`.
+
+The one remaining open item across the whole localization effort is **DB row
+population** for `manual_content_translations` (see below) — this is a data
+task, not a code gap, and is not claimed as done.
 
 ## Dynamic translation coverage by table
 
@@ -89,19 +89,20 @@ can still render Ukrainian for a ru/en visitor.
 ## Static-string audit result
 
 A pass over `app/**` and `components/**` for hardcoded Ukrainian/Russian body
-text (excluding admin UI, comments, server logs, test fixtures, and the
-intentional `VARIETY_DETAILS` DB-content gap above) found no further genuine
-missed public strings as of commit `afd693c`. Every public route's metadata,
-breadcrumbs, loading/empty/error states, form placeholders, validation
-messages, success messages, cart, checkout, inquiry forms, calendar
-components, product cards, category cards, pagination and search controls
-resolve through a dictionary or through `resolveManualField` for every locale.
+text (excluding admin UI, comments, server logs, test fixtures, and intentional
+Ukrainian-content fallbacks) found no genuine missed public strings as of
+commit `b2c976b`. Every public route's metadata, breadcrumbs, loading/empty/
+error states, form placeholders, validation messages, success messages, cart,
+checkout, inquiry forms, calendar components, product cards, category cards,
+pagination and search controls resolve through a dictionary or through
+`resolveManualField` for every locale.
 
 ## Tests
 
 - `tests/i18n-catalog.test.mjs`, `tests/i18n-home.test.mjs`,
-  `tests/i18n-shop-ui.test.mjs`, `tests/i18n-manual.test.mjs` — each verifies
-  every dictionary key resolves to a non-empty string per locale, and that
+  `tests/i18n-shop-ui.test.mjs`, `tests/i18n-manual.test.mjs`,
+  `tests/i18n-honey-variety-details.test.mjs` — each verifies every
+  dictionary key resolves to a non-empty string per locale, and that
   representative **body strings** (not just key presence) differ between
   uk/ru/en. A handful of probes are intentionally excluded from the
   uk-vs-ru "must differ" assertion because the underlying word is a genuine
