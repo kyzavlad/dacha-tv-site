@@ -1,8 +1,8 @@
 // PM2 production process config for the self-hosted Ubuntu server (dachatv).
 //
 // No secrets live here. Runtime secrets (Supabase keys, CRON_SECRET, etc.)
-// come from /var/www/dacha-tv/shared/.env.production, which PM2 loads via
-// `env_file` — that file lives OUTSIDE the git repo and must be chmod 600
+// come from /var/www/dacha-tv/shared/.env.production, which the committed
+// start-server.sh wrapper loads before starting Node — that file lives OUTSIDE the git repo and must be chmod 600
 // (see deploy/self-host/README.md). This file only sets non-secret runtime
 // knobs (NODE_ENV, HOSTNAME, PORT) that are safe to commit.
 //
@@ -18,7 +18,8 @@ module.exports = {
       // .next/standalone's server.js — the traced, self-contained Next.js
       // server produced by `output: 'standalone'`. Not a custom server: this
       // is the exact entrypoint Next.js's own build generates.
-      script: 'server.js',
+      script: 'deploy/self-host/start-server.sh',
+      interpreter: '/bin/bash',
 
       // Single process, no cluster — the target server has 2 CPU cores and
       // ~734 MiB currently available; a second worker would roughly double
@@ -30,7 +31,6 @@ module.exports = {
 
       // Secrets are NOT set here — loaded from the shared env file at deploy
       // time (see deploy/self-host/install-release.sh).
-      env_file: '/var/www/dacha-tv/shared/.env.production',
       env: {
         NODE_ENV: 'production',
         HOSTNAME: '127.0.0.1', // never bind beyond localhost — Nginx proxies

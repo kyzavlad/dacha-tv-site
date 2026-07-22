@@ -52,7 +52,29 @@ jobs:
       # Supabase is unreachable at build time (see app/sitemap.ts), so a
       # secret-free build is a real, previously-validated build, not a stub.
       - name: Build (Next.js standalone output)
-        run: pnpm build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          NEXT_SERVER_ACTIONS_ENCRYPTION_KEY: ${{ secrets.NEXT_SERVER_ACTIONS_ENCRYPTION_KEY }}
+        run: |
+          set -euo pipefail
+
+          test -n "$NEXT_PUBLIC_SUPABASE_URL" || {
+            echo "::error::NEXT_PUBLIC_SUPABASE_URL is missing"
+            exit 1
+          }
+
+          test -n "$NEXT_PUBLIC_SUPABASE_ANON_KEY" || {
+            echo "::error::NEXT_PUBLIC_SUPABASE_ANON_KEY is missing"
+            exit 1
+          }
+
+          test -n "$NEXT_SERVER_ACTIONS_ENCRYPTION_KEY" || {
+            echo "::error::NEXT_SERVER_ACTIONS_ENCRYPTION_KEY is missing"
+            exit 1
+          }
+
+          pnpm build
 
       # `output: 'standalone'` (next.config.ts) produces .next/standalone with
       # only the traced production node_modules — but it does NOT copy
@@ -66,6 +88,11 @@ jobs:
           cp -r public/. .next/standalone/public/
           mkdir -p .next/standalone/.next/static
           cp -r .next/static/. .next/standalone/.next/static/
+
+          # Deployment scripts and PM2/Nginx configuration must travel with
+          # the first release as well as every later release.
+          rm -rf .next/standalone/deploy
+          cp -r deploy .next/standalone/deploy
 
       - name: Write build manifest (no secrets)
         run: |
