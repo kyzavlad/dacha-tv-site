@@ -1,0 +1,133 @@
+name: Build standalone Linux artifact
+
+# Phase 1 of self-hosting on the Ubuntu server: produces a downloadable,
+# reproducible Linux x86_64 build artifact. Manual trigger only — this
+# workflow never deploys anything and never runs automatically on push/PR.
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build (Ubuntu x86_64, Node 20)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # The repo pins pnpm@10.33.0 in package.json's packageManager field —
+      # Corepack reads that directly, so no separate version input is needed.
+      - name: Enable Corepack (pnpm via packageManager field)
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.33.0 --activate
+          pnpm --version
+
+      - name: Install dependencies (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+
+      - name: Type-check (app)
+        run: pnpm tsc --noEmit
+
+      - name: Type-check (scripts)
+        run: pnpm typecheck:scripts
+
+      - name: Test
+        run: pnpm test
+
+      - name: Lint
+        run: pnpm exec eslint .
+
+      # No .env file is read or required here — every route in this app is
+      # dynamically rendered (force-dynamic) or degrades gracefully when
+      # Supabase is unreachable at build time (see app/sitemap.ts), so a
+      # secret-free build is a real, previously-validated build, not a stub.
+      - name: Build (Next.js standalone output)
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          NEXT_SERVER_ACTIONS_ENCRYPTION_KEY: ${{ secrets.NEXT_SERVER_ACTIONS_ENCRYPTION_KEY }}
+        run: |
+          set -euo pipefail
+
+          test -n "$NEXT_PUBLIC_SUPABASE_URL" || {
+            echo "::error::NEXT_PUBLIC_SUPABASE_URL is missing"
+            exit 1
+          }
+
+          test -n "$NEXT_PUBLIC_SUPABASE_ANON_KEY" || {
+            echo "::error::NEXT_PUBLIC_SUPABASE_ANON_KEY is missing"
+            exit 1
+          }
+
+          test -n "$NEXT_SERVER_ACTIONS_ENCRYPTION_KEY" || {
+            echo "::error::NEXT_SERVER_ACTIONS_ENCRYPTION_KEY is missing"
+            exit 1
+          }
+
+          pnpm build
+
+      # `output: 'standalone'` (next.config.ts) produces .next/standalone with
+      # only the traced production node_modules — but it does NOT copy
+      # public/ or .next/static (Next.js's documented behavior), so both are
+      # copied in explicitly before packaging.
+      - name: Assemble standalone release directory
+        run: |
+          set -euo pipefail
+          test -d .next/standalone || { echo "::error::.next/standalone was not produced — check next.config.ts output: 'standalone'"; exit 1; }
+          mkdir -p .next/standalone/public
+          cp -r public/. .next/standalone/public/
+          mkdir -p .next/standalone/.next/static
+          cp -r .next/static/. .next/standalone/.next/static/
+
+          # Deployment scripts and PM2/Nginx configuration must travel with
+          # the first release as well as every later release.
+          rm -rf .next/standalone/deploy
+          cp -r deploy .next/standalone/deploy
+
+      - name: Write build manifest (no secrets)
+        run: |
+          set -euo pipefail
+          {
+            echo "git_sha=${GITHUB_SHA}"
+            echo "git_ref=${GITHUB_REF_NAME}"
+            echo "build_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "node_version=$(node --version)"
+            echo "pnpm_version=$(pnpm --version)"
+          } > .next/standalone/BUILD_MANIFEST.txt
+          cat .next/standalone/BUILD_MANIFEST.txt
+
+      # Defense in depth: fail the build loudly if an env file somehow ended
+      # up inside the release directory, rather than silently packaging it.
+      - name: Verify no env files are present in the release directory
+        run: |
+          set -euo pipefail
+          if find .next/standalone -maxdepth 4 -iname '.env*' | grep -q .; then
+            echo "::error::An .env file was found inside .next/standalone — refusing to package it."
+            find .next/standalone -maxdepth 4 -iname '.env*'
+            exit 1
+          fi
+          echo "No .env files found in the release directory."
+
+      - name: Package artifact
+        run: |
+          set -euo pipefail
+          tar -czf dacha-tv-standalone-linux-x64.tar.gz -C .next standalone
+          ls -lh dacha-tv-standalone-linux-x64.tar.gz
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dacha-tv-standalone-linux-x64
+          path: dacha-tv-standalone-linux-x64.tar.gz
+          retention-days: 14
+          if-no-files-found: error
