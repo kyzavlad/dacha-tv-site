@@ -32,7 +32,12 @@ export async function GET(req: Request) {
   // refresh now runs as one set-based RPC call (see
   // lib/catalog/existing-product-refresh.ts) instead of a sequential per-SKU
   // update loop, so this endpoint completes well within the serverless
-  // timeout. Call repeatedly until `remaining` is 0.
+  // timeout. Call repeatedly until `remaining` is 0. `remaining` is
+  // ACTIONABLE-only (remainingExisting + remainingNew) — it deliberately
+  // excludes `blockedManual` (supplier rows shadowed by a source='manual'
+  // catalog row, which neither path may ever touch), so the loop actually
+  // terminates once all real work is done. blockedManual is reported
+  // separately for diagnostics.
   return Response.json({
     ok: result.ok,
     processed: result.processed ?? 0,
@@ -44,6 +49,7 @@ export async function GET(req: Request) {
     remaining: result.remaining ?? 0,
     remainingExisting: result.remainingExisting ?? 0,
     remainingNew: result.remainingNew ?? 0,
+    blockedManual: result.blockedManual ?? 0,
     errorGroups: result.errorGroups ?? {},
     message: result.message,
   })

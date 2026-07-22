@@ -101,6 +101,40 @@ test('limit passed to the RPC is clamped before being sent', async () => {
   assert.deepEqual(capturedArgs, { p_limit: MAX_REFRESH_LIMIT })
 })
 
+test('a missing RPC result (empty array, no error) returns ok=false, not a silent zero-success', async () => {
+  const client = mockClient(() => Promise.resolve({ data: [], error: null }))
+  const result = await refreshExistingCatalogFromSupplier(client, 1000)
+  assert.equal(result.ok, false)
+  assert.match(result.message, /no result row/)
+})
+
+test('a missing RPC result (null data, no error) returns ok=false', async () => {
+  const client = mockClient(() => Promise.resolve({ data: null, error: null }))
+  const result = await refreshExistingCatalogFromSupplier(client, 1000)
+  assert.equal(result.ok, false)
+  assert.match(result.message, /no result row/)
+})
+
+test('blockedManual is passed through from the RPC row', async () => {
+  const client = mockClient(() => Promise.resolve({
+    data: [{ processed: 100, updated: 100, approved: 100, remaining_existing: 0, remaining_new: 0, remaining_total: 0, blocked_manual: 37 }],
+    error: null,
+  }))
+  const result = await refreshExistingCatalogFromSupplier(client, 1000)
+  assert.equal(result.ok, true)
+  assert.equal(result.blockedManual, 37)
+})
+
+test('only manual-shadow rows remaining is reported via blockedManual, not folded into remainingTotal', async () => {
+  const client = mockClient(() => Promise.resolve({
+    data: [{ processed: 0, updated: 0, approved: 0, remaining_existing: 0, remaining_new: 0, remaining_total: 0, blocked_manual: 250 }],
+    error: null,
+  }))
+  const result = await refreshExistingCatalogFromSupplier(client, 1000)
+  assert.equal(result.remainingTotal, 0, 'remaining must reach zero once no actionable work is left')
+  assert.equal(result.blockedManual, 250)
+})
+
 // ── simulateExistingRowRefresh: pure mirror of the SQL CASE logic ──────────────
 
 const current = { priceUah: 100, mainImageUrl: 'https://x/old.jpg', images: ['https://x/old.jpg'] }

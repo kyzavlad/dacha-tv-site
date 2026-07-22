@@ -132,6 +132,9 @@ export interface ImportBatchResult {
   remaining?: number
   remainingExisting?: number
   remainingNew?: number
+  // Diagnostics only: unapproved supplier rows shadowed by a source='manual'
+  // catalog row. Never auto-approved, never counted in `remaining`.
+  blockedManual?: number
   capReached?: boolean
 }
 
@@ -168,6 +171,7 @@ export async function importBatch(
         processed, inserted: result.inserted, updated: result.updated, approved,
         insertsSkippedCap: result.insertsSkippedCap ?? 0, remaining: result.remaining ?? null,
         remainingExisting: result.remainingExisting ?? null, remainingNew: result.remainingNew ?? null,
+        blockedManual: result.blockedManual ?? null,
         errors: result.errors, errorGroups: result.errorGroups, errorSamples: result.errorSamples,
         message: result.message, capReached, duration_ms: Date.now() - startedAt,
       },
@@ -184,6 +188,7 @@ export async function importBatch(
       remaining: result.remaining ?? undefined,
       remainingExisting: result.remainingExisting ?? undefined,
       remainingNew: result.remainingNew ?? undefined,
+      blockedManual: result.blockedManual ?? undefined,
       capReached,
     }
   } catch (e) {

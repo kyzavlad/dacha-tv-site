@@ -33,6 +33,12 @@ export interface RefreshExistingResult {
   remainingExisting: number
   remainingNew: number
   remainingTotal: number
+  // Diagnostics only: valid, unapproved supplier rows shadowed by a
+  // source='manual' catalog row. Neither this RPC nor the new-product insert
+  // path may ever touch them (a human owns that row) — they are reported
+  // separately so they never block remainingTotal from reaching zero, and are
+  // NEVER auto-approved.
+  blockedManual: number
   message: string
 }
 
@@ -43,14 +49,17 @@ interface RpcRow {
   remaining_existing: number | null
   remaining_new: number | null
   remaining_total: number | null
+  blocked_manual: number | null
 }
 
 // Calls the set-based RPC exactly once per invocation — never a per-SKU loop.
-// On RPC failure (timeout, connection error, function exception) returns
-// ok=false without throwing, so the caller can report a truthful failure
-// instead of a half-finished batch. Because the SQL function does its update
-// and approval as one all-or-nothing statement per call, an RPC error here
-// guarantees no rows were partially refreshed-but-unapproved.
+// On RPC failure (timeout, connection error, function exception), or when the
+// RPC returns no result row at all (should never happen — the SQL function
+// always returns exactly one row — but is treated as a hard failure rather
+// than silently defaulting every count to zero), returns ok=false without
+// throwing. Because the SQL function does its update and approval as one
+// all-or-nothing statement per call, an error here guarantees no rows were
+// partially refreshed-but-unapproved.
 export async function refreshExistingCatalogFromSupplier(
   client: AdminClient,
   limit: number,
@@ -62,23 +71,33 @@ export async function refreshExistingCatalogFromSupplier(
     return {
       ok: false,
       processed: 0, updated: 0, approved: 0,
-      remainingExisting: 0, remainingNew: 0, remainingTotal: 0,
+      remainingExisting: 0, remainingNew: 0, remainingTotal: 0, blockedManual: 0,
       message: `refresh_existing_catalog_from_supplier RPC failed: ${error.message}`,
     }
   }
 
   const row = (Array.isArray(data) ? data[0] : data) as RpcRow | null | undefined
-  const processed = row?.processed ?? 0
-  const updated = row?.updated ?? 0
-  const approved = row?.approved ?? 0
-  const remainingExisting = row?.remaining_existing ?? 0
-  const remainingNew = row?.remaining_new ?? 0
-  const remainingTotal = row?.remaining_total ?? (remainingExisting + remainingNew)
+  if (!row) {
+    return {
+      ok: false,
+      processed: 0, updated: 0, approved: 0,
+      remainingExisting: 0, remainingNew: 0, remainingTotal: 0, blockedManual: 0,
+      message: 'refresh_existing_catalog_from_supplier RPC returned no result row',
+    }
+  }
+
+  const processed = row.processed ?? 0
+  const updated = row.updated ?? 0
+  const approved = row.approved ?? 0
+  const remainingExisting = row.remaining_existing ?? 0
+  const remainingNew = row.remaining_new ?? 0
+  const remainingTotal = row.remaining_total ?? (remainingExisting + remainingNew)
+  const blockedManual = row.blocked_manual ?? 0
 
   return {
     ok: true,
     processed, updated, approved,
-    remainingExisting, remainingNew, remainingTotal,
+    remainingExisting, remainingNew, remainingTotal, blockedManual,
     message: `Оновлення існуючих товарів: оброблено ${processed}, оновлено ${updated}, підтверджено ${approved}`,
   }
 }

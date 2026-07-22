@@ -75,12 +75,25 @@ export function buildNewProductRow(
 }
 
 export interface NewInsertBatchResult {
+  // false on any hard prerequisite-read error (supplier candidate scan,
+  // category lookup, existing-SKU lookup, slug read) or supplier-approval
+  // UPDATE error. A catalog INSERT error for an individual row is NOT a hard
+  // failure — it is isolated, retried, and folded into `errors` (soft,
+  // per-row accounting), matching the pre-existing insert-path behavior.
+  ok: boolean
   processed: number
+  // Total supplier rows scanned while searching for genuinely-new candidates
+  // (includes rows skipped because they already exist in catalog_products,
+  // whether refreshed by the RPC or shadowed by a source='manual' row).
+  // Diagnostic only — never used for the "remaining" accounting.
+  scanned: number
   inserted: number
   approved: number
   insertsSkippedCap: number
   duplicateSlugFixed: number
   errors: string[]
+  // Present when ok=false — explains the hard failure.
+  message?: string
 }
 
 export interface CombinedBatchResult {
@@ -95,6 +108,7 @@ export interface CombinedBatchResult {
   remainingExisting: number
   remainingNew: number
   remainingTotal: number
+  blockedManual: number
   errorGroups: Record<string, number>
   errorSamples: string[]
   message: string
@@ -120,16 +134,26 @@ export function combineExistingAndNewBatchResults(
   // the true post-batch state without an extra DB round-trip.
   const remainingNew = Math.max(0, refresh.remainingNew - insert.approved)
   const remainingTotal = remainingExisting + remainingNew
+  const blockedManual = refresh.blockedManual
 
-  const ok = failed === 0
-  const message = ok
-    ? `Існуючі: оброблено ${refresh.processed}, оновлено ${refresh.updated}. Нові: додано ${insert.inserted}${insert.insertsSkippedCap > 0 ? `, відкладено (ліміт) ${insert.insertsSkippedCap}` : ''}. Підтверджено всього ${approved}, залишок ${remainingTotal}`
-    : `${failed} DB помилок: ${insert.errors[0]}`
+  // A hard failure in the insert step (insert.ok=false — a prerequisite read
+  // or the supplier-approval UPDATE itself failed) marks the whole batch
+  // ok=false, even though the existing-row refresh above already committed
+  // successfully; that progress is still reported truthfully.
+  const ok = insert.ok && failed === 0
+  let message: string
+  if (!insert.ok) {
+    message = insert.message ?? 'Нові товари: невідома помилка обробки'
+  } else if (failed > 0) {
+    message = `${failed} DB помилок: ${insert.errors[0]}`
+  } else {
+    message = `Існуючі: оброблено ${refresh.processed}, оновлено ${refresh.updated}. Нові: додано ${insert.inserted}${insert.insertsSkippedCap > 0 ? `, відкладено (ліміт) ${insert.insertsSkippedCap}` : ''}. Підтверджено всього ${approved}, залишок ${remainingTotal}${blockedManual > 0 ? ` (+ ${blockedManual} заблоковано вручну)` : ''}`
+  }
 
   return {
     ok, processed, inserted: insert.inserted, updated, approved, failed,
     insertsSkippedCap: insert.insertsSkippedCap, duplicateSlugFixed: insert.duplicateSlugFixed,
-    remainingExisting, remainingNew, remainingTotal,
+    remainingExisting, remainingNew, remainingTotal, blockedManual,
     errorGroups, errorSamples: insert.errors.slice(0, 5),
     message,
   }

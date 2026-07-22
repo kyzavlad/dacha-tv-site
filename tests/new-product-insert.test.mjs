@@ -58,13 +58,16 @@ test('a suspiciously low price with no USD reference is flagged', () => {
 function refreshResult(overrides = {}) {
   return {
     ok: true, processed: 0, updated: 0, approved: 0,
-    remainingExisting: 0, remainingNew: 0, remainingTotal: 0,
+    remainingExisting: 0, remainingNew: 0, remainingTotal: 0, blockedManual: 0,
     message: '', ...overrides,
   }
 }
 
 function insertResult(overrides = {}) {
-  return { processed: 0, inserted: 0, approved: 0, insertsSkippedCap: 0, duplicateSlugFixed: 0, errors: [], ...overrides }
+  return {
+    ok: true, processed: 0, scanned: 0, inserted: 0, approved: 0,
+    insertsSkippedCap: 0, duplicateSlugFixed: 0, errors: [], ...overrides,
+  }
 }
 
 test('an update-only run (inserted=0) still reports progress truthfully', () => {
@@ -98,6 +101,25 @@ test('remainingNew truthfully reflects what the new-insert step consumed', () =>
   assert.equal(combined.remainingTotal, 320)
 })
 
+test('remaining = remainingExisting + remainingNew, and blockedManual is reported separately', () => {
+  const combined = combineExistingAndNewBatchResults(
+    refreshResult({ remainingExisting: 7, remainingNew: 13, blockedManual: 42 }),
+    insertResult(),
+  )
+  assert.equal(combined.remainingTotal, combined.remainingExisting + combined.remainingNew)
+  assert.equal(combined.remainingTotal, 20)
+  assert.equal(combined.blockedManual, 42, 'blockedManual must be carried through, not merged into remaining')
+})
+
+test('only manual-shadow rows remaining → remainingTotal=0 and blockedManual>0', () => {
+  const combined = combineExistingAndNewBatchResults(
+    refreshResult({ remainingExisting: 0, remainingNew: 0, blockedManual: 15 }),
+    insertResult(),
+  )
+  assert.equal(combined.remainingTotal, 0, 'remaining must reach zero once no actionable work is left')
+  assert.equal(combined.blockedManual, 15)
+})
+
 test('a repeated call against an already-drained backlog is idempotent', () => {
   const empty = refreshResult({ processed: 0, updated: 0, approved: 0, remainingExisting: 0, remainingNew: 0 })
   const first = combineExistingAndNewBatchResults(empty, insertResult())
@@ -107,7 +129,7 @@ test('a repeated call against an already-drained backlog is idempotent', () => {
   assert.equal(second.processed, 0)
 })
 
-test('errors from the new-insert step mark the batch ok=false without losing the refresh progress', () => {
+test('errors from the new-insert step (soft, per-row) mark the batch ok=false without losing refresh progress', () => {
   const combined = combineExistingAndNewBatchResults(
     refreshResult({ processed: 5000, updated: 5000, approved: 5000 }),
     insertResult({ processed: 10, inserted: 8, approved: 8, errors: ['duplicate key value'] }),
@@ -116,6 +138,16 @@ test('errors from the new-insert step mark the batch ok=false without losing the
   assert.equal(combined.updated, 5000, 'existing-row refresh progress is still reported even when new-insert had an error')
   assert.equal(combined.failed, 1)
   assert.match(combined.message, /DB помилок/)
+})
+
+test('a hard failure in the insert step (insert.ok=false) marks the whole batch ok=false', () => {
+  const combined = combineExistingAndNewBatchResults(
+    refreshResult({ processed: 5000, updated: 5000, approved: 5000 }),
+    insertResult({ ok: false, message: 'supplier candidate read failed: timeout' }),
+  )
+  assert.equal(combined.ok, false)
+  assert.equal(combined.updated, 5000, 'refresh progress is still reported')
+  assert.match(combined.message, /timeout/)
 })
 
 test('an RPC failure upstream (refresh.ok=false) is not silently absorbed', () => {
