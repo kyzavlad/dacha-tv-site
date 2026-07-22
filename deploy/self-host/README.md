@@ -119,6 +119,26 @@ inside `proxy.ts` (middleware, never sent to the browser). When it is unset,
 `request.nextUrl`'s own origin) — this is what keeps Vercel and
 `next dev` working unchanged; only the self-hosted deployment needs to set it.
 
+### `ADMIN_SESSION_SECRET` — required for `/admin/*` and `/api/admin/*` auth
+
+Set this in `/var/www/dacha-tv/shared/.env.production` alongside `ADMIN_PASSWORD`:
+
+```
+ADMIN_SESSION_SECRET=<a long random value, e.g. output of `openssl rand -base64 48`>
+```
+
+This is the HMAC signing key for the admin session cookie (`lib/admin-session.ts`),
+which replaced the old fixed `admin_session=1` cookie value. It is **server-only**
+(never prefixed `NEXT_PUBLIC_`) and is read only at request time — inside
+`proxy.ts` (Edge) and the admin login/logout route handlers/Server Actions
+(Node) — never at build time, so it is not required in the GitHub Actions
+build workflow, only in the runtime `.env.production` on the server.
+
+**Rotating it immediately invalidates every previously issued admin session**
+(every logged-in admin is forced back to `/admin/login`) without touching
+`ADMIN_PASSWORD`. Rotate it if a session cookie may have leaked, or as routine
+hygiene; it does not need to change in lockstep with `ADMIN_PASSWORD`.
+
 ## 5. Deploy to port 3030
 
 ```

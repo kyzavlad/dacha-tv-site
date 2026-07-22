@@ -12,9 +12,13 @@ interface HeroProps {
 }
 
 export async function Hero({ tagline, subtext, siteSettings }: HeroProps) {
-  const t = homeDict(await getRequestLocale())
-  const displayTagline = tagline || t.heroTitle
-  const displaySubtext = subtext || t.heroSubtext
+  const locale = await getRequestLocale()
+  const t = homeDict(locale)
+  // site_settings hero_tagline/hero_subtext are Ukrainian-only (no per-locale
+  // columns) — only the uk route may use them as an override; ru/en always
+  // render the localized dictionary copy.
+  const displayTagline = (locale === 'uk' && tagline) || t.heroTitle
+  const displaySubtext = (locale === 'uk' && subtext) || t.heroSubtext
 
   return (
     <section className="relative min-h-[90vh] flex items-center overflow-hidden" aria-label={t.heroAria}>

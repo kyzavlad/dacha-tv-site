@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
+import { ADMIN_SESSION_COOKIE, ADMIN_SESSION_TTL_SECONDS, createAdminSessionToken } from '@/lib/admin-session'
 
 export async function POST(request: Request) {
   try {
@@ -14,12 +15,17 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Invalid password' }, { status: 401 })
     }
 
+    // Signed, expiring token — never the old fixed "1" literal, which anyone
+    // could set via document.cookie to gain admin access without ever
+    // knowing ADMIN_PASSWORD. Never log the password or the issued token.
+    const token = await createAdminSessionToken()
+
     const cookieStore = await cookies()
-    cookieStore.set('admin_session', '1', {
+    cookieStore.set(ADMIN_SESSION_COOKIE, token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
-      maxAge: 60 * 60 * 24 * 30, // 30 days
+      maxAge: ADMIN_SESSION_TTL_SECONDS,
       path: '/',
     })
 
