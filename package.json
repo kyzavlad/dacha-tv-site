@@ -15,7 +15,8 @@
     "diagnose:catalog": "tsx scripts/diagnose-catalog.ts",
     "normalize:metal": "tsx scripts/normalize-metal-products.ts",
     "repair:category-names": "tsx scripts/repair-category-names.ts",
-    "backfill:category-descriptions": "tsx scripts/backfill-category-descriptions.ts"
+    "backfill:category-descriptions": "tsx scripts/backfill-category-descriptions.ts",
+    "env:inventory": "tsx scripts/env-inventory.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
@@ -32,6 +33,7 @@
     "react-dom": "19.2.4",
     "react-hook-form": "^7.75.0",
     "resend": "^6.12.3",
+    "sharp": "^0.34.5",
     "tailwind-merge": "^3.6.0",
     "zod": "^4.4.3"
   },
