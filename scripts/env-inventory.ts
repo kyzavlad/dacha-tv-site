@@ -122,10 +122,35 @@ function scan(files: string[]): Map<string, EnvRef> {
   return refs
 }
 
+// Explicit override for cases the shape-based heuristic can't see (e.g. a var
+// read once and passed through a pure helper that handles its absence, with
+// no `if (!x)`/`??`/`||` anywhere near the `process.env.X` reference itself).
+// Authors document these deliberately with a `@optional-env NAME` comment
+// near the read site — this scan looks at raw file content (including
+// comments) specifically for that marker.
+const OPTIONAL_MARKER_RE = /@optional-env\s+([A-Za-z0-9_]+)/g
+
+function scanExplicitOptionalMarkers(files: string[]): Set<string> {
+  const names = new Set<string>()
+  for (const file of files) {
+    let content: string
+    try {
+      content = readFileSync(file, 'utf8')
+    } catch {
+      continue
+    }
+    OPTIONAL_MARKER_RE.lastIndex = 0
+    let m: RegExpExecArray | null
+    while ((m = OPTIONAL_MARKER_RE.exec(content))) names.add(m[1])
+  }
+  return names
+}
+
 type Category = 'build-time public' | 'runtime server' | 'optional'
 
-function classify(ref: EnvRef): Category {
+function classify(ref: EnvRef, explicitlyOptional: Set<string>): Category {
   if (ref.name.startsWith('NEXT_PUBLIC_')) return 'build-time public'
+  if (explicitlyOptional.has(ref.name)) return 'optional'
   if (ref.looksOptionalAnywhere) return 'optional'
   return 'runtime server'
 }
@@ -153,13 +178,14 @@ function main() {
 
   const files = collectFiles()
   const refs = scan(files)
+  const explicitlyOptional = scanExplicitOptionalMarkers(files)
   const sorted = [...refs.values()].sort((a, b) => a.name.localeCompare(b.name))
 
   console.log(`[env-inventory] scanned ${files.length} files, found ${sorted.length} distinct environment variable names.`)
   console.log('[env-inventory] classification is a best-effort heuristic — verify manually before relying on it for a production cutover.\n')
 
   const byCategory: Record<Category, string[]> = { 'build-time public': [], 'runtime server': [], optional: [] }
-  for (const ref of sorted) byCategory[classify(ref)].push(ref.name)
+  for (const ref of sorted) byCategory[classify(ref, explicitlyOptional)].push(ref.name)
 
   for (const cat of ['build-time public', 'runtime server', 'optional'] as Category[]) {
     console.log(`## ${cat} (${byCategory[cat].length})`)
