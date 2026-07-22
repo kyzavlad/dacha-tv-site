@@ -1,6 +1,15 @@
 export const AUTOMATION_MAX_PUBLISHED = 3000
 export const AUTOMATION_BATCH_SIZE = 300
 
+// Genuinely-new supplier products (no existing catalog_products row) still go
+// through the JS insert path. That path was never the timeout risk — the
+// per-SKU refresh loop for EXISTING rows was (see
+// lib/catalog/existing-product-refresh.ts) — but it stays deliberately small
+// and bounded even when the caller requests a large `limit` for the
+// existing-row refresh, so a single request never queues an unbounded number
+// of chunked upserts.
+export const NEW_PRODUCT_INSERT_BATCH_CAP = 500
+
 // Categories the first ad campaigns point at. SEO effort (AI long descriptions)
 // is prioritised here — we do NOT wait for 100% AI SEO on all ~105k products
 // before launching. Template meta covers the rest quickly.

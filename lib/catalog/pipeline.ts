@@ -3,8 +3,13 @@ import { autoSlug } from '@/lib/catalog/csv-utils'
 import { fetchSupplierCategoryMap } from '@/lib/supplier/sync'
 import { buildSupplierUpdatePayload, planGuardedWrites, type CatalogUpdatePayload, type ExistingCatalogOwnership } from '@/lib/catalog/field-ownership'
 import { isValidHumanCategoryName, deterministicCategoryIntro } from '@/lib/catalog/category-fallback'
-import { AUTOMATION_MAX_PUBLISHED } from '@/lib/catalog/automation-config'
+import { AUTOMATION_MAX_PUBLISHED, NEW_PRODUCT_INSERT_BATCH_CAP } from '@/lib/catalog/automation-config'
 import { normalizeStock } from '@/lib/catalog/stock'
+import { refreshExistingCatalogFromSupplier } from '@/lib/catalog/existing-product-refresh'
+import {
+  buildNewProductRow, combineExistingAndNewBatchResults,
+  type NewProductCandidate, type NewInsertBatchResult,
+} from '@/lib/catalog/new-product-insert'
 
 type AdminClient = ReturnType<typeof getAdminClient>
 
@@ -85,7 +90,20 @@ export interface SyncProductsResult {
   approved?: number
   failed?: number
   insertsSkippedCap?: number
+  // ACTIONABLE backlog only: remaining === remainingExisting + remainingNew.
+  // Deliberately excludes blockedManual (supplier rows shadowed by a
+  // source='manual' catalog row) so a caller looping "until remaining === 0"
+  // actually terminates once all real work is done — a manual-shadowed row
+  // can never be approved by either path, so counting it here would mean
+  // `remaining` never reaches zero.
   remaining?: number
+  remainingExisting?: number
+  remainingNew?: number
+  remainingTotal?: number
+  // Diagnostics only: unapproved supplier rows matched to a source='manual'
+  // catalog row. Never approved automatically by either path — reported
+  // separately, not folded into `remaining`.
+  blockedManual?: number
   errorSamples?: string[]
   // Populated on dry-run only
   wouldInsert?: number
@@ -404,7 +422,304 @@ export async function syncCatalogCategories(): Promise<SyncCategoriesResult> {
 //   mark is_approved=true. Returns wouldInsert/wouldUpdate/backlogImportable/samples.
 // opts.skuFilter: import ONLY the listed SKUs (ignores is_approved flag — used for
 //   targeted SEO-sheet-first import). Limit is still respected as a cap.
+// Dispatcher: the daily untargeted batch (no skuFilter, not a dry-run preview)
+// uses the new set-based existing-row refresh + bounded new-row insert path
+// (syncExistingAndNewBatch, below) — this is what fixes the import-products
+// 504. Targeted SKU imports (a short, explicit list — e.g. the SEO-priority
+// sheet importer) and dry-run previews stay on the original combined
+// load-everything-then-decide implementation: neither was ever the timeout
+// risk (skuFilter lists are short; dry-run never writes), so they are left
+// completely unchanged to minimize risk.
 export async function syncProductsToCatalog(
+  limit: number,
+  opts: { dryRun?: boolean; skuFilter?: string[]; capNewInserts?: boolean } = {},
+): Promise<SyncProductsResult> {
+  if (opts.dryRun || (opts.skuFilter && opts.skuFilter.length > 0)) {
+    return syncProductsToCatalogLegacy(limit, opts)
+  }
+  return syncExistingAndNewBatch(limit, opts)
+}
+
+// ─── New default path: set-based existing-row refresh + bounded new-row insert ──
+export async function syncExistingAndNewBatch(
+  limit: number,
+  opts: { capNewInserts?: boolean } = {},
+): Promise<SyncProductsResult> {
+  const client = getAdminClient()
+  const nowIso = new Date().toISOString()
+
+  // The published cap blocks only NEW storefront insertion — never the daily
+  // price/image/stock refresh of rows that already exist in catalog_products.
+  let capReached = false
+  if (opts.capNewInserts) {
+    const { count: publishedCount } = await client
+      .from('catalog_products').select('id', { count: 'exact', head: true }).eq('status', 'published')
+    capReached = (publishedCount ?? 0) >= AUTOMATION_MAX_PUBLISHED
+  }
+
+  // ── Step 1: set-based refresh of every EXISTING catalog row matched to an
+  // unapproved supplier row. Was: load up to `limit` supplier rows into JS then
+  // one sequential UPDATE per SKU per changed field — tens of thousands of
+  // PostgREST round-trips at limit=10000, the root cause of the 504. Now: one
+  // RPC call does the whole batch as a single set-based UPDATE.
+  const refresh = await refreshExistingCatalogFromSupplier(client, limit)
+  if (!refresh.ok) {
+    return {
+      ok: false, inserted: 0, updated: 0, skipped: 0, errors: 1,
+      errorGroups: { [refresh.message]: 1 },
+      message: refresh.message,
+      processed: 0, approved: 0, failed: 1,
+    }
+  }
+
+  // ── Step 2: genuinely NEW supplier products (no existing catalog_products
+  // row) still go through the JS insert path — deliberately bounded small
+  // regardless of `limit`, since this was never the timeout risk.
+  const insertResult = await insertNewSupplierProducts(client, NEW_PRODUCT_INSERT_BATCH_CAP, capReached, nowIso)
+
+  const combined = combineExistingAndNewBatchResults(refresh, insertResult)
+
+  return {
+    ok: combined.ok,
+    inserted: combined.inserted,
+    updated: combined.updated,
+    skipped: combined.insertsSkippedCap,
+    errors: combined.failed,
+    errorGroups: combined.errorGroups,
+    duplicateSlugFixed: combined.duplicateSlugFixed,
+    message: combined.message,
+    processed: combined.processed,
+    approved: combined.approved,
+    failed: combined.failed,
+    insertsSkippedCap: combined.insertsSkippedCap,
+    // Actionable-only, per the required response semantics: remaining =
+    // remainingExisting + remainingNew. blockedManual is reported separately
+    // and deliberately excluded so this can reach zero.
+    remaining: combined.remainingTotal,
+    remainingExisting: combined.remainingExisting,
+    remainingNew: combined.remainingNew,
+    remainingTotal: combined.remainingTotal,
+    blockedManual: combined.blockedManual,
+    errorSamples: combined.errorSamples,
+  }
+}
+
+// A page consisting entirely of rows already refreshed by the RPC, or shadowed
+// by a source='manual' catalog row, must never stall the search for genuinely
+// new products — this bounds how many supplier rows we're willing to scan
+// while looking for NEW_PRODUCT_INSERT_BATCH_CAP of them, without ever loading
+// the full ~112k-row supplier table.
+export const NEW_PRODUCT_SCAN_CEILING = 10000
+export const NEW_PRODUCT_SCAN_PAGE = 500
+
+// Bounded small-batch insert for genuinely-new supplier products (no existing
+// catalog_products row). Pages through the unapproved queue — skipping rows
+// already present in catalog_products (refreshed-by-RPC or manual-shadowed)
+// without stopping — until `insertCap` new candidates are collected or the
+// scan ceiling is hit. Mirrors the original insert logic (category-slug
+// resolution, collision-safe slugging, chunked upsert with per-row fallback).
+export async function insertNewSupplierProducts(
+  client: AdminClient,
+  insertCap: number,
+  capReached: boolean,
+  nowIso: string,
+): Promise<NewInsertBatchResult> {
+  const COLS = 'id, supplier_sku, name, name_ua, slug, supplier_category_id, price_uah, supplier_price_usd, main_image_url, images, stock_quantity, is_in_stock'
+  const fail = (scanned: number, message: string): NewInsertBatchResult => ({
+    ok: false, processed: 0, scanned, inserted: 0, approved: 0,
+    insertsSkippedCap: 0, duplicateSlugFixed: 0, errors: [], message,
+  })
+
+  const newCandidates: NewProductCandidate[] = []
+  let scanned = 0
+
+  for (let from = 0; newCandidates.length < insertCap && scanned < NEW_PRODUCT_SCAN_CEILING; from += NEW_PRODUCT_SCAN_PAGE) {
+    const to = from + NEW_PRODUCT_SCAN_PAGE - 1
+    const { data, error: fetchErr } = await client
+      .from('supplier_products')
+      .select(COLS)
+      .eq('is_approved', false)
+      .not('name', 'is', null)
+      .gt('price_uah', 0)
+      .order('id', { ascending: true })
+      .range(from, to)
+    if (fetchErr) return fail(scanned, `supplier candidate read failed: ${fetchErr.message}`)
+    if (!data || data.length === 0) break // queue exhausted
+    scanned += data.length
+
+    // Which of THIS page's SKUs already exist in catalog_products — either
+    // just refreshed by the RPC, or shadowed by a source='manual' row the RPC
+    // deliberately never touches. Either way, skip and KEEP SCANNING — a run
+    // of existing/manual-shadow rows at the front of the queue must never
+    // block genuinely-new rows further back.
+    const pageSkus = data.map((p) => p.supplier_sku as string)
+    const existingSkus = new Set<string>()
+    const SKU_CHUNK = 500
+    for (let i = 0; i < pageSkus.length; i += SKU_CHUNK) {
+      const { data: existingChunk, error: exErr } = await client
+        .from('catalog_products')
+        .select('supplier_sku')
+        .in('supplier_sku', pageSkus.slice(i, i + SKU_CHUNK))
+      if (exErr) return fail(scanned, `existing-SKU read failed: ${exErr.message}`)
+      for (const r of existingChunk ?? []) existingSkus.add(r.supplier_sku as string)
+    }
+
+    for (const sp of data as NewProductCandidate[]) {
+      if (existingSkus.has(sp.supplier_sku)) continue
+      newCandidates.push(sp)
+      if (newCandidates.length >= insertCap) break
+    }
+
+    if (data.length < NEW_PRODUCT_SCAN_PAGE) break // last page
+  }
+
+  if (newCandidates.length === 0) {
+    return { ok: true, processed: 0, scanned, inserted: 0, approved: 0, insertsSkippedCap: 0, duplicateSlugFixed: 0, errors: [] }
+  }
+
+  // Resolve category slug via supplier_category_id → catalog_categories.slug
+  const catIds = [...new Set(newCandidates.map((p) => p.supplier_category_id).filter(Boolean) as string[])]
+  const catSlugMap = new Map<string, string>()
+  if (catIds.length > 0) {
+    const { data: cats, error: catErr } = await client
+      .from('catalog_categories')
+      .select('supplier_category_id, slug')
+      .in('supplier_category_id', catIds)
+    if (catErr) return fail(scanned, `category lookup failed: ${catErr.message}`)
+    for (const c of cats ?? []) {
+      if (c.supplier_category_id) catSlugMap.set(c.supplier_category_id, c.slug)
+    }
+  }
+
+  // Paginated slug read with explicit error propagation (not the shared
+  // selectAllRows helper, which treats a read error the same as "no more
+  // data" — acceptable for its other callers, but not here: a slug read
+  // failure must never look like an empty catalog and risk a false slug
+  // collision on insert).
+  const slugRows: { slug: string }[] = []
+  {
+    const SLUG_PAGE = 1000
+    for (let from = 0; ; from += SLUG_PAGE) {
+      const to = from + SLUG_PAGE - 1
+      const { data, error: slugErr } = await client
+        .from('catalog_products').select('slug').order('slug', { ascending: true }).range(from, to)
+      if (slugErr) return fail(scanned, `slug read failed: ${slugErr.message}`)
+      if (!data || data.length === 0) break
+      slugRows.push(...data)
+      if (data.length < SLUG_PAGE) break
+    }
+  }
+  const usedSlugs = new Set(slugRows.map((r) => r.slug).filter(Boolean))
+
+  const toInsert: Record<string, unknown>[] = []
+  const skuToSpId = new Map<string, string>()
+  for (const sp of newCandidates) {
+    skuToSpId.set(sp.supplier_sku, sp.id)
+    const categorySlug = sp.supplier_category_id ? (catSlugMap.get(sp.supplier_category_id as string) ?? null) : null
+    toInsert.push(buildNewProductRow(sp, categorySlug, usedSlugs, nowIso))
+  }
+
+  let inserted = 0, duplicateSlugFixed = 0, insertsSkippedCap = 0
+  const errors: string[] = []
+  const approvedIds = new Set<string>()
+  const CHUNK = 200
+
+  if (capReached) {
+    insertsSkippedCap = toInsert.length
+  } else {
+    for (let i = 0; i < toInsert.length; i += CHUNK) {
+      const chunk = toInsert.slice(i, i + CHUNK)
+      const { error } = await client
+        .from('catalog_products')
+        .upsert(chunk, { onConflict: 'supplier_sku', ignoreDuplicates: true })
+      if (!error) {
+        inserted += chunk.length
+        for (const row of chunk) {
+          const spId = skuToSpId.get(row.supplier_sku as string)
+          if (spId) approvedIds.add(spId)
+        }
+        continue
+      }
+
+      // Chunk failed — isolate and retry each row, handling slug collisions.
+      // A per-row insert failure is a SOFT error (folded into `errors` below,
+      // feeding failed/errorGroups) — not a hard ok=false — matching the
+      // pre-existing behavior for the insert step specifically.
+      for (const row of chunk) {
+        const sku = row.supplier_sku as string
+        let currentRow = { ...row }
+        let slugFixed = false
+        let rowOk = false
+        let rowErr = ''
+
+        for (let attempt = 0; attempt <= 10; attempt++) {
+          const { error: e2 } = await client
+            .from('catalog_products')
+            .upsert([currentRow], { onConflict: 'supplier_sku', ignoreDuplicates: true })
+          if (!e2) {
+            inserted++
+            rowOk = true
+            if (slugFixed) duplicateSlugFixed++
+            const spId = skuToSpId.get(sku)
+            if (spId) approvedIds.add(spId)
+            break
+          }
+          const errCode = (e2 as { code?: string }).code
+          if (errCode === '23505' && e2.message.includes('slug')) {
+            const baseSlug = autoSlug(sku) || sku.toLowerCase().replace(/[^a-z0-9]/g, '-')
+            currentRow = { ...currentRow, slug: `${baseSlug}-${attempt + 2}` }
+            slugFixed = true
+          } else {
+            rowErr = e2.message
+            break
+          }
+        }
+        if (!rowOk && rowErr) errors.push(rowErr)
+      }
+    }
+  }
+
+  // Approve STRICTLY the supplier rows whose insert succeeded. An approval
+  // UPDATE error is a HARD failure (ok=false) — those rows must NOT be
+  // counted as approved even though their catalog_products row was already
+  // inserted; they simply stay is_approved=false and are picked up again next
+  // call as ordinary "existing" rows (their source defaults to 'supplier'),
+  // where the RPC will refresh+approve them normally. Never silently treated
+  // as success.
+  const idsToApprove = [...approvedIds]
+  const confirmedApprovedIds = new Set<string>()
+  let approvalErrorMsg: string | null = null
+  for (let i = 0; i < idsToApprove.length; i += 500) {
+    const batchIds = idsToApprove.slice(i, i + 500)
+    const { error: approveErr } = await client
+      .from('supplier_products')
+      .update({ is_approved: true })
+      .in('id', batchIds)
+    if (approveErr) {
+      approvalErrorMsg = approveErr.message
+      continue // still attempt remaining chunks; overall result is still ok=false
+    }
+    for (const id of batchIds) confirmedApprovedIds.add(id)
+  }
+
+  if (approvalErrorMsg) {
+    return {
+      ok: false,
+      processed: newCandidates.length, scanned,
+      inserted, approved: confirmedApprovedIds.size, insertsSkippedCap, duplicateSlugFixed, errors,
+      message: `supplier approval update failed: ${approvalErrorMsg}`,
+    }
+  }
+
+  return {
+    ok: true,
+    processed: newCandidates.length, scanned,
+    inserted, approved: confirmedApprovedIds.size, insertsSkippedCap, duplicateSlugFixed, errors,
+  }
+}
+
+// ─── Legacy path: targeted SKU imports + dry-run previews (unchanged) ─────────
+async function syncProductsToCatalogLegacy(
   limit: number,
   opts: { dryRun?: boolean; skuFilter?: string[]; capNewInserts?: boolean } = {},
 ): Promise<SyncProductsResult> {
