@@ -88,6 +88,37 @@ heuristic, not a guarantee.
 is missing or not `chmod 600` — deploying without a reviewed, private env
 file is not allowed.
 
+### `INTERNAL_APP_ORIGIN` — required for `/ru/*` and `/en/*` routes to work behind TLS termination
+
+Set this in `/var/www/dacha-tv/shared/.env.production`:
+
+```
+INTERNAL_APP_ORIGIN=http://127.0.0.1:3030
+```
+
+**Why it's required here (and not on Vercel or in local dev):** `proxy.ts`
+rewrites `/ru/*`/`/en/*` requests to their canonical (unprefixed) path via
+`NextResponse.rewrite(absoluteUrl, ...)`. When that absolute URL points at a
+different origin than the one actually serving the request, Next.js performs
+a real internal HTTP fetch to it. Behind Nginx (which terminates TLS and
+forwards `X-Forwarded-Proto: https`), `request.nextUrl` reconstructs an
+`https://` origin — but the standalone Node server behind it only ever speaks
+plain HTTP on `127.0.0.1:3030`. Rewriting to that HTTPS-but-actually-HTTP
+origin makes Next.js's internal fetch attempt a TLS handshake against a
+plain-HTTP port, which fails with a "wrong version number" TLS error — this
+was the production 500 on every `/ru/*` and `/en/*` route. `INTERNAL_APP_ORIGIN`
+tells `proxy.ts` to target the known-good internal origin instead of trusting
+the externally-visible one it would otherwise reconstruct. See
+`lib/locale-rewrite.ts` for the implementation and `tests/proxy-locale-rewrite.test.mjs`
+/ `tests/locale-rewrite.test.mjs` for the test coverage.
+
+This variable is **server-only** — it is never prefixed `NEXT_PUBLIC_`, so
+Next.js never inlines it into any client bundle, and it is only ever read
+inside `proxy.ts` (middleware, never sent to the browser). When it is unset,
+`proxy.ts` falls back to its previous behavior (rewriting against
+`request.nextUrl`'s own origin) — this is what keeps Vercel and
+`next dev` working unchanged; only the self-hosted deployment needs to set it.
+
 ## 5. Deploy to port 3030
 
 ```
@@ -129,6 +160,23 @@ pm2 logs dacha-tv --lines 100
 monitors don't carry `CRON_SECRET`) — it never returns a secret value, does a
 single tiny bounded Supabase read, and returns a real non-200 status when the
 backend is unreachable or unconfigured, so a `200` here is meaningful.
+
+Also confirm the locale-prefixed routes work — the specific failure
+`INTERNAL_APP_ORIGIN` fixes (see step 4) is a 500 on exactly these, so a real
+`200` here is the actual regression test, reproducing the production
+TLS-termination topology with `Host`/`X-Forwarded-Proto` headers even though
+you're hitting `127.0.0.1:3030` directly (no Nginx involved yet):
+
+```
+curl -s -o /dev/null -w "%{http_code}\n" \
+  -H "Host: dachatv.com" -H "X-Forwarded-Proto: https" \
+  http://127.0.0.1:3030/ru/services
+curl -s -o /dev/null -w "%{http_code}\n" \
+  -H "Host: dachatv.com" -H "X-Forwarded-Proto: https" \
+  http://127.0.0.1:3030/en/beekeeper
+```
+
+Both must print `200`, not `500`.
 
 ## 7. Test through a temporary hostname or local hosts override
 
