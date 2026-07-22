@@ -288,6 +288,44 @@ Request node, or `curl` in a system cron entry) must send that header. Do not
 lower or remove that authentication requirement when migrating the trigger
 mechanism.
 
+### Job order and independence — required on the 3.7GB self-host box
+
+`sync-categories` used to download the complete ~112k-product `get_products`
+feed (JSON, and separately YML/XML for category names) as a fallback inside
+one request. On a 3.7GB box that spiked memory hard enough for PM2 to kill
+and restart the `dacha-tv` process mid-request — the caller saw
+`RemoteDisconnected: Remote end closed connection without response`, restart
+count went up, and uptime reset. This is fixed: `sync-categories` now only
+ever calls the small, dedicated `get_categories` endpoint, or — if that
+returns nothing — reports whatever `supplier_categories` already holds from
+the last `sync-products` run (which extracts categories from the SAME
+`get_products` response it already downloads for products, at zero extra
+HTTP cost). `sync-categories` never downloads the full product feed itself.
+
+Because of this, the four jobs are genuinely independent — call them in any
+order, any number of times, and a problem in one must never block another:
+
+1. **`sync-categories`** — safe to run first (or last, or skipped for a day).
+   Each of its 5 internal stages (supplier categories, catalog categories,
+   name repair, publish, slug backfill) is isolated: a stage that throws is
+   recorded as a failed stage in the JSON response (`ok:false` on that stage,
+   with `errors`/`message`/`durationMs`) and does NOT stop the remaining
+   stages or crash the Node process. A non-critical stage issue here (e.g. a
+   positive `remaining` count on the repair stage) is informational — it must
+   never be treated as a reason to skip `sync-products`/`import-products`/
+   `publish-products`. Those are separate HTTP endpoints; nothing in this
+   route's response gates them.
+2. **`sync-products`** — downloads the product feed once, processes bounded
+   windows (`?mode=full` loops internally up to its wall-clock budget). Also
+   the source of fresh category names now (requirement B above).
+3. **`import-products`** — `supplier_products` → `catalog_products`, call
+   repeatedly until `remaining` is 0 (see the endpoint's own doc comment).
+4. **`publish-products`** — publish draft products, respects the published cap.
+
+None of these require one giant combined HTTP request, and re-running any of
+them (including `sync-categories`) on a day it already ran is safe —
+`supplier_categories`/`catalog_categories` upserts are idempotent.
+
 ### Other cron-shaped admin endpoints that exist but are NOT in `vercel.json`
 
 `app/api/admin/cron/` also contains `category-seo`, `import-category-seo-sheet`,

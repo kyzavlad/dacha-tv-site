@@ -1,6 +1,5 @@
 import { getAdminClient } from '@/lib/supabase/admin'
 import { autoSlug } from '@/lib/catalog/csv-utils'
-import { fetchSupplierCategoryMap } from '@/lib/supplier/sync'
 import { buildSupplierUpdatePayload, planGuardedWrites, type CatalogUpdatePayload, type ExistingCatalogOwnership } from '@/lib/catalog/field-ownership'
 import { isValidHumanCategoryName, deterministicCategoryIntro } from '@/lib/catalog/category-fallback'
 import { AUTOMATION_MAX_PUBLISHED, NEW_PRODUCT_INSERT_BATCH_CAP } from '@/lib/catalog/automation-config'
@@ -1144,22 +1143,32 @@ export async function backfillCategorySlugs(): Promise<BackfillResult> {
   }
 }
 
-// Repair category names using the REAL supplier feed (YML/XML <categories> block)
-// as the deterministic source of truth, with supplier_products.raw_data as a
+// True when a catalog_categories row has a purely-numeric name_ua AND is
+// eligible for automated repair — manually-curated categories (source=
+// 'manual') are never touched, even if one somehow has a numeric name_ua.
+// Exported so this guarantee is directly unit-testable without a database.
+export function isNumericAutoRepairableCategory(row: { name_ua: string | null; source: string | null }): boolean {
+  return /^\d+$/.test(String(row.name_ua ?? '')) && row.source !== 'manual'
+}
+
+// Repair category names using data already stored in the database — supplier
+// feed names that syncSupplierProducts/syncSupplierCategories already
+// resolved into supplier_categories, with supplier_products.raw_data as a
 // fallback. Propagates names to supplier_categories + catalog_categories.
-// Idempotent — only overwrites null/empty/numeric names, never human-readable ones.
+// Idempotent — only overwrites null/empty/numeric names, never human-readable
+// ones.
+//
+// Deliberately DOES NOT call fetchSupplierCategoryMap() (which downloads the
+// complete YML/XML product feed) — this function runs as part of the daily
+// sync-categories cron chain, which must never trigger that full-feed
+// download (see lib/supplier/sync.ts's syncSupplierCategories doc comment).
+// The DB already holds the same names via syncSupplierProducts's top-level
+// category extraction, so a fresh feed download here would be redundant.
 export async function repairCategoryNamesFromProducts(): Promise<RepairCategoryNamesResult> {
   const client = getAdminClient()
   const PAGE = 1000
-
-  // 0. Deterministic id→name map straight from the supplier feed (YML/XML).
-  let ymlMap = new Map<string, string>()
-  let nameSource = 'none'
-  try {
-    const res = await fetchSupplierCategoryMap()
-    ymlMap = res.map
-    nameSource = res.source
-  } catch { /* feed unavailable — fall back to raw_data sampling below */ }
+  const ymlMap = new Map<string, string>()
+  const nameSource = 'db'
 
   // 1. Find all supplier_categories with numeric-only name
   const numericSupplierCats: Array<{ id: string; supplier_id: string }> = []
@@ -1228,10 +1237,13 @@ export async function repairCategoryNamesFromProducts(): Promise<RepairCategoryN
   }
 
   // 4. Fix catalog_categories: find numeric rows and update from supplier_categories.
-  // Load ALL rows (paginated) so the slug set below is complete.
-  const catRows = await selectAllRows<{ id: string; supplier_category_id: string | null; name_ua: string | null; slug: string | null }>((f, t) =>
-    client.from('catalog_categories').select('id, supplier_category_id, name_ua, slug').order('id', { ascending: true }).range(f, t))
-  const numericCatRows = catRows.filter((r) => /^\d+$/.test(String(r.name_ua ?? '')))
+  // Load ALL rows (paginated) so the slug set below is complete. Manually-curated
+  // categories (source='manual') are excluded from the WRITE set below — their
+  // names are hand-written and must never be touched by this automated repair,
+  // even in the (unexpected) case one has a numeric name_ua.
+  const catRows = await selectAllRows<{ id: string; supplier_category_id: string | null; name_ua: string | null; slug: string | null; source: string | null }>((f, t) =>
+    client.from('catalog_categories').select('id, supplier_category_id, name_ua, slug, source').order('id', { ascending: true }).range(f, t))
+  const numericCatRows = catRows.filter(isNumericAutoRepairableCategory)
 
   // Rebuild supplier name map after updates (paginated — never capped at 1000).
   const scAll = await selectAllRows<{ supplier_id: string; name: string | null; name_ua: string | null }>((f, t) =>
