@@ -2,6 +2,7 @@ import { cookies } from 'next/headers'
 import { revalidatePath } from 'next/cache'
 import { verifyCronAuth, cronUnauthorized } from '../../cron/_auth'
 import { seedManualCatalog } from '@/lib/catalog/manual-seed'
+import { ADMIN_SESSION_COOKIE, verifyAdminSessionToken } from '@/lib/admin-session'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -22,8 +23,8 @@ const REVALIDATE_PATHS = [
 // Never open to the public.
 async function isAuthorized(req: Request): Promise<boolean> {
   if (verifyCronAuth(req)) return true
-  const session = (await cookies()).get('admin_session')
-  return session?.value === '1'
+  const session = (await cookies()).get(ADMIN_SESSION_COOKIE)
+  return verifyAdminSessionToken(session?.value)
 }
 
 export async function POST(req: Request) {

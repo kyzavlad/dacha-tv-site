@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { getAdminClient } from '@/lib/supabase/admin'
+import { ADMIN_SESSION_COOKIE, verifyAdminSessionToken } from '@/lib/admin-session'
 
 export async function GET(request: Request) {
   const cookieStore = await cookies()
-  const session = cookieStore.get('admin_session')
-  if (!session || session.value !== '1') {
+  const session = cookieStore.get(ADMIN_SESSION_COOKIE)
+  if (!(await verifyAdminSessionToken(session?.value))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
@@ -31,8 +32,8 @@ export async function GET(request: Request) {
 
 export async function PATCH(request: Request) {
   const cookieStore = await cookies()
-  const session = cookieStore.get('admin_session')
-  if (!session || session.value !== '1') {
+  const session = cookieStore.get(ADMIN_SESSION_COOKIE)
+  if (!(await verifyAdminSessionToken(session?.value))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

@@ -1,15 +1,27 @@
 'use server'
 
+import { cookies } from 'next/headers'
 import { revalidatePath } from 'next/cache'
 import { getAdminClient } from '@/lib/supabase/admin'
 import { buildPersonalCabOrderPayload, sendPersonalCabOrder } from '@/lib/supplier/order'
+import { ADMIN_SESSION_COOKIE, verifyAdminSessionToken } from '@/lib/admin-session'
 import type { OrderStatus } from '@/types'
+
+// Admin-only: both actions below mutate order state. Defence-in-depth: the
+// /admin proxy middleware already gates the page these actions live on, but
+// a Server Action is itself a reachable endpoint, so each re-checks the
+// signed admin session before touching the database.
+async function hasValidAdminSession(): Promise<boolean> {
+  const session = (await cookies()).get(ADMIN_SESSION_COOKIE)
+  return verifyAdminSessionToken(session?.value)
+}
 
 export async function adminUpdateOrderStatus(
   id: string,
   status: OrderStatus,
   adminNotes?: string
 ): Promise<{ success: boolean; error?: string }> {
+  if (!(await hasValidAdminSession())) return { success: false, error: 'Unauthorized' }
   try {
     const client = getAdminClient()
     const payload: Record<string, unknown> = { status }
@@ -24,12 +36,13 @@ export async function adminUpdateOrderStatus(
 
 // Admin-only: re-send a single existing order to personal.cab in TEST mode.
 // Always forced to mode=test — this action can NEVER create a live supplier
-// order, regardless of SUPPLIER_ORDER_MODE. Protected by the /admin proxy
-// middleware (admin_session cookie). Reloads the order's stored receiver/
-// warehouse fields and resolves supplier SKUs from catalog_products by slug.
+// order, regardless of SUPPLIER_ORDER_MODE. Reloads the order's stored
+// receiver/warehouse fields and resolves supplier SKUs from catalog_products
+// by slug.
 export async function adminSendSupplierTestOrder(
   orderId: string
 ): Promise<{ success: boolean; message: string; status?: string }> {
+  if (!(await hasValidAdminSession())) return { success: false, message: 'Unauthorized' }
   try {
     const client = getAdminClient()
 

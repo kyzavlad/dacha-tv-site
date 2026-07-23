@@ -67,7 +67,7 @@ export async function HowToOrder({ siteSettings }: HowToOrderProps) {
 
               {/* Step number */}
               <span className="text-xs font-semibold text-honey-600 uppercase tracking-widest mb-3">
-                Крок {index + 1}
+                {t.orderStepLabel} {index + 1}
               </span>
 
               <h3 className="font-serif text-xl font-semibold text-white mb-3">
@@ -82,7 +82,7 @@ export async function HowToOrder({ siteSettings }: HowToOrderProps) {
 
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
           <CTAButton href="/catalog" size="lg" variant="primary">
-            Перейти в магазин
+            {t.orderCta}
           </CTAButton>
 
           <PhoneLink

@@ -26,11 +26,16 @@ function req(url, opts = {}) {
   return new NextRequest(url, opts)
 }
 
-test('/ru/services rewrites internally to /services', () => {
+// proxy() is async (it awaits verifyAdminSessionToken for /admin* gating),
+// so every call site below must be awaited — Next.js's own middleware
+// runtime already awaits handler results, this just mirrors that at the
+// test layer.
+
+test('/ru/services rewrites internally to /services', async () => {
   const previous = process.env.INTERNAL_APP_ORIGIN
   process.env.INTERNAL_APP_ORIGIN = 'http://127.0.0.1:3030'
   try {
-    const res = proxy(req('https://dachatv.com/ru/services', { headers: { 'x-forwarded-proto': 'https', host: 'dachatv.com' } }))
+    const res = await proxy(req('https://dachatv.com/ru/services', { headers: { 'x-forwarded-proto': 'https', host: 'dachatv.com' } }))
     assert.equal(rewriteTarget(res), 'http://127.0.0.1:3030/services')
   } finally {
     if (previous === undefined) delete process.env.INTERNAL_APP_ORIGIN
@@ -38,11 +43,11 @@ test('/ru/services rewrites internally to /services', () => {
   }
 })
 
-test('/en/flowers rewrites internally to /flowers', () => {
+test('/en/flowers rewrites internally to /flowers', async () => {
   const previous = process.env.INTERNAL_APP_ORIGIN
   process.env.INTERNAL_APP_ORIGIN = 'http://127.0.0.1:3030'
   try {
-    const res = proxy(req('https://dachatv.com/en/flowers', { headers: { 'x-forwarded-proto': 'https', host: 'dachatv.com' } }))
+    const res = await proxy(req('https://dachatv.com/en/flowers', { headers: { 'x-forwarded-proto': 'https', host: 'dachatv.com' } }))
     assert.equal(rewriteTarget(res), 'http://127.0.0.1:3030/flowers')
   } finally {
     if (previous === undefined) delete process.env.INTERNAL_APP_ORIGIN
@@ -50,11 +55,11 @@ test('/en/flowers rewrites internally to /flowers', () => {
   }
 })
 
-test('query strings survive the locale rewrite', () => {
+test('query strings survive the locale rewrite', async () => {
   const previous = process.env.INTERNAL_APP_ORIGIN
   process.env.INTERNAL_APP_ORIGIN = 'http://127.0.0.1:3030'
   try {
-    const res = proxy(req('https://dachatv.com/ru/beekeeper?utm_source=ads&page=2', { headers: { 'x-forwarded-proto': 'https', host: 'dachatv.com' } }))
+    const res = await proxy(req('https://dachatv.com/ru/beekeeper?utm_source=ads&page=2', { headers: { 'x-forwarded-proto': 'https', host: 'dachatv.com' } }))
     assert.equal(rewriteTarget(res), 'http://127.0.0.1:3030/beekeeper?utm_source=ads&page=2')
   } finally {
     if (previous === undefined) delete process.env.INTERNAL_APP_ORIGIN
@@ -62,13 +67,13 @@ test('query strings survive the locale rewrite', () => {
   }
 })
 
-test('x-dacha-locale survives and is set correctly for ru/en', () => {
+test('x-dacha-locale survives and is set correctly for ru/en', async () => {
   const previous = process.env.INTERNAL_APP_ORIGIN
   process.env.INTERNAL_APP_ORIGIN = 'http://127.0.0.1:3030'
   try {
-    const ru = proxy(req('https://dachatv.com/ru/services', { headers: { 'x-forwarded-proto': 'https', host: 'dachatv.com' } }))
+    const ru = await proxy(req('https://dachatv.com/ru/services', { headers: { 'x-forwarded-proto': 'https', host: 'dachatv.com' } }))
     assert.equal(overriddenLocale(ru), 'ru')
-    const en = proxy(req('https://dachatv.com/en/services', { headers: { 'x-forwarded-proto': 'https', host: 'dachatv.com' } }))
+    const en = await proxy(req('https://dachatv.com/en/services', { headers: { 'x-forwarded-proto': 'https', host: 'dachatv.com' } }))
     assert.equal(overriddenLocale(en), 'en')
   } finally {
     if (previous === undefined) delete process.env.INTERNAL_APP_ORIGIN
@@ -76,11 +81,11 @@ test('x-dacha-locale survives and is set correctly for ru/en', () => {
   }
 })
 
-test('without INTERNAL_APP_ORIGIN, the rewrite still works (Vercel/local-dev behavior unchanged)', () => {
+test('without INTERNAL_APP_ORIGIN, the rewrite still works (Vercel/local-dev behavior unchanged)', async () => {
   const previous = process.env.INTERNAL_APP_ORIGIN
   delete process.env.INTERNAL_APP_ORIGIN
   try {
-    const res = proxy(req('https://dachatv.com/ru/services'))
+    const res = await proxy(req('https://dachatv.com/ru/services'))
     assert.equal(rewriteTarget(res), 'https://dachatv.com/services')
     assert.equal(overriddenLocale(res), 'ru')
   } finally {
@@ -88,16 +93,16 @@ test('without INTERNAL_APP_ORIGIN, the rewrite still works (Vercel/local-dev beh
   }
 })
 
-test('admin and API locale prefixes still REDIRECT (not rewrite), on the public origin', () => {
+test('admin and API locale prefixes still REDIRECT (not rewrite), on the public origin', async () => {
   const previous = process.env.INTERNAL_APP_ORIGIN
   process.env.INTERNAL_APP_ORIGIN = 'http://127.0.0.1:3030'
   try {
-    const resAdmin = proxy(req('https://dachatv.com/ru/admin/orders', { headers: { 'x-forwarded-proto': 'https', host: 'dachatv.com' } }))
+    const resAdmin = await proxy(req('https://dachatv.com/ru/admin/orders', { headers: { 'x-forwarded-proto': 'https', host: 'dachatv.com' } }))
     assert.equal(resAdmin.status, 307)
     assert.equal(resAdmin.headers.get('location'), 'https://dachatv.com/admin/orders')
     assert.equal(rewriteTarget(resAdmin), null, 'admin must redirect, not rewrite')
 
-    const resApi = proxy(req('https://dachatv.com/en/api/catalog/search', { headers: { 'x-forwarded-proto': 'https', host: 'dachatv.com' } }))
+    const resApi = await proxy(req('https://dachatv.com/en/api/catalog/search', { headers: { 'x-forwarded-proto': 'https', host: 'dachatv.com' } }))
     assert.equal(resApi.status, 307)
     assert.equal(resApi.headers.get('location'), 'https://dachatv.com/api/catalog/search')
   } finally {
@@ -106,10 +111,10 @@ test('admin and API locale prefixes still REDIRECT (not rewrite), on the public 
   }
 })
 
-test('admin redirect never targets the internal origin, even when INTERNAL_APP_ORIGIN is set', () => {
+test('admin redirect never targets the internal origin, even when INTERNAL_APP_ORIGIN is set', async () => {
   process.env.INTERNAL_APP_ORIGIN = 'http://127.0.0.1:3030'
   try {
-    const res = proxy(req('https://dachatv.com/ru/admin', { headers: { 'x-forwarded-proto': 'https', host: 'dachatv.com' } }))
+    const res = await proxy(req('https://dachatv.com/ru/admin', { headers: { 'x-forwarded-proto': 'https', host: 'dachatv.com' } }))
     const location = res.headers.get('location')
     assert.ok(location, 'expected a redirect Location header')
     assert.equal(location.includes('127.0.0.1'), false, 'a browser-facing redirect must never point at the internal origin')
@@ -118,10 +123,10 @@ test('admin redirect never targets the internal origin, even when INTERNAL_APP_O
   }
 })
 
-test('Ukrainian unprefixed routes are untouched — no rewrite, no redirect', () => {
+test('Ukrainian unprefixed routes are untouched — no rewrite, no redirect', async () => {
   process.env.INTERNAL_APP_ORIGIN = 'http://127.0.0.1:3030'
   try {
-    const res = proxy(req('https://dachatv.com/services', { headers: { 'x-forwarded-proto': 'https', host: 'dachatv.com' } }))
+    const res = await proxy(req('https://dachatv.com/services', { headers: { 'x-forwarded-proto': 'https', host: 'dachatv.com' } }))
     assert.equal(rewriteTarget(res), null)
     assert.equal(res.headers.get('location'), null)
     assert.equal(overriddenLocale(res), null)
@@ -130,10 +135,10 @@ test('Ukrainian unprefixed routes are untouched — no rewrite, no redirect', ()
   }
 })
 
-test('INTERNAL_APP_ORIGIN value is never exposed in any response header key or value', () => {
+test('INTERNAL_APP_ORIGIN value is never exposed in any response header key or value', async () => {
   process.env.INTERNAL_APP_ORIGIN = 'http://127.0.0.1:3030'
   try {
-    const res = proxy(req('https://dachatv.com/ru/services', { headers: { 'x-forwarded-proto': 'https', host: 'dachatv.com' } }))
+    const res = await proxy(req('https://dachatv.com/ru/services', { headers: { 'x-forwarded-proto': 'https', host: 'dachatv.com' } }))
     for (const [key, value] of res.headers.entries()) {
       // The internal origin string itself is expected exactly once, as the
       // rewrite TARGET (x-middleware-rewrite) — that's the whole point of
@@ -151,17 +156,17 @@ test('INTERNAL_APP_ORIGIN value is never exposed in any response header key or v
   }
 })
 
-test('no redirect loop: the internal rewrite target is a plain canonical path the middleware will not re-match', () => {
+test('no redirect loop: the internal rewrite target is a plain canonical path the middleware will not re-match', async () => {
   process.env.INTERNAL_APP_ORIGIN = 'http://127.0.0.1:3030'
   try {
-    const res = proxy(req('https://dachatv.com/ru/services', { headers: { 'x-forwarded-proto': 'https', host: 'dachatv.com' } }))
+    const res = await proxy(req('https://dachatv.com/ru/services', { headers: { 'x-forwarded-proto': 'https', host: 'dachatv.com' } }))
     const target = rewriteTarget(res)
     const targetPath = new URL(target).pathname
     assert.equal(targetPath, '/services')
     // Simulate the app receiving that exact rewritten request path — proxy()
     // must treat it as an ordinary Ukrainian route (no locale prefix) and do
     // nothing further, not loop back into another rewrite.
-    const second = proxy(req(`http://127.0.0.1:3030${targetPath}`))
+    const second = await proxy(req(`http://127.0.0.1:3030${targetPath}`))
     assert.equal(rewriteTarget(second), null)
     assert.equal(second.headers.get('location'), null)
   } finally {
