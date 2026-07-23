@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic'
 
 import { verifyCronAuth, cronUnauthorized } from '../../cron/_auth'
+import { isSeoAutomationEnabled, seoAutomationDisabledResponse } from '@/lib/catalog/seo-automation-guard'
 import { getSeoAiCandidates, SEO_TARGETS } from '@/lib/catalog/seo-ai'
 
 // ─── AI-ready candidate batch (READ-ONLY) ─────────────────────────────────────
@@ -18,6 +19,7 @@ import { getSeoAiCandidates, SEO_TARGETS } from '@/lib/catalog/seo-ai'
 // Protected by CRON_SECRET.
 export async function GET(req: Request) {
   if (!verifyCronAuth(req)) return cronUnauthorized()
+  if (!isSeoAutomationEnabled()) return seoAutomationDisabledResponse()
 
   const url = new URL(req.url)
   const limit = Number(url.searchParams.get('limit') ?? 100) || 100

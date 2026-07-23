@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic'
 
 import { verifyCronAuth, cronUnauthorized } from '../../cron/_auth'
+import { isSeoAutomationEnabled, seoAutomationDisabledResponse } from '@/lib/catalog/seo-automation-guard'
 import {
   productCoverage,
   summarizeApply,
@@ -31,6 +32,7 @@ function normalizeLocale(raw: unknown): string {
 
 export async function GET(req: Request) {
   if (!verifyCronAuth(req)) return cronUnauthorized()
+  if (!isSeoAutomationEnabled()) return seoAutomationDisabledResponse()
   const locale = normalizeLocale(new URL(req.url).searchParams.get('locale') ?? 'uk')
   if (locale !== 'uk' && locale !== 'ru') {
     return Response.json({ ok: false, message: 'locale must be uk or ru' }, { status: 400 })
@@ -68,6 +70,7 @@ interface ReportBody {
 
 export async function POST(req: Request) {
   if (!verifyCronAuth(req)) return cronUnauthorized()
+  if (!isSeoAutomationEnabled()) return seoAutomationDisabledResponse()
 
   let body: ReportBody
   try { body = (await req.json()) as ReportBody } catch { return Response.json({ ok: false, message: 'Invalid JSON body' }, { status: 400 }) }
