@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic'
 
 import { verifyCronAuth, cronUnauthorized } from '../../../cron/_auth'
+import { isSeoAutomationEnabled, seoAutomationDisabledResponse } from '@/lib/catalog/seo-automation-guard'
 import { getAdminClient } from '@/lib/supabase/admin'
 import { applyRuCategoryAiBatch, type AiRuCategoryItem } from '@/lib/catalog/seo-ai-ru'
 
@@ -17,6 +18,7 @@ import { applyRuCategoryAiBatch, type AiRuCategoryItem } from '@/lib/catalog/seo
 //           "faq"?: [ { "question", "answer" } ] } ], "dryRun": false }
 export async function POST(req: Request) {
   if (!verifyCronAuth(req)) return cronUnauthorized()
+  if (!isSeoAutomationEnabled()) return seoAutomationDisabledResponse()
 
   let body: unknown
   try { body = await req.json() } catch { return Response.json({ ok: false, message: 'Invalid JSON body' }, { status: 400 }) }

@@ -17,6 +17,24 @@ function getApiConfig() {
   return { base: url.replace(/\/$/, ''), key }
 }
 
+// Every supplier HTTP call is bounded by a hard wall-clock timeout so a slow
+// or hanging personal.cab response can never hang the cron route (and, on the
+// 3.7GB self-host box, never holds a Node request open indefinitely). Returns
+// a controlled, clearly-labeled error instead of letting an AbortError leak
+// to the caller unlabeled.
+const DEFAULT_SUPPLIER_TIMEOUT_MS = 15000
+
+async function timedFetch(url: string, init: RequestInit, method: string, timeoutMs: number): Promise<Response> {
+  try {
+    return await fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) })
+  } catch (e) {
+    if (e instanceof Error && (e.name === 'TimeoutError' || e.name === 'AbortError')) {
+      throw new Error(`personal.cab API method=${method} timed out after ${timeoutMs}ms`)
+    }
+    throw e
+  }
+}
+
 interface ApiFetchResult {
   raw: unknown
   safeUrl: string   // key masked for logging
@@ -24,13 +42,13 @@ interface ApiFetchResult {
   topLevelKeys: string[]
 }
 
-async function apiFetch(method: string, extra: Record<string, string> = {}): Promise<ApiFetchResult> {
+async function apiFetch(method: string, extra: Record<string, string> = {}, timeoutMs = DEFAULT_SUPPLIER_TIMEOUT_MS): Promise<ApiFetchResult> {
   const { base, key } = getApiConfig()
   const params = new URLSearchParams({ key, method, type: 'json', ...extra })
   const fullUrl = `${base}?${params}`
   const safeUrl = `${base}?method=${method}&type=json&key=***`
 
-  const res = await fetch(fullUrl, { cache: 'no-store', headers: { Accept: 'application/json' } })
+  const res = await timedFetch(fullUrl, { cache: 'no-store', headers: { Accept: 'application/json' } }, method, timeoutMs)
   if (!res.ok) throw new Error(`personal.cab API method=${method} → ${res.status} ${res.statusText}`)
 
   const raw = await res.json()
@@ -39,7 +57,7 @@ async function apiFetch(method: string, extra: Record<string, string> = {}): Pro
 }
 
 // Raw-text fetch variant — used for XML/YML feeds the JSON parser can't handle.
-async function apiFetchText(method: string, extra: Record<string, string> = {}): Promise<{
+async function apiFetchText(method: string, extra: Record<string, string> = {}, timeoutMs = DEFAULT_SUPPLIER_TIMEOUT_MS): Promise<{
   text: string
   safeUrl: string
   httpStatus: number
@@ -50,7 +68,7 @@ async function apiFetchText(method: string, extra: Record<string, string> = {}):
   const fullUrl = `${base}?${params}`
   const safeUrl = `${base}?method=${method}&${new URLSearchParams(extra)}&key=***`
 
-  const res = await fetch(fullUrl, { cache: 'no-store' })
+  const res = await timedFetch(fullUrl, { cache: 'no-store' }, method, timeoutMs)
   const text = await res.text()
   return {
     text,
@@ -136,7 +154,11 @@ function extractProducts(raw: unknown): unknown[] {
   return []
 }
 
-function extractCategories(raw: unknown): unknown[] {
+// Exported so both the dedicated category cron AND the product sync (which
+// already has the whole get_products response in memory — see requirement
+// B) can pull the top-level `categories` array out of the SAME response
+// without a second supplier HTTP request.
+export function extractCategories(raw: unknown): unknown[] {
   if (Array.isArray(raw)) return raw
   if (!raw || typeof raw !== 'object') return []
   const d = raw as Record<string, unknown>
@@ -154,37 +176,6 @@ function extractCategories(raw: unknown): unknown[] {
   }
 
   return []
-}
-
-// Derive unique categories from a products array when no dedicated categories endpoint exists.
-// Wide field list catches different supplier API naming conventions.
-function deriveCategories(products: unknown[]): unknown[] {
-  const seen = new Map<string, unknown>()
-  for (const p of products) {
-    if (!p || typeof p !== 'object') continue
-    const prod = p as Record<string, unknown>
-    const catId = String(prod.category_id ?? prod.cat_id ?? prod.group_id ?? prod.section_id ?? '').trim()
-    if (!catId || seen.has(catId)) continue
-    // Try every field name a supplier might use for the human-readable category name.
-    const name = String(
-      prod.category        ??
-      prod.category_name   ??
-      prod.cat_name        ??
-      prod.group           ??
-      prod.group_name      ??
-      prod.section         ??
-      prod.section_name    ??
-      prod.category_title  ??
-      prod.cat_title       ??
-      prod.category_label  ??
-      prod.cat_label       ??
-      prod.category_ua     ??
-      prod.cat_ua          ??
-      catId
-    )
-    seen.set(catId, { id: catId, name })
-  }
-  return Array.from(seen.values())
 }
 
 function autoSlug(text: string): string {
@@ -274,6 +265,8 @@ export interface SyncResult {
   done?: boolean          // true when offset reached the end of the feed
   completedWithErrors?: boolean          // true when the cycle finished but errors occurred
   errorGroups?: Record<string, number>   // categorized failure counts (item 8)
+  // ── categories reused from the already-downloaded get_products response ──
+  categorySync?: { attempted: boolean; synced: number; errors: number; message: string }
 }
 
 function safeStock(raw: unknown): number {
@@ -486,8 +479,128 @@ export async function inspectSupplierFeeds(): Promise<FeedDiagResult> {
   return { winnerSource, json: jsonResult, yml: ymlResult, xml: xmlResult }
 }
 
+// ─── Category name/row helpers (pure — no I/O) ────────────────────────────────
+
+// Never let a numeric-only value overwrite an already-readable name. This is
+// the guard requirement A.5/F.5 depend on: a source that only knows the raw
+// supplier id (e.g. a category referenced by a product but absent from the
+// current get_categories response) must not blank out a name a previous,
+// better-informed sync already resolved.
+export function preferReadableCategoryName(
+  existingName: string | null | undefined,
+  candidateName: string | null | undefined,
+  fallbackId: string,
+): string {
+  const existing = (existingName ?? '').trim()
+  const candidate = (candidateName ?? '').trim()
+  const existingReadable = existing !== '' && !/^\d+$/.test(existing)
+  const candidateReadable = candidate !== '' && !/^\d+$/.test(candidate)
+  if (existingReadable && !candidateReadable) return existing
+  if (candidateReadable) return candidate
+  if (existingReadable) return existing
+  return candidate || fallbackId
+}
+
+// Build supplier_categories upsert rows from a raw categories array (from
+// either get_categories or the get_products top-level `categories` key —
+// same shape either way). `existingNames` is a supplier_id → current DB name
+// map used ONLY to protect against the numeric-overwrite regression above;
+// passing an empty map is safe (every row just resolves to its own feed name).
+// Pure and deterministic given the same `nowIso` — calling it twice with the
+// same inputs produces byte-identical rows (idempotency, requirement F.7).
+export function buildSupplierCategoryRows(
+  categories: unknown[],
+  existingNames: Map<string, string>,
+  nowIso: string = new Date().toISOString(),
+): Record<string, unknown>[] {
+  return categories.map((cat) => {
+    const c = cat as Record<string, unknown>
+    const supplierId = String(c.id ?? c.supplier_id ?? c.category_id ?? '').trim()
+    if (!supplierId) return null
+    const feedName = String(c.name ?? c.title ?? c.category_name ?? '').trim()
+    const resolvedName = preferReadableCategoryName(existingNames.get(supplierId), feedName, supplierId)
+    return {
+      supplier_id: supplierId,
+      name: resolvedName,
+      name_ua: c.name_ua ? String(c.name_ua) : null,
+      slug: c.slug ? String(c.slug) : null,
+      parent_supplier_id: c.parent_id ? String(c.parent_id) : null,
+      raw_data: c,
+      synced_at: nowIso,
+    }
+  }).filter(Boolean) as Record<string, unknown>[]
+}
+
+// Fetch the current name for every supplier_id in `ids`, chunked past
+// PostgREST's 1000-row .in() cap. Used before an upsert so a numeric-only
+// candidate can never regress an already-readable stored name.
+async function fetchExistingCategoryNames(
+  client: ReturnType<typeof getAdminClient>,
+  ids: string[],
+): Promise<Map<string, string>> {
+  const names = new Map<string, string>()
+  for (let i = 0; i < ids.length; i += 500) {
+    const { data } = await client
+      .from('supplier_categories')
+      .select('supplier_id, name')
+      .in('supplier_id', ids.slice(i, i + 500))
+    for (const row of data ?? []) {
+      if (row.name) names.set(row.supplier_id as string, row.name as string)
+    }
+  }
+  return names
+}
+
+async function upsertSupplierCategoryRows(
+  client: ReturnType<typeof getAdminClient>,
+  rows: Record<string, unknown>[],
+): Promise<{ synced: number; errors: number }> {
+  let synced = 0
+  let errors = 0
+  const CHUNK = 200
+  for (let i = 0; i < rows.length; i += CHUNK) {
+    const { error } = await client.from('supplier_categories').upsert(
+      rows.slice(i, i + CHUNK),
+      { onConflict: 'supplier_id' },
+    )
+    if (error) errors += Math.min(CHUNK, rows.length - i)
+    else synced += Math.min(CHUNK, rows.length - i)
+  }
+  return { synced, errors }
+}
+
 // ─── Categories sync ──────────────────────────────────────────────────────────
 
+// The ONLY supplier HTTP call syncSupplierCategories makes. Deliberately
+// isolated (and exported) so its network behavior — never calling
+// get_products, never requesting a YML/XML feed — is directly testable
+// without a database, and so the timeout guarantee (requirement D) is
+// independently verifiable.
+export async function fetchLightweightCategories(timeoutMs?: number): Promise<{
+  categories: unknown[]
+  safeUrl: string
+  httpStatus: number
+  topLevelKeys: string[]
+}> {
+  const result = await apiFetch('get_categories', {}, timeoutMs)
+  return {
+    categories: extractCategories(result.raw),
+    safeUrl: result.safeUrl,
+    httpStatus: result.httpStatus,
+    topLevelKeys: result.topLevelKeys,
+  }
+}
+
+// LIGHTWEIGHT BY DESIGN (requirement A). This function must NEVER download the
+// complete ~112k-product get_products feed (JSON, YML, or XML) — that download
+// belongs to syncSupplierProducts, which already does it once for its own
+// purposes and separately upserts categories from the SAME response (see
+// requirement B, syncSupplierProducts below). Strategy, in order:
+//   1. Dedicated get_categories endpoint (small, cheap) — used if it returns data.
+//   2. Otherwise, this function does NOT re-fetch or derive from get_products.
+//      supplier_categories already reflects whatever syncSupplierProducts most
+//      recently extracted from the product feed's top-level `categories` key —
+//      this run simply reports that state rather than re-downloading it.
 export async function syncSupplierCategories(): Promise<SyncResult> {
   const client = getAdminClient()
 
@@ -503,11 +616,7 @@ export async function syncSupplierCategories(): Promise<SyncResult> {
     .select('id')
     .single()
 
-  let synced = 0
-  let errors = 0
-
   try {
-    // Try dedicated categories method first; fall back to deriving from products
     let categories: unknown[] = []
     let safeUrl = ''
     let httpStatus = 0
@@ -515,29 +624,58 @@ export async function syncSupplierCategories(): Promise<SyncResult> {
     let source = 'get_categories'
 
     try {
-      const result = await apiFetch('get_categories')
+      const result = await fetchLightweightCategories()
       safeUrl = result.safeUrl
       httpStatus = result.httpStatus
       topLevelKeys = result.topLevelKeys
-      categories = extractCategories(result.raw)
-    } catch {
-      // dedicated endpoint not available — fall through to product-derived
+      categories = result.categories
+    } catch (e) {
+      // Dedicated endpoint unavailable/timed out — NOT a fatal error and NOT a
+      // reason to fall back to a full-feed download. Fall through to reporting
+      // whatever supplier_categories already holds from the last product sync.
+      source = `get_categories_unavailable(${e instanceof Error ? e.message : String(e)})`
     }
 
     if (categories.length === 0) {
-      source = 'derived_from_get_products'
-      const result = await apiFetch('get_products')
-      safeUrl = result.safeUrl
-      httpStatus = result.httpStatus
-      topLevelKeys = result.topLevelKeys
-      const products = extractProducts(result.raw)
-      categories = deriveCategories(products)
+      // Requirement A.4 — work from categories already stored during product
+      // synchronization instead of re-downloading anything here.
+      const { count } = await client
+        .from('supplier_categories')
+        .select('id', { count: 'exact', head: true })
+
+      const debugInfo = {
+        source: `${source}+existing_supplier_categories`,
+        safe_url: safeUrl,
+        http_status: httpStatus,
+        response_top_keys: topLevelKeys,
+      }
+      const existing = count ?? 0
+
+      await client.from('supplier_sync_log').update({
+        status: 'completed',
+        categories_total: existing,
+        error_details: { ...debugInfo, existing_supplier_categories: existing, duration_ms: Date.now() - startedAt },
+        completed_at: new Date().toISOString(),
+      }).eq('id', log?.id)
+
+      return {
+        ok: existing > 0,
+        synced: 0,
+        errors: 0,
+        message: existing > 0
+          ? `get_categories не повернув дані — використано ${existing} категорій, вже збережених із синхронізації товарів`
+          : 'get_categories не повернув дані, і ще немає збережених категорій — дочекайтесь синхронізації товарів',
+      }
     }
 
-    // Overlay human-readable names from the YML/XML <categories> block — the
-    // JSON feed only carries numeric ids, so without this names stay numeric.
-    const { map: ymlNameMap, source: nameSource } = await fetchSupplierCategoryMap()
-    if (ymlNameMap.size > 0) source = `${source}+names_from_${nameSource}`
+    const ids = [...new Set(
+      categories
+        .map((cat) => String((cat as Record<string, unknown>).id ?? (cat as Record<string, unknown>).supplier_id ?? (cat as Record<string, unknown>).category_id ?? '').trim())
+        .filter(Boolean)
+    )]
+    const existingNames = await fetchExistingCategoryNames(client, ids)
+    const rows = buildSupplierCategoryRows(categories, existingNames)
+    const errorsFromBuild = categories.length - rows.length
 
     const debugInfo = {
       source,
@@ -548,60 +686,8 @@ export async function syncSupplierCategories(): Promise<SyncResult> {
       sample_records: summarise(categories),
     }
 
-    if (categories.length === 0) {
-      await client.from('supplier_sync_log').update({
-        status: 'completed',
-        categories_total: 0,
-        error_details: { ...debugInfo, warning: 'API returned 0 categories and no category_id found in products', duration_ms: Date.now() - startedAt },
-        completed_at: new Date().toISOString(),
-      }).eq('id', log?.id)
-      return { ok: false, synced: 0, errors: 0, message: 'API повернуло 0 категорій — перевірте URL та ключ' }
-    }
-
-    // Ensure every id present in the YML name map also produces a row, even if
-    // the JSON categories/products feed didn't list it.
-    const idsFromFeed = new Set(
-      categories
-        .map((cat) => String((cat as Record<string, unknown>).id ?? (cat as Record<string, unknown>).supplier_id ?? (cat as Record<string, unknown>).category_id ?? '').trim())
-        .filter(Boolean)
-    )
-    for (const [id] of ymlNameMap) {
-      if (!idsFromFeed.has(id)) categories.push({ id })
-    }
-
-    const rows = categories.map((cat) => {
-      const c = cat as Record<string, unknown>
-      const supplierId = String(c.id ?? c.supplier_id ?? c.category_id ?? '').trim()
-      if (!supplierId) return null
-      const feedName = String(c.name ?? c.title ?? c.category_name ?? '').trim()
-      const ymlName = ymlNameMap.get(supplierId)
-      // Prefer a human-readable name; only fall back to numeric id as last resort.
-      const resolvedName =
-        (feedName && !/^\d+$/.test(feedName)) ? feedName
-        : (ymlName && !/^\d+$/.test(ymlName)) ? ymlName
-        : (feedName || supplierId)
-      return {
-        supplier_id: supplierId,
-        name: resolvedName,
-        name_ua: c.name_ua ? String(c.name_ua) : null,
-        slug: c.slug ? String(c.slug) : null,
-        parent_supplier_id: c.parent_id ? String(c.parent_id) : null,
-        raw_data: c,
-        synced_at: new Date().toISOString(),
-      }
-    }).filter(Boolean) as Record<string, unknown>[]
-
-    errors = categories.length - rows.length
-
-    const CHUNK = 200
-    for (let i = 0; i < rows.length; i += CHUNK) {
-      const { error } = await client.from('supplier_categories').upsert(
-        rows.slice(i, i + CHUNK),
-        { onConflict: 'supplier_id' },
-      )
-      if (error) errors += Math.min(CHUNK, rows.length - i)
-      else synced += Math.min(CHUNK, rows.length - i)
-    }
+    const { synced, errors: upsertErrors } = await upsertSupplierCategoryRows(client, rows)
+    const errors = errorsFromBuild + upsertErrors
 
     await client.from('supplier_sync_log').update({
       status: 'completed',
@@ -906,6 +992,43 @@ export async function syncSupplierProducts(options?: {
       }
     }
 
+    const startOffsetForCategories = clamp(options?.offset ?? 0, 0, totalInFeed)
+
+    // Requirement B — the get_products response already has the supplier's
+    // categories at its top level (same JSON payload as `products`), so reuse
+    // it here instead of a second HTTP request. Only on the first window of a
+    // cycle (offset 0) — categories don't change mid-cycle, so resumed windows
+    // skip this. Wrapped so a category-extraction failure can NEVER lose a
+    // successfully-processed product window below: on error this is recorded
+    // as a non-fatal diagnostic and the product sync proceeds unaffected.
+    let categorySync: { attempted: boolean; synced: number; errors: number; message: string } = {
+      attempted: false, synced: 0, errors: 0, message: '',
+    }
+    if (startOffsetForCategories === 0) {
+      try {
+        const topCategories = extractCategories(raw)
+        if (topCategories.length > 0) {
+          const ids = [...new Set(
+            topCategories
+              .map((cat) => String((cat as Record<string, unknown>).id ?? (cat as Record<string, unknown>).supplier_id ?? (cat as Record<string, unknown>).category_id ?? '').trim())
+              .filter(Boolean)
+          )]
+          const existingNames = await fetchExistingCategoryNames(client, ids)
+          const rows = buildSupplierCategoryRows(topCategories, existingNames)
+          const { synced, errors } = await upsertSupplierCategoryRows(client, rows)
+          categorySync = {
+            attempted: true, synced, errors,
+            message: `${synced} категорій оновлено з фіду товарів${errors > 0 ? `, ${errors} помилок` : ''}`,
+          }
+        }
+      } catch (e) {
+        categorySync = {
+          attempted: true, synced: 0, errors: 1,
+          message: e instanceof Error ? e.message : String(e),
+        }
+      }
+    }
+
     const limit = clamp(options?.limit ?? options?.pageSize ?? 1000, 1, 5000)
     const maxPages = clamp(options?.maxPages ?? 1, 1, 1000)
     // Ceiling stays UNDER the route's maxDuration (60s) with headroom for the
@@ -979,6 +1102,7 @@ export async function syncSupplierProducts(options?: {
         completed_with_errors: errorReport.completedWithErrors,
         errorGroups: errorReport.groups,
         errorDetails: errorReport.details,
+        category_sync: categorySync,
         duration_ms: Date.now() - startedAt,
       },
       completed_at: new Date().toISOString(),
@@ -1002,6 +1126,7 @@ export async function syncSupplierProducts(options?: {
       priceSample: priceSamples,
       priceWarning: warnings.length > 0 ? warnings.join('; ') : undefined,
       totalInFeed, processed, inserted, updated, nextOffset, done,
+      categorySync,
     }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)

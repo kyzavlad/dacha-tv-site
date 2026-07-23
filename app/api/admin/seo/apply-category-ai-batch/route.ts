@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic'
 
 import { verifyCronAuth, cronUnauthorized } from '../../cron/_auth'
+import { isSeoAutomationEnabled, seoAutomationDisabledResponse } from '@/lib/catalog/seo-automation-guard'
 import { getAdminClient } from '@/lib/supabase/admin'
 import { applyCategoryAiSeoBatch, type AiCategorySeoItem } from '@/lib/catalog/seo-ai-category'
 
@@ -22,6 +23,7 @@ import { applyCategoryAiSeoBatch, type AiCategorySeoItem } from '@/lib/catalog/s
 // Protected by CRON_SECRET.
 export async function POST(req: Request) {
   if (!verifyCronAuth(req)) return cronUnauthorized()
+  if (!isSeoAutomationEnabled()) return seoAutomationDisabledResponse()
 
   let body: unknown
   try {

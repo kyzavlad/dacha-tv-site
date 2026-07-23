@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic'
 
 import { verifyCronAuth, cronUnauthorized } from '../../../cron/_auth'
+import { isSeoAutomationEnabled, seoAutomationDisabledResponse } from '@/lib/catalog/seo-automation-guard'
 import { getRuCategoryAiCandidates, RU_CATEGORY_TARGETS } from '@/lib/catalog/seo-ai-ru'
 
 // ─── RU category AI candidates (READ-ONLY) ────────────────────────────────────
@@ -14,6 +15,7 @@ import { getRuCategoryAiCandidates, RU_CATEGORY_TARGETS } from '@/lib/catalog/se
 //     "https://<site>/api/admin/seo/ru/category-ai-candidates?limit=5"
 export async function GET(req: Request) {
   if (!verifyCronAuth(req)) return cronUnauthorized()
+  if (!isSeoAutomationEnabled()) return seoAutomationDisabledResponse()
   const limit = Number(new URL(req.url).searchParams.get('limit') ?? 100) || 100
   try {
     const r = await getRuCategoryAiCandidates(limit)

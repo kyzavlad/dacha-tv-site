@@ -47,15 +47,24 @@ jobs:
       - name: Lint
         run: pnpm exec eslint .
 
-      # No .env file is read or required here — every route in this app is
-      # dynamically rendered (force-dynamic) or degrades gracefully when
-      # Supabase is unreachable at build time (see app/sitemap.ts), so a
-      # secret-free build is a real, previously-validated build, not a stub.
+      # No .env file is read here — every route in this app is dynamically
+      # rendered (force-dynamic) or degrades gracefully when Supabase is
+      # unreachable at build time (see app/sitemap.ts). NEXT_PUBLIC_* values,
+      # however, are inlined into the client bundle by Next.js AT BUILD TIME
+      # (lib/analytics/gtag.ts, app/layout.tsx) — they MUST be present here,
+      # not just at server runtime, or the self-hosted build ships with
+      # analytics/Ads silently disabled regardless of what's later set in
+      # .env.production on the server.
       - name: Build (Next.js standalone output)
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
           NEXT_SERVER_ACTIONS_ENCRYPTION_KEY: ${{ secrets.NEXT_SERVER_ACTIONS_ENCRYPTION_KEY }}
+          NEXT_PUBLIC_SITE_URL: ${{ secrets.NEXT_PUBLIC_SITE_URL }}
+          NEXT_PUBLIC_GA_MEASUREMENT_ID: ${{ secrets.NEXT_PUBLIC_GA_MEASUREMENT_ID }}
+          NEXT_PUBLIC_GOOGLE_ADS_ID: ${{ secrets.NEXT_PUBLIC_GOOGLE_ADS_ID }}
+          NEXT_PUBLIC_GOOGLE_ADS_PURCHASE_LABEL: ${{ secrets.NEXT_PUBLIC_GOOGLE_ADS_PURCHASE_LABEL }}
+          NEXT_PUBLIC_ANALYTICS_DEBUG: ${{ secrets.NEXT_PUBLIC_ANALYTICS_DEBUG }}
         run: |
           set -euo pipefail
 
@@ -73,6 +82,30 @@ jobs:
             echo "::error::NEXT_SERVER_ACTIONS_ENCRYPTION_KEY is missing"
             exit 1
           }
+
+          test -n "$NEXT_PUBLIC_SITE_URL" || {
+            echo "::error::NEXT_PUBLIC_SITE_URL is missing"
+            exit 1
+          }
+
+          test -n "$NEXT_PUBLIC_GA_MEASUREMENT_ID" || {
+            echo "::error::NEXT_PUBLIC_GA_MEASUREMENT_ID is missing"
+            exit 1
+          }
+
+          test -n "$NEXT_PUBLIC_GOOGLE_ADS_ID" || {
+            echo "::error::NEXT_PUBLIC_GOOGLE_ADS_ID is missing"
+            exit 1
+          }
+
+          test -n "$NEXT_PUBLIC_GOOGLE_ADS_PURCHASE_LABEL" || {
+            echo "::error::NEXT_PUBLIC_GOOGLE_ADS_PURCHASE_LABEL is missing"
+            exit 1
+          }
+
+          # ANALYTICS_DEBUG is the one optional value here — it safely
+          # defaults to '0' (off) rather than failing the build.
+          export NEXT_PUBLIC_ANALYTICS_DEBUG="${NEXT_PUBLIC_ANALYTICS_DEBUG:-0}"
 
           pnpm build
 

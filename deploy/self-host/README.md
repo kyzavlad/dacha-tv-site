@@ -46,10 +46,33 @@ From the repository, on GitHub:
    date, Node/pnpm version — no secrets), and verifies no `.env*` file ended
    up in the release before packaging.
 
-No `.env` file is read or required during this build — every route in this
-app is dynamically rendered or degrades gracefully when Supabase is
-unreachable at build time (see `app/sitemap.ts`), so this is a real,
-previously-validated build, not a stub.
+No `.env` FILE is read during this build — every route in this app is
+dynamically rendered or degrades gracefully when Supabase is unreachable at
+build time (see `app/sitemap.ts`), so this is a real, previously-validated
+build, not a stub. However, a handful of individual `NEXT_PUBLIC_*` values
+ARE required as GitHub Actions **secrets** (Settings → Secrets and
+variables → Actions), because Next.js inlines `NEXT_PUBLIC_*` values into
+the client bundle at build time — setting them only in the server's later
+`.env.production` (step 4) is too late; the code that reads them
+(`lib/analytics/gtag.ts`) is already compiled into static JS by then. The
+build step fails clearly (`::error::…`, exit 1) if any of the four required
+ones below is missing, so a stale/unconfigured build can never silently
+ship with analytics or Ads disabled.
+
+| Secret | Purpose | Required? |
+| --- | --- | --- |
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL | required |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key | required |
+| `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY` | Server Actions payload encryption | required |
+| `NEXT_PUBLIC_SITE_URL` | Canonical site origin, e.g. `https://dachatv.com` | required |
+| `NEXT_PUBLIC_GA_MEASUREMENT_ID` | GA4 measurement id, e.g. `G-XXXXXXXXXX` | required |
+| `NEXT_PUBLIC_GOOGLE_ADS_ID` | Google Ads tag id, e.g. `AW-XXXXXXXXXX` | required |
+| `NEXT_PUBLIC_GOOGLE_ADS_PURCHASE_LABEL` | Google Ads purchase conversion label | required |
+| `NEXT_PUBLIC_ANALYTICS_DEBUG` | `1` forces console logging in prod | optional — defaults to `0` |
+
+None of these are printed anywhere in the workflow logs or the build
+manifest — only the variable *name* appears in an `::error::` line if it's
+missing, never a value.
 
 ## 2. Download the artifact
 
@@ -138,6 +161,34 @@ build workflow, only in the runtime `.env.production` on the server.
 (every logged-in admin is forced back to `/admin/login`) without touching
 `ADMIN_PASSWORD`. Rotate it if a session cookie may have leaked, or as routine
 hygiene; it does not need to change in lockstep with `ADMIN_PASSWORD`.
+
+### `SEO_AUTOMATION_ENABLED` — kill switch for the SEO AI automation routes
+
+Set this in `/var/www/dacha-tv/shared/.env.production`:
+
+```
+SEO_AUTOMATION_ENABLED=false
+```
+
+Every mass-generation/candidate/apply route under `app/api/admin/seo/**`
+(`ai-candidates`, `apply-ai-batch`, `apply-category-ai-batch`,
+`batch-report`, `category-ai-candidates`, and the `ru/*` equivalents) checks
+this — via `lib/catalog/seo-automation-guard.ts` — immediately after
+`CRON_SECRET` auth and before creating a Supabase client, running any
+candidate/count query, or writing anything. It must be the **literal string
+`"true"`** to enable; anything else (unset, `"1"`, `"TRUE"`, `""`, ...) keeps
+every one of those routes returning
+`{ "ok": true, "disabled": true, "reason": "SEO_AUTOMATION_ENABLED is not true" }`
+without touching the database or generating anything — deliberately `ok:
+true` so an n8n workflow polling these endpoints sees a clean "nothing to
+do" result, not a failure. **Set to `false` (or leave unset) until the SEO
+automation workflow is deliberately activated** — this repo never flips it
+to `true` on its own. `CRON_SECRET` authentication is still required either
+way; this only gates what happens after auth succeeds.
+
+This variable is **server-only**, read at request time only, and does not
+affect prompts, candidate-quality rules, batching semantics, or translation
+logic — it only decides whether the route does any work at all.
 
 ## 5. Deploy to port 3030
 
@@ -287,6 +338,44 @@ Every one of these requires `Authorization: Bearer $CRON_SECRET` (see
 Request node, or `curl` in a system cron entry) must send that header. Do not
 lower or remove that authentication requirement when migrating the trigger
 mechanism.
+
+### Job order and independence — required on the 3.7GB self-host box
+
+`sync-categories` used to download the complete ~112k-product `get_products`
+feed (JSON, and separately YML/XML for category names) as a fallback inside
+one request. On a 3.7GB box that spiked memory hard enough for PM2 to kill
+and restart the `dacha-tv` process mid-request — the caller saw
+`RemoteDisconnected: Remote end closed connection without response`, restart
+count went up, and uptime reset. This is fixed: `sync-categories` now only
+ever calls the small, dedicated `get_categories` endpoint, or — if that
+returns nothing — reports whatever `supplier_categories` already holds from
+the last `sync-products` run (which extracts categories from the SAME
+`get_products` response it already downloads for products, at zero extra
+HTTP cost). `sync-categories` never downloads the full product feed itself.
+
+Because of this, the four jobs are genuinely independent — call them in any
+order, any number of times, and a problem in one must never block another:
+
+1. **`sync-categories`** — safe to run first (or last, or skipped for a day).
+   Each of its 5 internal stages (supplier categories, catalog categories,
+   name repair, publish, slug backfill) is isolated: a stage that throws is
+   recorded as a failed stage in the JSON response (`ok:false` on that stage,
+   with `errors`/`message`/`durationMs`) and does NOT stop the remaining
+   stages or crash the Node process. A non-critical stage issue here (e.g. a
+   positive `remaining` count on the repair stage) is informational — it must
+   never be treated as a reason to skip `sync-products`/`import-products`/
+   `publish-products`. Those are separate HTTP endpoints; nothing in this
+   route's response gates them.
+2. **`sync-products`** — downloads the product feed once, processes bounded
+   windows (`?mode=full` loops internally up to its wall-clock budget). Also
+   the source of fresh category names now (requirement B above).
+3. **`import-products`** — `supplier_products` → `catalog_products`, call
+   repeatedly until `remaining` is 0 (see the endpoint's own doc comment).
+4. **`publish-products`** — publish draft products, respects the published cap.
+
+None of these require one giant combined HTTP request, and re-running any of
+them (including `sync-categories`) on a day it already ran is safe —
+`supplier_categories`/`catalog_categories` upserts are idempotent.
 
 ### Other cron-shaped admin endpoints that exist but are NOT in `vercel.json`
 
