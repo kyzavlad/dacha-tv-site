@@ -1,10 +1,11 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { useRouter, usePathname } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { SafeImage } from '@/components/shared/SafeImage'
-import { splitLocale, localizedPath, type Locale } from '@/lib/i18n'
+import { localizedPath, type Locale } from '@/lib/i18n'
+import { useLocale } from '@/lib/i18n/locale-context'
 
 interface Suggestion {
   slug: string
@@ -28,8 +29,7 @@ const STRINGS: Record<Locale, { placeholder: string; find: string; aria: string;
 // prefix. Submits to <locale>/search?q=…
 export function HeaderSearch({ compact = false }: { compact?: boolean }) {
   const router = useRouter()
-  const pathname = usePathname() || '/'
-  const { locale } = splitLocale(pathname)
+  const locale = useLocale()
   const t = STRINGS[locale]
   const searchPath = localizedPath(locale, '/search')
 

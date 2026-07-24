@@ -2,6 +2,8 @@
 
 import { useRouter } from 'next/navigation'
 import { useCart, type CartItem } from '@/lib/cart/CartContext'
+import { useLocale } from '@/lib/i18n/locale-context'
+import { tr } from '@/lib/i18n/pages'
 
 interface BuyNowButtonProps {
   item: Omit<CartItem, 'quantity'>
@@ -13,6 +15,7 @@ interface BuyNowButtonProps {
 export function BuyNowButton({ item, quantity = 1, className, outOfStock }: BuyNowButtonProps) {
   const { clearCart, addItem, closeCart } = useCart()
   const router = useRouter()
+  const locale = useLocale()
 
   function handleClick() {
     if (outOfStock) return
@@ -30,7 +33,7 @@ export function BuyNowButton({ item, quantity = 1, className, outOfStock }: BuyN
       onClick={handleClick}
       className={`inline-flex items-center justify-center gap-2 w-full py-3 px-6 text-base font-semibold rounded-xl border border-bark/20 text-bark hover:bg-bark hover:text-cream transition-colors ${className ?? ''}`}
     >
-      Купити зараз
+      {tr({ uk: 'Купити зараз', ru: 'Купить сейчас' }, locale)}
     </button>
   )
 }

@@ -1,18 +1,21 @@
 import Link from 'next/link'
 import { HoneyCard } from './HoneyCard'
 import type { HoneyProduct } from '@/types'
+import { getRequestLocale, localizedPath } from '@/lib/i18n'
+import { tr } from '@/lib/i18n/pages'
 
 interface HoneyGridProps {
   products: HoneyProduct[]
 }
 
-export function HoneyGrid({ products }: HoneyGridProps) {
+export async function HoneyGrid({ products }: HoneyGridProps) {
+  const locale = await getRequestLocale()
   if (products.length === 0) {
     return (
       <p className="text-center text-bark/50 text-sm py-12">
-        Актуальна наявність і ціни — за телефоном або через{' '}
-        <Link href="/contact" className="text-honey-700 underline hover:no-underline">
-          форму замовлення
+        {tr({ uk: 'Актуальна наявність і ціни — за телефоном або через', ru: 'Актуальное наличие и цены — по телефону или через' }, locale)}{' '}
+        <Link href={localizedPath(locale, '/contact')} className="text-honey-700 underline hover:no-underline">
+          {tr({ uk: 'форму замовлення', ru: 'форму заказа' }, locale)}
         </Link>
         .
       </p>

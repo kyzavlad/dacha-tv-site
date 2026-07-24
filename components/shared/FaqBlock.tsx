@@ -1,15 +1,19 @@
 import { StructuredData } from '@/components/shared/StructuredData'
 import { faqSchema, type FaqItem } from '@/lib/schema'
+import { getRequestLocale } from '@/lib/i18n'
+import { tr } from '@/lib/i18n/pages'
 
 // Visible FAQ block + matching FAQPage JSON-LD. Google requires the Q&A to be
 // visible, so this renders both together. Use on key landing/category pages to
 // build topical authority.
-export function FaqBlock({ items, heading = 'Часті запитання' }: { items: FaqItem[]; heading?: string }) {
+export async function FaqBlock({ items, heading }: { items: FaqItem[]; heading?: string }) {
   if (items.length === 0) return null
+  const locale = await getRequestLocale()
+  const resolvedHeading = heading ?? tr({ uk: 'Часті запитання', ru: 'Частые вопросы' }, locale)
   return (
-    <section className="mt-14 border-t border-gray-100 pt-10" aria-label={heading}>
+    <section className="mt-14 border-t border-gray-100 pt-10" aria-label={resolvedHeading}>
       <StructuredData data={faqSchema(items)} />
-      <h2 className="font-serif text-2xl font-bold text-bark mb-5">{heading}</h2>
+      <h2 className="font-serif text-2xl font-bold text-bark mb-5">{resolvedHeading}</h2>
       <div className="space-y-3 max-w-3xl">
         {items.map((f, i) => (
           <details key={i} className="group rounded-xl border border-honey-100 bg-white p-4">

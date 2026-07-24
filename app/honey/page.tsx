@@ -5,7 +5,7 @@ import { buildAlternates } from '@/lib/seo'
 import { HoneyGrid } from '@/components/honey/HoneyGrid'
 import { CTAButton } from '@/components/shared/CTAButton'
 import { getAllHoneyProducts } from '@/lib/supabase/queries'
-import { getRequestLocale } from '@/lib/i18n'
+import { getRequestLocale, localizedPath } from '@/lib/i18n'
 import { manualDict } from '@/lib/i18n/sections/manual'
 
 const HONEY_META: Record<'uk' | 'ru' | 'en', { title: string; description: string; ogDescription: string; ogAlt: string; twitterDescription: string }> = {
@@ -119,7 +119,7 @@ export default async function HoneyPage() {
           <p className="text-cream/70 mb-6">
             {t.honeyCtaBody}
           </p>
-          <CTAButton href="/contact" variant="white">
+          <CTAButton href={localizedPath(locale, '/contact')} variant="white">
             {t.honeyCtaButton}
           </CTAButton>
         </div>

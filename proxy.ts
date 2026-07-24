@@ -3,10 +3,15 @@ import type { NextRequest } from 'next/server'
 import { buildLocaleRewriteUrl } from '@/lib/locale-rewrite'
 import { ADMIN_SESSION_COOKIE, verifyAdminSessionToken } from '@/lib/admin-session'
 import { verifyCronAuth } from '@/app/api/admin/cron/_auth'
+import { PREFIXED_LOCALES, PUBLIC_PREFIXED_LOCALES } from '@/lib/i18n'
 
-// Locale prefixes that map to the canonical (Ukrainian) route tree. Ukrainian is
-// the default and carries no prefix. Kept in sync with lib/i18n PREFIXED_LOCALES.
-const LOCALE_PREFIXES = new Set(['ru', 'en'])
+// Every locale prefix the app knows about (ru + en), and the subset PUBLICLY
+// served right now. EN is launch-disabled (PUBLIC_PREFIXED_LOCALES omits it),
+// so /en and /en/* are permanently redirected to the canonical Ukrainian path
+// instead of being rewritten. Kept in sync with lib/i18n; re-enabling EN there
+// automatically restores its rewrite here.
+const ALL_LOCALE_PREFIXES = new Set<string>(PREFIXED_LOCALES)
+const ACTIVE_LOCALE_PREFIXES = new Set<string>(PUBLIC_PREFIXED_LOCALES)
 
 export default async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
@@ -16,8 +21,23 @@ export default async function proxy(request: NextRequest) {
   // Rewrite to the same canonical path (same slugs) and pass the locale to the
   // app via the x-dacha-locale REQUEST header so Server Components / metadata can
   // localize + emit hreflang. Ukrainian routes are untouched (no prefix).
-  if (LOCALE_PREFIXES.has(firstSeg)) {
+  if (ALL_LOCALE_PREFIXES.has(firstSeg)) {
     const rest = pathname.slice(firstSeg.length + 1) || '/'
+
+    // Launch-disabled locale (e.g. /en while EN is hidden): TEMPORARILY redirect
+    // to the equivalent canonical Ukrainian path. 307 (temporary) — NOT 308 —
+    // because EN is only paused for launch and will be restored later; a
+    // permanent redirect would be cached by browsers/crawlers and outlive the
+    // pause. 307 preserves the method and is not cached as permanent. Query
+    // string is preserved. `rest` is already the canonical (prefix-less) path,
+    // so the target never re-matches a locale prefix — no redirect loop. This
+    // runs BEFORE the admin/api and rewrite branches so a disabled locale never
+    // renders or emits its own hreflang. Browser-facing → public request origin.
+    if (!ACTIVE_LOCALE_PREFIXES.has(firstSeg)) {
+      const url = request.nextUrl.clone()
+      url.pathname = rest
+      return NextResponse.redirect(url, 307)
+    }
 
     // Admin and API are never localized — send to the canonical URL. This is
     // a browser-facing redirect, so it must always use the public request

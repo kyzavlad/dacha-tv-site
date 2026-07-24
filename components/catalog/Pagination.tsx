@@ -1,5 +1,7 @@
 import Link from 'next/link'
 import { CATALOG_PAGE_SIZE } from '@/lib/supabase/catalog'
+import { getRequestLocale } from '@/lib/i18n'
+import { tr } from '@/lib/i18n/pages'
 
 interface PaginationLabels {
   prev: string
@@ -23,14 +25,15 @@ interface PaginationProps {
   hasNext?: boolean
 }
 
-const DEFAULT_LABELS: PaginationLabels = {
-  prev: 'Попередня',
-  next: 'Наступна',
-  pageOf: (page, total) => `Сторінка ${page} з ${total}`,
-}
-
-export function Pagination({ page, total, baseHref, params, labels, hasNext }: PaginationProps) {
-  const l = labels ?? DEFAULT_LABELS
+export async function Pagination({ page, total, baseHref, params, labels, hasNext }: PaginationProps) {
+  const locale = await getRequestLocale()
+  const defaultLabels: PaginationLabels = {
+    prev: tr({ uk: 'Попередня', ru: 'Предыдущая' }, locale),
+    next: tr({ uk: 'Наступна', ru: 'Следующая' }, locale),
+    pageOf: (page, total) =>
+      `${tr({ uk: 'Сторінка', ru: 'Страница' }, locale)} ${page} ${tr({ uk: 'з', ru: 'из' }, locale)} ${total}`,
+  }
+  const l = labels ?? defaultLabels
   const countedPages = Math.max(1, Math.ceil(total / CATALOG_PAGE_SIZE))
   // When the caller supplies a page-full "hasNext" hint that reaches past the
   // counted total, extend the last page so Next / page+1 stay reachable.
@@ -64,7 +67,7 @@ export function Pagination({ page, total, baseHref, params, labels, hasNext }: P
   const arrowDisabled = 'inline-flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg border border-gray-100 text-gray-300 cursor-not-allowed select-none'
 
   return (
-    <nav aria-label="Сторінки" className="flex flex-col items-center gap-3 mt-10">
+    <nav aria-label={tr({ uk: 'Сторінки', ru: 'Страницы' }, locale)} className="flex flex-col items-center gap-3 mt-10">
       <div className="flex items-center justify-center gap-1.5 flex-wrap">
         {canPrev ? (
           <Link href={pageUrl(page - 1)} className={arrowBtn} aria-label={l.prev} rel="prev">

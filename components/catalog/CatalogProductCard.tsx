@@ -4,7 +4,7 @@ import { AddToCartButton } from '@/components/cart/AddToCartButton'
 import { SafeImage } from '@/components/shared/SafeImage'
 import { canAddToCart, displayProductName, formatCatalogPrice, getCatalogProductImage, getCatalogPrimaryImageAlt, hasDisplayablePrice } from '@/lib/supabase/catalog'
 import { stockStatus, stockLabel } from '@/lib/catalog/stock'
-import { DEFAULT_LOCALE, isLocale, type Locale } from '@/lib/i18n'
+import { DEFAULT_LOCALE, isLocale, localizedPath, type Locale } from '@/lib/i18n'
 import { pageDict } from '@/lib/i18n/pages'
 
 interface CatalogProductCardProps {
@@ -31,7 +31,8 @@ function inquiryCtaLabel(product: CatalogProduct, loc: Locale, priceOnRequest: s
 export function CatalogProductCard({ product, categorySlug, locale }: CatalogProductCardProps) {
   const loc: Locale = isLocale(locale) ? locale : DEFAULT_LOCALE
   const t = pageDict(loc)
-  const href = `/catalog/${categorySlug}/${product.slug}`
+  // Keep the active locale prefix so navigating from /ru/... stays in RU.
+  const href = localizedPath(loc, `/catalog/${categorySlug}/${product.slug}`)
   const imageUrl = getCatalogProductImage(product)
   const name = displayProductName(product, locale)
   // Saved primary alt → localized product name fallback.

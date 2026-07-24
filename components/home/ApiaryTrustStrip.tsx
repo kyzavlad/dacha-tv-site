@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { getRequestLocale, localizedPath } from '@/lib/i18n'
 
 const TRUST_ITEMS = [
   {
@@ -31,7 +32,8 @@ const TRUST_ITEMS = [
   },
 ]
 
-export function ApiaryTrustStrip() {
+export async function ApiaryTrustStrip() {
+  const locale = await getRequestLocale()
   return (
     <section className="py-10 bg-gray-950" aria-label="Довіра та прозорість">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -53,7 +55,7 @@ export function ApiaryTrustStrip() {
             Садиба Дача TV — с. Коротич, Харківська область. Документи та чеки — на вимогу.
           </p>
           <Link
-            href="/about"
+            href={localizedPath(locale, '/about')}
             className="text-xs text-white/50 hover:text-white transition-colors underline underline-offset-2"
           >
             Докладніше про нас

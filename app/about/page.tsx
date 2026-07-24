@@ -6,7 +6,7 @@ import { SocialIcons } from '@/components/shared/SocialIcons'
 import { CTAButton } from '@/components/shared/CTAButton'
 import { ApiaryTrust } from '@/components/shared/ApiaryTrust'
 import { getSiteSettings } from '@/lib/supabase/queries'
-import { getRequestLocale } from '@/lib/i18n'
+import { getRequestLocale, localizedPath } from '@/lib/i18n'
 import { pageDict } from '@/lib/i18n/pages'
 
 export const metadata: Metadata = {
@@ -159,7 +159,7 @@ export default async function AboutPage() {
             {t.about.ctaTitle}
           </h2>
           <p className="text-bark/70 mb-6">{t.about.ctaBody}</p>
-          <CTAButton href="/honey" size="lg">{t.about.ctaButton}</CTAButton>
+          <CTAButton href={localizedPath(locale, '/honey')} size="lg">{t.about.ctaButton}</CTAButton>
         </section>
       </div>
     </div>

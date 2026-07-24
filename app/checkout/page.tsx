@@ -4,13 +4,13 @@ export const dynamic = 'force-dynamic'
 
 import { useState, useEffect, useRef, useMemo } from 'react'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
 import { useCart } from '@/lib/cart/CartContext'
 import type { CartItem } from '@/lib/cart/CartContext'
 import { submitProductOrder } from '@/actions/submitProductOrder'
 import { isValidUkrainianPhone } from '@/lib/utils'
 import { trackBeginCheckout, trackPurchase, type AnalyticsItem } from '@/lib/analytics/gtag'
-import { splitLocale, DEFAULT_LOCALE, type Locale } from '@/lib/i18n'
+import { localizedPath, DEFAULT_LOCALE, type Locale } from '@/lib/i18n'
+import { useLocale } from '@/lib/i18n/locale-context'
 import { shopUiDict } from '@/lib/i18n/sections/shop-ui'
 
 // Map cart items → GA4 ecommerce items (SKU = productSlug when available).
@@ -233,10 +233,12 @@ function WarehousePicker({
 }
 
 export default function CheckoutPage() {
-  const pathname = usePathname()
-  const locale = splitLocale(pathname ?? '/').locale
+  const locale = useLocale()
   const t = shopUiDict(locale)
   const { items, totalPrice, clearCart, hydrated } = useCart()
+  // Home path keeps the active locale prefix so the success screen, empty-cart
+  // fallback and breadcrumb all stay in RU when checking out from /ru/checkout.
+  const homeHref = localizedPath(locale, '/')
 
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
@@ -291,7 +293,7 @@ export default function CheckoutPage() {
             {t.successBody}
           </p>
           <Link
-            href="/"
+            href={homeHref}
             className="inline-flex items-center justify-center px-6 py-3 bg-honey-600 hover:bg-honey-700 text-white font-semibold rounded-xl transition-colors"
           >
             {t.successHome}
@@ -308,7 +310,7 @@ export default function CheckoutPage() {
       <div className="bg-cream min-h-screen flex items-center justify-center px-4">
         <div className="text-center">
           <p className="text-bark/60 mb-4 text-lg">{t.emptyCartText}</p>
-          <Link href="/" className="text-honey-700 hover:text-honey-800 font-semibold underline">
+          <Link href={homeHref} className="text-honey-700 hover:text-honey-800 font-semibold underline">
             {t.backToShopping}
           </Link>
         </div>
@@ -379,7 +381,7 @@ export default function CheckoutPage() {
     <div className="bg-cream min-h-screen">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
         <nav className="text-sm text-bark/50">
-          <Link href="/" className="hover:text-bark transition-colors">{t.crumbHome}</Link>
+          <Link href={homeHref} className="hover:text-bark transition-colors">{t.crumbHome}</Link>
           <span className="mx-2">›</span>
           <span className="text-bark">{t.crumbCheckout}</span>
         </nav>

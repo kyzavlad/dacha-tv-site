@@ -1,6 +1,16 @@
 export const AUTOMATION_MAX_PUBLISHED = 3000
 export const AUTOMATION_BATCH_SIZE = 300
 
+// Normal per-call batch size for the EXISTING-row set-based refresh RPC
+// (refresh_existing_catalog_from_supplier). The refresh is one bounded
+// set-based UPDATE with no full-table scans (v7 migration), so a larger batch
+// is safe and dramatically cuts the number of round-trips needed to drain the
+// ~112k-row daily queue (≈23 calls at 5000 vs ≈375 at 300) — the daily job
+// now completes the full refresh without hundreds of requests, each of which
+// also no longer runs three exact whole-queue COUNT scans. Clamped to
+// [1, 10000] both here and inside the SQL function.
+export const EXISTING_REFRESH_BATCH_SIZE = 5000
+
 // Genuinely-new supplier products (no existing catalog_products row) still go
 // through the JS insert path. That path was never the timeout risk — the
 // per-SKU refresh loop for EXISTING rows was (see

@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import Image from 'next/image'
+import { useLocale } from '@/lib/i18n/locale-context'
+import { tr } from '@/lib/i18n/pages'
 
 export interface GalleryImage {
   src: string
@@ -30,6 +32,7 @@ export function ProductGallery({
   featuredLabel,
   featuredBadgeClass = 'bg-gray-900',
 }: ProductGalleryProps) {
+  const locale = useLocale()
   const [activeIdx, setActiveIdx] = useState(0)
   const [lightboxOpen, setLightboxOpen] = useState(false)
 
@@ -87,7 +90,7 @@ export function ProductGallery({
                   type="button"
                   onClick={(e) => { e.stopPropagation(); prev() }}
                   className="absolute left-2 top-1/2 -translate-y-1/2 z-10 w-8 h-8 flex items-center justify-center bg-white/80 backdrop-blur-sm rounded-full shadow hover:bg-white transition-colors"
-                  aria-label="Попереднє фото"
+                  aria-label={tr({ uk: 'Попереднє фото', ru: 'Предыдущее фото' }, locale)}
                 >
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
@@ -97,7 +100,7 @@ export function ProductGallery({
                   type="button"
                   onClick={(e) => { e.stopPropagation(); next() }}
                   className="absolute right-2 top-1/2 -translate-y-1/2 z-10 w-8 h-8 flex items-center justify-center bg-white/80 backdrop-blur-sm rounded-full shadow hover:bg-white transition-colors"
-                  aria-label="Наступне фото"
+                  aria-label={tr({ uk: 'Наступне фото', ru: 'Следующее фото' }, locale)}
                 >
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
@@ -121,7 +124,7 @@ export function ProductGallery({
         {isUnavailable && (
           <div className="absolute inset-0 bg-white/70 flex items-center justify-center z-10">
             <span className="bg-gray-800 text-white text-sm font-semibold px-4 py-2 rounded-full">
-              Немає в наявності
+              {tr({ uk: 'Немає в наявності', ru: 'Нет в наличии' }, locale)}
             </span>
           </div>
         )}
@@ -138,7 +141,7 @@ export function ProductGallery({
               className={`relative w-16 h-16 rounded-lg overflow-hidden flex-shrink-0 border-2 transition-colors ${
                 i === activeIdx ? 'border-gray-800' : 'border-transparent hover:border-gray-300'
               }`}
-              aria-label={`Фото ${i + 1}`}
+              aria-label={tr({ uk: `Фото ${i + 1}`, ru: `Фото ${i + 1}` }, locale)}
               aria-pressed={i === activeIdx}
             >
               <Image src={img.src} alt={img.alt} fill className="object-cover" sizes="64px" />
@@ -152,7 +155,7 @@ export function ProductGallery({
         <div
           role="dialog"
           aria-modal="true"
-          aria-label="Переглянути фото"
+          aria-label={tr({ uk: 'Переглянути фото', ru: 'Просмотреть фото' }, locale)}
           className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4"
           onClick={() => setLightboxOpen(false)}
         >
@@ -160,7 +163,7 @@ export function ProductGallery({
             type="button"
             className="absolute top-4 right-4 w-10 h-10 flex items-center justify-center text-white/70 hover:text-white transition-colors"
             onClick={() => setLightboxOpen(false)}
-            aria-label="Закрити"
+            aria-label={tr({ uk: 'Закрити', ru: 'Закрыть' }, locale)}
           >
             <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -173,7 +176,7 @@ export function ProductGallery({
                 type="button"
                 className="absolute left-4 top-1/2 -translate-y-1/2 w-10 h-10 flex items-center justify-center text-white/70 hover:text-white transition-colors"
                 onClick={(e) => { e.stopPropagation(); prev() }}
-                aria-label="Попереднє фото"
+                aria-label={tr({ uk: 'Попереднє фото', ru: 'Предыдущее фото' }, locale)}
               >
                 <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
@@ -183,7 +186,7 @@ export function ProductGallery({
                 type="button"
                 className="absolute right-4 top-1/2 -translate-y-1/2 w-10 h-10 flex items-center justify-center text-white/70 hover:text-white transition-colors"
                 onClick={(e) => { e.stopPropagation(); next() }}
-                aria-label="Наступне фото"
+                aria-label={tr({ uk: 'Наступне фото', ru: 'Следующее фото' }, locale)}
               >
                 <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
@@ -215,7 +218,7 @@ export function ProductGallery({
                   className={`w-2 h-2 rounded-full transition-colors ${
                     i === activeIdx ? 'bg-white' : 'bg-white/40 hover:bg-white/70'
                   }`}
-                  aria-label={`Фото ${i + 1}`}
+                  aria-label={tr({ uk: `Фото ${i + 1}`, ru: `Фото ${i + 1}` }, locale)}
                 />
               ))}
             </div>

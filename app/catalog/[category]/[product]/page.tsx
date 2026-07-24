@@ -18,6 +18,7 @@ import {
 } from '@/lib/supabase/catalog'
 import { buildSocialMetadata, buildAlternates, stripBrand } from '@/lib/seo'
 import { getRequestLocale } from '@/lib/i18n'
+import { tr } from '@/lib/i18n/pages'
 import { stockStatus, stockLabel } from '@/lib/catalog/stock'
 import { resolveProductSeo } from '@/lib/catalog/localized-seo'
 import { breadcrumbSchema } from '@/lib/schema'
@@ -219,7 +220,7 @@ export default async function ProductPage({ params }: Props) {
                   )}
                 </>
               ) : (
-                <span className="text-xl font-semibold text-honey-700">Ціна за запитом</span>
+                <span className="text-xl font-semibold text-honey-700">{tr({ uk: 'Ціна за запитом', ru: 'Цена по запросу' }, locale)}</span>
               )}
             </div>
 
@@ -302,14 +303,15 @@ export default async function ProductPage({ params }: Props) {
                 terms, regardless of buyable/inquiry state. */}
             {product.lead_type === 'metal' && (
               <div className="rounded-xl border border-honey-200 bg-honey-50/60 p-4 mb-6 text-sm">
-                <div className="font-semibold text-bark mb-1">Замовлення та консультація</div>
+                <div className="font-semibold text-bark mb-1">{tr({ uk: 'Замовлення та консультація', ru: 'Заказ и консультация' }, locale)}</div>
                 <TrackedPhoneLink phone="+380996480485" location="product-metal" className="text-honey-700 font-bold text-lg hover:underline">
                   +380 99 648 04 85
                 </TrackedPhoneLink>
                 <p className="text-bark/70 mt-2 text-xs leading-relaxed">
-                  Доставка по Харківській та Полтавській областях — за домовленістю.
-                  Інші регіони — індивідуально після підтвердження.
-                  Самовивіз і наявність — за підтвердженням.
+                  {tr({
+                    uk: 'Доставка по Харківській та Полтавській областях — за домовленістю. Інші регіони — індивідуально після підтвердження. Самовивіз і наявність — за підтвердженням.',
+                    ru: 'Доставка по Харьковской и Полтавской областям — по договорённости. Другие регионы — индивидуально после подтверждения. Самовывоз и наличие — по подтверждению.',
+                  }, locale)}
                 </p>
               </div>
             )}
@@ -321,7 +323,7 @@ export default async function ProductPage({ params }: Props) {
             {product.lead_type !== 'metal' && (
               <div className="flex items-center gap-2 text-sm text-green-700 mb-6">
                 <span className="w-2 h-2 rounded-full bg-green-500 flex-shrink-0" />
-                Доставка по Україні
+                {tr({ uk: 'Доставка по Україні', ru: 'Доставка по Украине' }, locale)}
               </div>
             )}
 
@@ -331,25 +333,25 @@ export default async function ProductPage({ params }: Props) {
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
                 <div className="rounded-xl border border-honey-100 bg-honey-50/50 p-3">
                   <div className="text-lg" aria-hidden="true">🚚</div>
-                  <div className="text-xs font-semibold text-bark mt-1">Доставка по Україні</div>
-                  <p className="text-[11px] text-bark/60 leading-snug mt-0.5">Нова Пошта та інші служби</p>
+                  <div className="text-xs font-semibold text-bark mt-1">{tr({ uk: 'Доставка по Україні', ru: 'Доставка по Украине' }, locale)}</div>
+                  <p className="text-[11px] text-bark/60 leading-snug mt-0.5">{tr({ uk: 'Нова Пошта та інші служби', ru: 'Новая Почта и другие службы' }, locale)}</p>
                 </div>
                 <div className="rounded-xl border border-honey-100 bg-honey-50/50 p-3">
                   <div className="text-lg" aria-hidden="true">💳</div>
-                  <div className="text-xs font-semibold text-bark mt-1">Зручна оплата</div>
-                  <p className="text-[11px] text-bark/60 leading-snug mt-0.5">Після підтвердження замовлення</p>
+                  <div className="text-xs font-semibold text-bark mt-1">{tr({ uk: 'Зручна оплата', ru: 'Удобная оплата' }, locale)}</div>
+                  <p className="text-[11px] text-bark/60 leading-snug mt-0.5">{tr({ uk: 'Після підтвердження замовлення', ru: 'После подтверждения заказа' }, locale)}</p>
                 </div>
                 <div className="rounded-xl border border-honey-100 bg-honey-50/50 p-3">
                   <div className="text-lg" aria-hidden="true">✅</div>
-                  <div className="text-xs font-semibold text-bark mt-1">Підтвердження</div>
-                  <p className="text-[11px] text-bark/60 leading-snug mt-0.5">Менеджер зв&apos;яжеться з вами</p>
+                  <div className="text-xs font-semibold text-bark mt-1">{tr({ uk: 'Підтвердження', ru: 'Подтверждение' }, locale)}</div>
+                  <p className="text-[11px] text-bark/60 leading-snug mt-0.5">{tr({ uk: 'Менеджер зв’яжеться з вами', ru: 'Менеджер свяжется с вами' }, locale)}</p>
                 </div>
               </div>
             )}
 
             {product.description && (
               <div className="border-t border-gray-100 pt-6">
-                <h2 className="font-semibold text-bark mb-3 text-sm uppercase tracking-wide">Опис</h2>
+                <h2 className="font-semibold text-bark mb-3 text-sm uppercase tracking-wide">{tr({ uk: 'Опис', ru: 'Описание' }, locale)}</h2>
                 <div className="text-gray-600 text-sm leading-relaxed whitespace-pre-line">
                   {product.description}
                 </div>
@@ -361,7 +363,7 @@ export default async function ProductPage({ params }: Props) {
         {/* Related / similar products from the same category */}
         {related.length > 0 && (
           <section className="mt-16 border-t border-gray-100 pt-10">
-            <h2 className="font-serif text-2xl font-bold text-bark mb-6">Схожі товари</h2>
+            <h2 className="font-serif text-2xl font-bold text-bark mb-6">{tr({ uk: 'Схожі товари', ru: 'Похожие товары' }, locale)}</h2>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-5">
               {related.map((p) => (
                 <CatalogProductCard

@@ -5,7 +5,7 @@ import { CTAButton } from '@/components/shared/CTAButton'
 import { ProductsCatalog } from '@/components/products/ProductsCatalog'
 import { getAllHoneyProducts, getAllApiaryProducts } from '@/lib/supabase/queries'
 import { getNaturalProducts } from '@/lib/supabase/catalog'
-import { getRequestLocale } from '@/lib/i18n'
+import { getRequestLocale, localizedPath } from '@/lib/i18n'
 import { manualDict } from '@/lib/i18n/sections/manual'
 
 const PRODUCTS_META: Record<'uk' | 'ru' | 'en', { title: string; description: string; ogDescription: string }> = {
@@ -109,7 +109,7 @@ export default async function ProductsPage() {
 
       {/* Unified catalog: honey + bee products + natural farm products, one grid */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <ProductsCatalog honey={honey} apiary={apiary} natural={natural} />
+        <ProductsCatalog honey={honey} apiary={apiary} natural={natural} locale={locale} />
       </div>
 
       {/* CTA */}
@@ -121,7 +121,7 @@ export default async function ProductsPage() {
           <p className="text-cream/70 mb-6">
             {t.productsCtaBody}
           </p>
-          <CTAButton href="/contact" variant="white">
+          <CTAButton href={localizedPath(locale, '/contact')} variant="white">
             {t.productsCtaButton}
           </CTAButton>
         </div>

@@ -3,9 +3,12 @@ import Image from 'next/image'
 import type { HoneyProduct } from '@/types'
 import { honeyUnitPriceUah } from '@/lib/honey-pricing'
 import { AddToCartButton } from '@/components/cart/AddToCartButton'
+import { DEFAULT_LOCALE, isLocale, localizedPath } from '@/lib/i18n'
 
 interface HoneyCardProps {
   product: HoneyProduct
+  // Active locale — keeps the /ru prefix on the product link. Default uk.
+  locale?: string
 }
 
 const BLUR_DATA_URL =
@@ -23,7 +26,9 @@ function resolveImage(product: HoneyProduct): { src: string; alt: string } | nul
   return { src: product.image_url, alt: product.image_alt ?? product.name }
 }
 
-export function HoneyCard({ product }: HoneyCardProps) {
+export function HoneyCard({ product, locale }: HoneyCardProps) {
+  const loc = isLocale(locale) ? locale : DEFAULT_LOCALE
+  const href = localizedPath(loc, `/honey/${product.slug}`)
   // Description no longer derives from `variety` — use the product's own copy,
   // else a neutral brand line.
   const shortDesc = product.short_description || 'Натуральний мед від пасіки Дача TV'
@@ -123,7 +128,7 @@ export function HoneyCard({ product }: HoneyCardProps) {
               }}
             />
             <Link
-              href={`/honey/${product.slug}`}
+              href={href}
               className="block text-center text-sm font-medium text-bark/50 hover:text-bark transition-colors"
               aria-label={`Детальніше про ${product.name}`}
             >
@@ -132,7 +137,7 @@ export function HoneyCard({ product }: HoneyCardProps) {
           </div>
         ) : (
           <Link
-            href={`/honey/${product.slug}`}
+            href={href}
             className="inline-flex items-center justify-center gap-1.5 w-full px-4 py-3 bg-bark text-white font-semibold text-sm rounded-full transition-colors hover:bg-bark-light min-h-[44px] group-hover:bg-honey-700"
             aria-label={`Детальніше про ${product.name}`}
           >

@@ -1,7 +1,7 @@
 import { getAdminClient } from '@/lib/supabase/admin'
 import { syncProductsToCatalog, publishAllCatalogProducts } from './pipeline'
 import { applyProductSeoFromEnv, applyCategorySeoFromEnv } from './seo'
-import { AUTOMATION_MAX_PUBLISHED, AUTOMATION_BATCH_SIZE, CRON_STEPS } from './automation-config'
+import { AUTOMATION_MAX_PUBLISHED, AUTOMATION_BATCH_SIZE, EXISTING_REFRESH_BATCH_SIZE, CRON_STEPS } from './automation-config'
 
 export interface AutomationLastRun {
   sync_type: string
@@ -129,6 +129,8 @@ export interface ImportBatchResult {
   approved?: number
   failed?: number
   insertsSkippedCap?: number
+  // Progress-based loop signal (v7). Prefer over `remaining` for loop control.
+  hasMore?: boolean
   remaining?: number
   remainingExisting?: number
   remainingNew?: number
@@ -140,8 +142,12 @@ export interface ImportBatchResult {
 
 // Import without publishing — allows SEO to run before products go live.
 // opts.skipCap=true bypasses the AUTOMATION_MAX_PUBLISHED guard (use for manual bulk imports).
+// The default existing-row refresh batch is EXISTING_REFRESH_BATCH_SIZE (5000):
+// the refresh is one bounded, scan-free set-based UPDATE (v7), so a large batch
+// drains the daily ~112k queue in far fewer round-trips. New inserts stay
+// capped at NEW_PRODUCT_INSERT_BATCH_CAP (500) inside syncProductsToCatalog.
 export async function importBatch(
-  limit = AUTOMATION_BATCH_SIZE,
+  limit = EXISTING_REFRESH_BATCH_SIZE,
   opts: { skipCap?: boolean } = {},
 ): Promise<ImportBatchResult> {
   const client = getAdminClient()
@@ -185,6 +191,7 @@ export async function importBatch(
       processed, updated: result.updated, approved,
       failed: result.failed ?? result.errors,
       insertsSkippedCap: result.insertsSkippedCap ?? 0,
+      hasMore: result.hasMore ?? false,
       remaining: result.remaining ?? undefined,
       remainingExisting: result.remainingExisting ?? undefined,
       remainingNew: result.remainingNew ?? undefined,

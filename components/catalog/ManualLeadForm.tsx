@@ -1,12 +1,14 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { submitManualLead } from '@/actions/submitManualLead'
 import { CTAButton } from '@/components/shared/CTAButton'
 import { cn } from '@/lib/utils'
+import { useLocale } from '@/lib/i18n/locale-context'
+import { tr } from '@/lib/i18n/pages'
 import type { ManualLeadType } from '@/types'
 
 const ukrainianPhone = /^(\+380|0)\d{9}$/
@@ -32,15 +34,26 @@ interface ManualLeadFormProps {
 // lead action, which routes the notification to the correct Telegram thread by
 // lead_type. Never creates a cart order.
 export function ManualLeadForm({ productName, productSlug, leadType, category, options, source }: ManualLeadFormProps) {
+  const locale = useLocale()
   const [submitState, setSubmitState] = useState<'idle' | 'loading' | 'success' | 'error'>('idle')
   const [errorMessage, setErrorMessage] = useState('')
+
+  const localizedSchema = useMemo(
+    () =>
+      z.object({
+        name: z.string().min(2, tr({ uk: "Ім'я має містити щонайменше 2 символи", ru: 'Имя должно содержать минимум 2 символа' }, locale)),
+        phone: z.string().regex(ukrainianPhone, tr({ uk: 'Введіть номер у форматі +380XXXXXXXXX або 0XXXXXXXXX', ru: 'Введите номер в формате +380XXXXXXXXX или 0XXXXXXXXX' }, locale)),
+        message: z.string().max(500).optional(),
+      }),
+    [locale]
+  )
 
   const {
     register,
     handleSubmit,
     formState: { errors },
     reset,
-  } = useForm<FormData>({ resolver: zodResolver(schema) })
+  } = useForm<FormData>({ resolver: zodResolver(localizedSchema) })
 
   async function onSubmit(data: FormData) {
     setSubmitState('loading')
@@ -77,14 +90,14 @@ export function ManualLeadForm({ productName, productSlug, leadType, category, o
             <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
           </svg>
         </div>
-        <h3 className="font-serif text-xl font-semibold text-forest-800 mb-2">Дякуємо за запит!</h3>
-        <p className="text-forest-700">Ми зв&apos;яжемося з вами найближчим часом, щоб уточнити деталі.</p>
+        <h3 className="font-serif text-xl font-semibold text-forest-800 mb-2">{tr({ uk: 'Дякуємо за запит!', ru: 'Спасибо за запрос!' }, locale)}</h3>
+        <p className="text-forest-700">{tr({ uk: "Ми зв'яжемося з вами найближчим часом, щоб уточнити деталі.", ru: 'Мы свяжемся с вами в ближайшее время, чтобы уточнить детали.' }, locale)}</p>
         <button
           type="button"
           onClick={() => setSubmitState('idle')}
           className="mt-4 text-sm text-forest-600 underline hover:no-underline"
         >
-          Надіслати ще один запит
+          {tr({ uk: 'Надіслати ще один запит', ru: 'Отправить ещё один запрос' }, locale)}
         </button>
       </div>
     )
@@ -93,13 +106,13 @@ export function ManualLeadForm({ productName, productSlug, leadType, category, o
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 bg-white border border-honey-200 rounded-xl p-5" noValidate>
       <p className="text-sm text-bark/70">
-        Залиште контакти — ми зателефонуємо та уточнимо ціну, наявність і деталі по товару
-        «{productName}».
+        {tr({ uk: 'Залиште контакти — ми зателефонуємо та уточнимо ціну, наявність і деталі по товару', ru: 'Оставьте контакты — мы позвоним и уточним цену, наличие и детали по товару' }, locale)}
+        {' '}«{productName}».
       </p>
 
       <div>
         <label htmlFor="lead-name" className="block text-sm font-medium text-bark mb-1">
-          Ваше ім&apos;я <span className="text-red-500">*</span>
+          {tr({ uk: "Ваше ім'я", ru: 'Ваше имя' }, locale)} <span className="text-red-500">*</span>
         </label>
         <input
           id="lead-name"
@@ -112,14 +125,14 @@ export function ManualLeadForm({ productName, productSlug, leadType, category, o
             'min-h-[48px] text-base',
             errors.name ? 'border-red-400' : 'border-honey-200'
           )}
-          placeholder="Ваше ім'я"
+          placeholder={tr({ uk: "Ваше ім'я", ru: 'Ваше имя' }, locale)}
         />
         {errors.name && <p className="mt-1 text-sm text-red-600">{errors.name.message}</p>}
       </div>
 
       <div>
         <label htmlFor="lead-phone" className="block text-sm font-medium text-bark mb-1">
-          Телефон <span className="text-red-500">*</span>
+          {tr({ uk: 'Телефон', ru: 'Телефон' }, locale)} <span className="text-red-500">*</span>
         </label>
         <input
           id="lead-phone"
@@ -139,7 +152,7 @@ export function ManualLeadForm({ productName, productSlug, leadType, category, o
 
       <div>
         <label htmlFor="lead-message" className="block text-sm font-medium text-bark mb-1">
-          Коментар
+          {tr({ uk: 'Коментар', ru: 'Комментарий' }, locale)}
         </label>
         <textarea
           id="lead-message"
@@ -151,7 +164,7 @@ export function ManualLeadForm({ productName, productSlug, leadType, category, o
             'text-base resize-none',
             errors.message ? 'border-red-400' : 'border-honey-200'
           )}
-          placeholder="Кількість, кольори, розміри, бажана дата…"
+          placeholder={tr({ uk: 'Кількість, кольори, розміри, бажана дата…', ru: 'Количество, цвета, размеры, желаемая дата…' }, locale)}
         />
         {errors.message && <p className="mt-1 text-sm text-red-600">{errors.message.message}</p>}
       </div>

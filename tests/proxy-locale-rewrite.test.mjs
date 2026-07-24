@@ -43,12 +43,27 @@ test('/ru/services rewrites internally to /services', async () => {
   }
 })
 
-test('/en/flowers rewrites internally to /flowers', async () => {
+test('/ru/flowers rewrites internally to /flowers', async () => {
+  const previous = process.env.INTERNAL_APP_ORIGIN
+  process.env.INTERNAL_APP_ORIGIN = 'http://127.0.0.1:3030'
+  try {
+    const res = await proxy(req('https://dachatv.com/ru/flowers', { headers: { 'x-forwarded-proto': 'https', host: 'dachatv.com' } }))
+    assert.equal(rewriteTarget(res), 'http://127.0.0.1:3030/flowers')
+  } finally {
+    if (previous === undefined) delete process.env.INTERNAL_APP_ORIGIN
+    else process.env.INTERNAL_APP_ORIGIN = previous
+  }
+})
+
+test('/en/* is launch-disabled: it 307-redirects to canonical UA, never rewrites', async () => {
   const previous = process.env.INTERNAL_APP_ORIGIN
   process.env.INTERNAL_APP_ORIGIN = 'http://127.0.0.1:3030'
   try {
     const res = await proxy(req('https://dachatv.com/en/flowers', { headers: { 'x-forwarded-proto': 'https', host: 'dachatv.com' } }))
-    assert.equal(rewriteTarget(res), 'http://127.0.0.1:3030/flowers')
+    assert.equal(res.status, 307, 'EN is temporarily redirected (paused for launch)')
+    assert.equal(rewriteTarget(res), null, 'EN must NOT rewrite')
+    // Browser-facing redirect uses the public origin, never INTERNAL_APP_ORIGIN.
+    assert.equal(res.headers.get('location'), 'https://dachatv.com/flowers')
   } finally {
     if (previous === undefined) delete process.env.INTERNAL_APP_ORIGIN
     else process.env.INTERNAL_APP_ORIGIN = previous
@@ -67,14 +82,16 @@ test('query strings survive the locale rewrite', async () => {
   }
 })
 
-test('x-dacha-locale survives and is set correctly for ru/en', async () => {
+test('x-dacha-locale is set for the active ru locale (en is redirected, so it never sets one)', async () => {
   const previous = process.env.INTERNAL_APP_ORIGIN
   process.env.INTERNAL_APP_ORIGIN = 'http://127.0.0.1:3030'
   try {
     const ru = await proxy(req('https://dachatv.com/ru/services', { headers: { 'x-forwarded-proto': 'https', host: 'dachatv.com' } }))
     assert.equal(overriddenLocale(ru), 'ru')
+    // EN is launch-disabled: it 307-redirects and never sets a locale header.
     const en = await proxy(req('https://dachatv.com/en/services', { headers: { 'x-forwarded-proto': 'https', host: 'dachatv.com' } }))
-    assert.equal(overriddenLocale(en), 'en')
+    assert.equal(en.status, 307)
+    assert.equal(overriddenLocale(en), null)
   } finally {
     if (previous === undefined) delete process.env.INTERNAL_APP_ORIGIN
     else process.env.INTERNAL_APP_ORIGIN = previous
@@ -102,7 +119,9 @@ test('admin and API locale prefixes still REDIRECT (not rewrite), on the public 
     assert.equal(resAdmin.headers.get('location'), 'https://dachatv.com/admin/orders')
     assert.equal(rewriteTarget(resAdmin), null, 'admin must redirect, not rewrite')
 
-    const resApi = await proxy(req('https://dachatv.com/en/api/catalog/search', { headers: { 'x-forwarded-proto': 'https', host: 'dachatv.com' } }))
+    // api under an ACTIVE locale (ru) still redirects to the canonical api path
+    // (307, the admin/api branch) rather than rewriting.
+    const resApi = await proxy(req('https://dachatv.com/ru/api/catalog/search', { headers: { 'x-forwarded-proto': 'https', host: 'dachatv.com' } }))
     assert.equal(resApi.status, 307)
     assert.equal(resApi.headers.get('location'), 'https://dachatv.com/api/catalog/search')
   } finally {
