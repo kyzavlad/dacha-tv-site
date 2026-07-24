@@ -89,12 +89,16 @@ export interface SyncProductsResult {
   approved?: number
   failed?: number
   insertsSkippedCap?: number
-  // ACTIONABLE backlog only: remaining === remainingExisting + remainingNew.
-  // Deliberately excludes blockedManual (supplier rows shadowed by a
-  // source='manual' catalog row) so a caller looping "until remaining === 0"
-  // actually terminates once all real work is done — a manual-shadowed row
-  // can never be approved by either path, so counting it here would mean
-  // `remaining` never reaches zero.
+  // Progress-based loop signal (v7): true while there is very likely more work
+  // next call, false once the queue is drained. Derived from cheap batch
+  // progress, NOT an exact whole-queue COUNT (those were removed from the hot
+  // path). Prefer this over `remaining` for loop control.
+  hasMore?: boolean
+  // ACTIONABLE backlog. On the fast path this is a PROGRESS proxy (>0 while
+  // more work remains, exactly 0 once drained) so a runner looping "until
+  // remaining === 0" still terminates; it is an EXACT count only when exact
+  // counts were explicitly fetched. Excludes blockedManual (supplier rows
+  // shadowed by a source='manual' catalog row) so it can reach zero.
   remaining?: number
   remainingExisting?: number
   remainingNew?: number
@@ -478,6 +482,15 @@ export async function syncExistingAndNewBatch(
 
   const combined = combineExistingAndNewBatchResults(refresh, insertResult)
 
+  // `remaining` is a PROGRESS signal, not an exact count (the v7 RPC no longer
+  // scans the whole queue on every call). When exact counts were fetched it is
+  // the true actionable backlog; otherwise it is a cheap "more work?" number:
+  // >0 while the loop should continue, exactly 0 once drained — so an external
+  // runner that loops "until remaining === 0" still terminates correctly, and a
+  // newer runner can read `hasMore`/`done` directly.
+  const remaining = combined.remainingTotal
+    ?? (combined.hasMore ? Math.max(1, combined.processed + combined.inserted) : 0)
+
   return {
     ok: combined.ok,
     inserted: combined.inserted,
@@ -491,10 +504,8 @@ export async function syncExistingAndNewBatch(
     approved: combined.approved,
     failed: combined.failed,
     insertsSkippedCap: combined.insertsSkippedCap,
-    // Actionable-only, per the required response semantics: remaining =
-    // remainingExisting + remainingNew. blockedManual is reported separately
-    // and deliberately excluded so this can reach zero.
-    remaining: combined.remainingTotal,
+    hasMore: combined.hasMore,
+    remaining,
     remainingExisting: combined.remainingExisting,
     remainingNew: combined.remainingNew,
     remainingTotal: combined.remainingTotal,
@@ -526,7 +537,7 @@ export async function insertNewSupplierProducts(
   const COLS = 'id, supplier_sku, name, name_ua, slug, supplier_category_id, price_uah, supplier_price_usd, main_image_url, images, stock_quantity, is_in_stock'
   const fail = (scanned: number, message: string): NewInsertBatchResult => ({
     ok: false, processed: 0, scanned, inserted: 0, approved: 0,
-    insertsSkippedCap: 0, duplicateSlugFixed: 0, errors: [], message,
+    insertsSkippedCap: 0, duplicateSlugFixed: 0, errors: [], hasMore: false, message,
   })
 
   const newCandidates: NewProductCandidate[] = []
@@ -573,7 +584,7 @@ export async function insertNewSupplierProducts(
   }
 
   if (newCandidates.length === 0) {
-    return { ok: true, processed: 0, scanned, inserted: 0, approved: 0, insertsSkippedCap: 0, duplicateSlugFixed: 0, errors: [] }
+    return { ok: true, processed: 0, scanned, inserted: 0, approved: 0, insertsSkippedCap: 0, duplicateSlugFixed: 0, errors: [], hasMore: false }
   }
 
   // Resolve category slug via supplier_category_id → catalog_categories.slug
@@ -701,11 +712,17 @@ export async function insertNewSupplierProducts(
     for (const id of batchIds) confirmedApprovedIds.add(id)
   }
 
+  // A full batch (inserted the whole cap) means more genuinely-new rows very
+  // likely remain — keep looping. A cap-blocked run (capReached ⇒ inserted 0)
+  // is NOT "more work" for this path, so it does not spin forever.
+  const newHasMore = inserted >= insertCap
+
   if (approvalErrorMsg) {
     return {
       ok: false,
       processed: newCandidates.length, scanned,
       inserted, approved: confirmedApprovedIds.size, insertsSkippedCap, duplicateSlugFixed, errors,
+      hasMore: newHasMore,
       message: `supplier approval update failed: ${approvalErrorMsg}`,
     }
   }
@@ -714,6 +731,7 @@ export async function insertNewSupplierProducts(
     ok: true,
     processed: newCandidates.length, scanned,
     inserted, approved: confirmedApprovedIds.size, insertsSkippedCap, duplicateSlugFixed, errors,
+    hasMore: newHasMore,
   }
 }
 

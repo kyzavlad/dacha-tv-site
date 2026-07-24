@@ -92,6 +92,14 @@ export interface NewInsertBatchResult {
   insertsSkippedCap: number
   duplicateSlugFixed: number
   errors: string[]
+  // Progress-based loop signal: true when this insert step filled its batch
+  // (inserted >= the insert cap), meaning there are very likely more genuinely
+  // -new rows to insert on the next call. Tied to rows ACTUALLY inserted (real,
+  // committed progress), so a "loop while hasMore" runner always terminates —
+  // each hasMore=true corresponds to a full cap's worth of rows leaving the
+  // queue. False when the publish cap blocked inserts (nothing more this path
+  // can do), so a cap-reached state does not spin forever.
+  hasMore: boolean
   // Present when ok=false — explains the hard failure.
   message?: string
 }
@@ -105,10 +113,18 @@ export interface CombinedBatchResult {
   failed: number
   insertsSkippedCap: number
   duplicateSlugFixed: number
-  remainingExisting: number
-  remainingNew: number
-  remainingTotal: number
-  blockedManual: number
+  // Canonical progress-based loop signal (requirement 5) — true when either the
+  // existing-row refresh or the new-row insert filled its batch this call.
+  hasMore: boolean
+  // Exact backlog figures. undefined on the fast path (the v7 RPC no longer
+  // computes them per call — see the migration). Populated only when the
+  // refresh result actually carried them (an explicit diagnostic count, or a
+  // pre-v7 shaped row), so existing callers/tests that provided them keep the
+  // same arithmetic.
+  remainingExisting?: number
+  remainingNew?: number
+  remainingTotal?: number
+  blockedManual?: number
   errorGroups: Record<string, number>
   errorSamples: string[]
   message: string
@@ -116,7 +132,7 @@ export interface CombinedBatchResult {
 
 // Merges the set-based existing-row refresh result with the new-row insert
 // result into one truthful accounting. Pure (no DB access) so the arithmetic —
-// including the "remaining" bookkeeping — is unit-testable on its own.
+// including the progress/"remaining" bookkeeping — is unit-testable on its own.
 export function combineExistingAndNewBatchResults(
   refresh: RefreshExistingResult,
   insert: NewInsertBatchResult,
@@ -128,12 +144,20 @@ export function combineExistingAndNewBatchResults(
   const updated = refresh.updated
   const approved = refresh.approved + insert.approved
   const failed = insert.errors.length
-  const remainingExisting = refresh.remainingExisting
+
+  // Progress-based termination signal — never an exact whole-queue count.
+  const hasMore = Boolean(refresh.hasMore) || Boolean(insert.hasMore)
+
+  // Exact backlog counts are OPTIONAL now. Only compute them when the refresh
+  // result actually carried them (diagnostic count / pre-v7 row). On the fast
+  // path they stay undefined and the caller relies on `hasMore` instead.
+  const hasExactCounts = refresh.remainingExisting != null && refresh.remainingNew != null
+  const remainingExisting = hasExactCounts ? refresh.remainingExisting : undefined
   // refresh.remainingNew was measured BEFORE the new-row insert step ran —
-  // subtract what that step just consumed so the reported backlog reflects
-  // the true post-batch state without an extra DB round-trip.
-  const remainingNew = Math.max(0, refresh.remainingNew - insert.approved)
-  const remainingTotal = remainingExisting + remainingNew
+  // subtract what that step just consumed so the reported backlog reflects the
+  // true post-batch state without an extra DB round-trip.
+  const remainingNew = hasExactCounts ? Math.max(0, (refresh.remainingNew as number) - insert.approved) : undefined
+  const remainingTotal = hasExactCounts ? (remainingExisting as number) + (remainingNew as number) : undefined
   const blockedManual = refresh.blockedManual
 
   // A hard failure in the insert step (insert.ok=false — a prerequisite read
@@ -147,12 +171,14 @@ export function combineExistingAndNewBatchResults(
   } else if (failed > 0) {
     message = `${failed} DB помилок: ${insert.errors[0]}`
   } else {
-    message = `Існуючі: оброблено ${refresh.processed}, оновлено ${refresh.updated}. Нові: додано ${insert.inserted}${insert.insertsSkippedCap > 0 ? `, відкладено (ліміт) ${insert.insertsSkippedCap}` : ''}. Підтверджено всього ${approved}, залишок ${remainingTotal}${blockedManual > 0 ? ` (+ ${blockedManual} заблоковано вручну)` : ''}`
+    const remainingText = remainingTotal != null ? `, залишок ${remainingTotal}` : (hasMore ? ', є ще' : ', черга вичерпана')
+    message = `Існуючі: оброблено ${refresh.processed}, оновлено ${refresh.updated}. Нові: додано ${insert.inserted}${insert.insertsSkippedCap > 0 ? `, відкладено (ліміт) ${insert.insertsSkippedCap}` : ''}. Підтверджено всього ${approved}${remainingText}${blockedManual != null && blockedManual > 0 ? ` (+ ${blockedManual} заблоковано вручну)` : ''}`
   }
 
   return {
     ok, processed, inserted: insert.inserted, updated, approved, failed,
     insertsSkippedCap: insert.insertsSkippedCap, duplicateSlugFixed: insert.duplicateSlugFixed,
+    hasMore,
     remainingExisting, remainingNew, remainingTotal, blockedManual,
     errorGroups, errorSamples: insert.errors.slice(0, 5),
     message,
