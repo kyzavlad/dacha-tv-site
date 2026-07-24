@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { LOCALES, HREFLANG, DEFAULT_LOCALE, localizedPath, type Locale } from '@/lib/i18n'
+import { PUBLIC_LOCALES, HREFLANG, DEFAULT_LOCALE, localizedPath, type Locale } from '@/lib/i18n'
 
 export const SITE_NAME = 'Дача TV'
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.dachatv.com'
@@ -8,10 +8,11 @@ const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.dachatv.com'
 // the canonical (uk, prefix-less) path. The canonical self-references the active
 // locale's URL; `languages` lists every locale plus x-default (→ uk), so each
 // localized page references itself and the others (Google hreflang requirement).
-// `locales` defaults to every supported locale (existing behaviour). Pages that
-// only exist in a subset (e.g. the moto landings, which have no EN content) pass
-// that subset so no hreflang is advertised for a locale that would 404.
-export function buildAlternates(locale: Locale, canonicalPath: string, locales: readonly Locale[] = LOCALES): {
+// `locales` defaults to the PUBLICLY exposed locales (uk + ru — EN is
+// launch-disabled, so no en hreflang/alternate is advertised while it is
+// hidden and redirected away). Pages that only exist in a subset (e.g. the moto
+// landings) still pass their own subset so no hreflang points at a 404.
+export function buildAlternates(locale: Locale, canonicalPath: string, locales: readonly Locale[] = PUBLIC_LOCALES): {
   canonical: string
   languages: Record<string, string>
 } {

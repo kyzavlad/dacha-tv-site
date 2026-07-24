@@ -5,6 +5,8 @@ import type { HoneyProduct, ApiaryProduct, CatalogProduct } from '@/types'
 import { HoneyCard } from '@/components/honey/HoneyCard'
 import { ProductCard } from '@/components/products/ProductCard'
 import { CatalogProductCard } from '@/components/catalog/CatalogProductCard'
+import { isLocale, type Locale } from '@/lib/i18n'
+import { tr } from '@/lib/i18n/pages'
 
 type Tab = 'all' | 'honey' | 'apiary' | 'oils' | 'gifts' | 'natural' | 'saplings'
 
@@ -27,13 +29,17 @@ interface Props {
   honey: HoneyProduct[]
   apiary: ApiaryProduct[]
   natural: CatalogProduct[]
+  // Active locale (from the server page) — threaded to every card so product
+  // links keep the /ru prefix. Default uk when absent.
+  locale?: string
 }
 
 // Unified /products catalog: one grid across honey, bee products and natural
 // farm products, with simple client-side tabs. Each item keeps its own correct
 // purchase/inquiry flow (honey → honey page, priced catalog → До кошика,
 // inquiry/no-price → lead CTA) because we reuse the existing card components.
-export function ProductsCatalog({ honey, apiary, natural }: Props) {
+export function ProductsCatalog({ honey, apiary, natural, locale }: Props) {
+  const loc: Locale = isLocale(locale) ? locale : 'uk'
   const [tab, setTab] = useState<Tab>('all')
 
   const saplings = natural.filter(isSapling)
@@ -44,13 +50,13 @@ export function ProductsCatalog({ honey, apiary, natural }: Props) {
   const totalVisible = honey.length + apiary.length + natural.length
 
   const allTabs: { id: Tab; label: string; count: number }[] = [
-    { id: 'all', label: 'Усі', count: totalVisible },
-    { id: 'honey', label: 'Мед', count: honey.length },
-    { id: 'oils', label: 'Олії', count: oils.length },
-    { id: 'gifts', label: 'Подарункові набори', count: giftSets.length },
-    { id: 'apiary', label: 'Продукти пасіки', count: apiary.length },
-    { id: 'natural', label: 'Натуральні продукти', count: naturalOnly.length },
-    { id: 'saplings', label: 'Саджанці', count: saplings.length },
+    { id: 'all', label: tr({ uk: 'Усі', ru: 'Все' }, loc), count: totalVisible },
+    { id: 'honey', label: tr({ uk: 'Мед', ru: 'Мёд' }, loc), count: honey.length },
+    { id: 'oils', label: tr({ uk: 'Олії', ru: 'Масла' }, loc), count: oils.length },
+    { id: 'gifts', label: tr({ uk: 'Подарункові набори', ru: 'Подарочные наборы' }, loc), count: giftSets.length },
+    { id: 'apiary', label: tr({ uk: 'Продукти пасіки', ru: 'Продукты пасеки' }, loc), count: apiary.length },
+    { id: 'natural', label: tr({ uk: 'Натуральні продукти', ru: 'Натуральные продукты' }, loc), count: naturalOnly.length },
+    { id: 'saplings', label: tr({ uk: 'Саджанці', ru: 'Саженцы' }, loc), count: saplings.length },
   ]
   const tabs = allTabs.filter((t) => t.id === 'all' || t.count > 0)
 
@@ -70,12 +76,14 @@ export function ProductsCatalog({ honey, apiary, natural }: Props) {
     <div>
       {/* Available-now count */}
       <p className="text-sm text-bark/60 mb-4">
-        Доступно зараз: <span className="font-semibold text-bark">{totalVisible}</span>{' '}
-        {totalVisible === 1 ? 'товар' : totalVisible >= 2 && totalVisible <= 4 ? 'товари' : 'товарів'}
+        {tr({ uk: 'Доступно зараз:', ru: 'Доступно сейчас:' }, loc)} <span className="font-semibold text-bark">{totalVisible}</span>{' '}
+        {loc === 'ru'
+          ? (totalVisible === 1 ? 'товар' : totalVisible >= 2 && totalVisible <= 4 ? 'товара' : 'товаров')
+          : (totalVisible === 1 ? 'товар' : totalVisible >= 2 && totalVisible <= 4 ? 'товари' : 'товарів')}
       </p>
 
       {/* Tabs */}
-      <div className="flex flex-wrap gap-2 mb-8" role="tablist" aria-label="Категорії продуктів">
+      <div className="flex flex-wrap gap-2 mb-8" role="tablist" aria-label={tr({ uk: 'Категорії продуктів', ru: 'Категории продуктов' }, loc)}>
         {tabs.map((t) => (
           <button
             key={t.id}
@@ -96,13 +104,13 @@ export function ProductsCatalog({ honey, apiary, natural }: Props) {
       </div>
 
       {empty ? (
-        <p className="text-gray-500 py-12 text-center">У цій категорії поки немає товарів.</p>
+        <p className="text-gray-500 py-12 text-center">{tr({ uk: 'У цій категорії поки немає товарів.', ru: 'В этой категории пока нет товаров.' }, loc)}</p>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-          {showHoney && honey.map((p) => <HoneyCard key={`h-${p.id}`} product={p} />)}
-          {showApiary && apiary.map((p) => <ProductCard key={`a-${p.id}`} product={p} />)}
+          {showHoney && honey.map((p) => <HoneyCard key={`h-${p.id}`} product={p} locale={locale} />)}
+          {showApiary && apiary.map((p) => <ProductCard key={`a-${p.id}`} product={p} locale={locale} />)}
           {naturalToShow.map((p) => (
-            <CatalogProductCard key={`n-${p.id}`} product={p} categorySlug={p.category_slug ?? 'naturalni-produkty'} />
+            <CatalogProductCard key={`n-${p.id}`} product={p} categorySlug={p.category_slug ?? 'naturalni-produkty'} locale={locale} />
           ))}
         </div>
       )}

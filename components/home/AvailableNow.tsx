@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { getRequestLocale } from '@/lib/i18n'
+import { getRequestLocale, localizedPath } from '@/lib/i18n'
 import { homeDict } from '@/lib/i18n/sections/home'
 
 // "Зараз доступно" — a small, calm availability strip. Because much of the range
@@ -14,7 +14,8 @@ interface AvailableItem {
 }
 
 export async function AvailableNow() {
-  const t = homeDict(await getRequestLocale())
+  const locale = await getRequestLocale()
+  const t = homeDict(locale)
 
   const ITEMS: AvailableItem[] = [
     { emoji: '🍯', title: t.availHoneyTitle, note: t.availHoneyNote, href: '/honey' },
@@ -40,7 +41,7 @@ export async function AvailableNow() {
           {ITEMS.map((item) => (
             <Link
               key={item.title}
-              href={item.href}
+              href={localizedPath(locale, item.href)}
               className="group bg-white rounded-2xl border border-honey-100 p-5 shadow-sm hover:shadow-md hover:border-honey-300 transition-all flex flex-col"
             >
               <span className="text-3xl mb-3" aria-hidden="true">{item.emoji}</span>

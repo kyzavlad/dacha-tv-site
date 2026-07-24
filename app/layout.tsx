@@ -11,6 +11,7 @@ import { Analytics } from '@/components/analytics/Analytics'
 import { AttributionCapture } from '@/components/analytics/AttributionCapture'
 import { SiteChrome } from '@/components/layout/SiteChrome'
 import { isLocale, DEFAULT_LOCALE } from '@/lib/i18n'
+import { LocaleProvider } from '@/lib/i18n/locale-context'
 
 const inter = Inter({
   variable: '--font-inter',
@@ -59,17 +60,19 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <Analytics />
       </head>
       <body className="min-h-full flex flex-col bg-cream text-bark overflow-x-hidden">
-        <CartProvider>
-          <SiteChrome
-            initialIsAdmin={initialIsAdmin}
-            attribution={<AttributionCapture />}
-            header={<Header siteSettings={siteSettings} />}
-            cartDrawer={<CartDrawer />}
-            footer={<Footer siteSettings={siteSettings} />}
-          >
-            {children}
-          </SiteChrome>
-        </CartProvider>
+        <LocaleProvider locale={lang}>
+          <CartProvider>
+            <SiteChrome
+              initialIsAdmin={initialIsAdmin}
+              attribution={<AttributionCapture />}
+              header={<Header siteSettings={siteSettings} locale={lang} />}
+              cartDrawer={<CartDrawer />}
+              footer={<Footer siteSettings={siteSettings} />}
+            >
+              {children}
+            </SiteChrome>
+          </CartProvider>
+        </LocaleProvider>
       </body>
     </html>
   )

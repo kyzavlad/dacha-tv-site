@@ -1,4 +1,6 @@
 import type { ReactNode } from 'react'
+import { getRequestLocale } from '@/lib/i18n'
+import { tr } from '@/lib/i18n/pages'
 
 interface ProductOptionsProps {
   options?: Record<string, unknown> | null
@@ -29,7 +31,8 @@ function renderValue(value: unknown): ReactNode {
 // manual-catalog `options` JSONB (colors, thicknesses, coatings, sizes,
 // packaging, delivery, seasonality) as a readable definition list. Renders
 // nothing when there are no options.
-export function ProductOptions({ options }: ProductOptionsProps) {
+export async function ProductOptions({ options }: ProductOptionsProps) {
+  const locale = await getRequestLocale()
   if (!options || typeof options !== 'object') return null
   const entries = Object.entries(options).filter(
     ([, v]) => v != null && (Array.isArray(v) ? v.length > 0 : String(v).trim() !== ''),
@@ -38,7 +41,7 @@ export function ProductOptions({ options }: ProductOptionsProps) {
 
   return (
     <div className="border-t border-gray-100 pt-6 mb-6">
-      <h2 className="font-semibold text-bark mb-3 text-sm uppercase tracking-wide">Характеристики</h2>
+      <h2 className="font-semibold text-bark mb-3 text-sm uppercase tracking-wide">{tr({ uk: 'Характеристики', ru: 'Характеристики' }, locale)}</h2>
       <dl className="divide-y divide-gray-100">
         {entries.map(([key, value]) => (
           <div key={key} className="py-2 grid grid-cols-1 sm:grid-cols-3 gap-1 sm:gap-3">

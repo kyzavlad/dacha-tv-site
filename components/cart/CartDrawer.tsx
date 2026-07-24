@@ -2,14 +2,13 @@
 
 import { useEffect } from 'react'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
 import { useCart } from '@/lib/cart/CartContext'
-import { splitLocale, localizedPath } from '@/lib/i18n'
+import { localizedPath } from '@/lib/i18n'
+import { useLocale } from '@/lib/i18n/locale-context'
 import { shopUiDict } from '@/lib/i18n/sections/shop-ui'
 
 export function CartDrawer() {
-  const pathname = usePathname()
-  const locale = splitLocale(pathname ?? '/').locale
+  const locale = useLocale()
   const t = shopUiDict(locale)
   const { items, isOpen, closeCart, removeItem, updateQty, totalPrice } = useCart()
 

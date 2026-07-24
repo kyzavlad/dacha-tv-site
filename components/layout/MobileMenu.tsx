@@ -9,6 +9,7 @@ import { cn, formatPhoneDisplay, formatPhoneTel } from '@/lib/utils'
 import { trackPhoneClick } from '@/lib/analytics/gtag'
 import { PRIMARY_NAV } from '@/lib/navigation'
 import { splitLocale, localizedPath } from '@/lib/i18n'
+import { useLocale } from '@/lib/i18n/locale-context'
 import { navLabel } from '@/lib/i18n-ui'
 import { LanguageSwitcher } from '@/components/shared/LanguageSwitcher'
 import {
@@ -54,7 +55,8 @@ export function MobileMenu({ phone, phoneSecondary, siteSettings, logoPath }: Mo
   const [menuOpen, setMenuOpen] = useState(false)
   const [mounted, setMounted] = useState(false)
   const pathname = usePathname() || '/'
-  const { locale, path: canonicalPath } = splitLocale(pathname)
+  const locale = useLocale()
+  const { path: canonicalPath } = splitLocale(pathname)
   const resolvedPhone = phone || LAUNCH_PHONE
   const resolvedPhoneSecondary = phoneSecondary || LAUNCH_PHONE_SECONDARY
 
@@ -98,7 +100,7 @@ export function MobileMenu({ phone, phoneSecondary, siteSettings, logoPath }: Mo
     >
       {/* Top bar: logo left, close right */}
       <div className="flex items-center justify-between px-5 h-16 border-b border-gray-100 flex-shrink-0 bg-white">
-        <Link href="/" onClick={() => setMenuOpen(false)} aria-label="Дача TV — на головну" className="flex items-center gap-2.5">
+        <Link href={localizedPath(locale, '/')} onClick={() => setMenuOpen(false)} aria-label="Дача TV — на головну" className="flex items-center gap-2.5">
           {logoPath && <Image src={logoPath} alt="" width={36} height={36} className="w-9 h-9 object-contain" />}
           <span className="font-serif font-bold text-xl text-bark">Дача TV</span>
         </Link>

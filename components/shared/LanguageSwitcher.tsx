@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
-import { LOCALES, LOCALE_LABELS, splitLocale, switchLocaleHref, type Locale } from '@/lib/i18n'
+import { PUBLIC_LOCALES, LOCALE_LABELS, switchLocaleHref, type Locale } from '@/lib/i18n'
+import { useLocale } from '@/lib/i18n/locale-context'
 import { LOCALE_SHORT, LOCALE_FLAG, ui } from '@/lib/i18n-ui'
 
 // One reusable, accessible language dropdown. Preserves the canonical path + the
@@ -13,7 +14,9 @@ export function LanguageSwitcher({ className = '', align = 'left' }: { className
   const router = useRouter()
   const pathname = usePathname() || '/'
   const search = useSearchParams()
-  const { locale: active } = splitLocale(pathname)
+  // Active locale is header-authoritative (SSR-correct under the /ru rewrite);
+  // pathname is still used to compute the canonical switch targets below.
+  const active = useLocale()
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
 
@@ -62,7 +65,7 @@ export function LanguageSwitcher({ className = '', align = 'left' }: { className
           aria-label={ui('languageAria', active)}
           className={`absolute z-50 mt-1 min-w-[10rem] rounded-xl border border-gray-100 bg-white shadow-lg py-1 ${align === 'right' ? 'right-0' : 'left-0'}`}
         >
-          {LOCALES.map((loc) => {
+          {PUBLIC_LOCALES.map((loc) => {
             const isActive = loc === active
             return (
               <li key={loc} role="option" aria-selected={isActive}>

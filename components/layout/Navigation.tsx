@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { PRIMARY_NAV } from '@/lib/navigation'
 import { splitLocale, localizedPath } from '@/lib/i18n'
+import { useLocale } from '@/lib/i18n/locale-context'
 import { navLabel } from '@/lib/i18n-ui'
 
 // Desktop primary navigation (centre of the header). The mobile menu lives in
@@ -12,7 +13,10 @@ import { navLabel } from '@/lib/i18n-ui'
 // action group next to the cart. Labels + hrefs follow the active locale.
 export function Navigation() {
   const pathname = usePathname() || '/'
-  const { locale, path } = splitLocale(pathname)
+  // Active locale from the header (SSR-correct under the /ru rewrite); the
+  // canonical path for active-link highlighting still comes from the pathname.
+  const locale = useLocale()
+  const { path } = splitLocale(pathname)
   return (
     <nav className="hidden md:flex items-center gap-1" aria-label="Навігація">
       {PRIMARY_NAV.map(({ href, label }) => (

@@ -1,9 +1,14 @@
 import { CTAButton } from '@/components/shared/CTAButton'
+import { getRequestLocale, localizedPath, type Locale } from '@/lib/i18n'
+import { tr, type Tr } from '@/lib/i18n/pages'
 
-const DELIVERY_CARDS = [
+const DELIVERY_CARDS: { title: Tr; description: Tr; icon: React.ReactNode }[] = [
   {
-    title: 'Товари з каталогу',
-    description: 'Відправляємо Новою Поштою по всій Україні. Оплата накладеним платежем при отриманні.',
+    title: { uk: 'Товари з каталогу', ru: 'Товары из каталога' },
+    description: {
+      uk: 'Відправляємо Новою Поштою по всій Україні. Оплата накладеним платежем при отриманні.',
+      ru: 'Отправляем Новой Почтой по всей Украине. Оплата наложенным платежом при получении.',
+    },
     icon: (
       <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} aria-hidden="true">
         <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 10.5V6a3.75 3.75 0 1 0-7.5 0v4.5m11.356-1.993 1.263 12c.07.665-.45 1.243-1.119 1.243H4.25a1.125 1.125 0 0 1-1.12-1.243l1.264-12A1.125 1.125 0 0 1 5.513 7.5h12.974c.576 0 1.059.435 1.119 1.007Z" />
@@ -11,8 +16,11 @@ const DELIVERY_CARDS = [
     ),
   },
   {
-    title: 'Мед та продукти пасіки',
-    description: 'Відправляємо по всій Україні — Новою Поштою або Укрпоштою. Надійна упаковка для безпечного транспортування.',
+    title: { uk: 'Мед та продукти пасіки', ru: 'Мёд и продукты пасеки' },
+    description: {
+      uk: 'Відправляємо по всій Україні — Новою Поштою або Укрпоштою. Надійна упаковка для безпечного транспортування.',
+      ru: 'Отправляем по всей Украине — Новой Почтой или Укрпочтой. Надёжная упаковка для безопасной транспортировки.',
+    },
     icon: (
       <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} aria-hidden="true">
         <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 18.75a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m3 0h6m-9 0H3.375a1.125 1.125 0 0 1-1.125-1.125V14.25m17.25 4.5a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m3 0h1.125c.621 0 1.129-.504 1.09-1.124a17.902 17.902 0 0 0-3.213-9.193 2.056 2.056 0 0 0-1.58-.86H14.25M16.5 18.75h-2.25m0-11.177v-.958c0-.568-.422-1.048-.987-1.106a48.554 48.554 0 0 0-10.026 0 1.106 1.106 0 0 0-.987 1.106v7.635m12-6.677v6.677m0 4.5v-4.5m0 0h-12" />
@@ -20,8 +28,11 @@ const DELIVERY_CARDS = [
     ),
   },
   {
-    title: 'Бджолопакети та вулики',
-    description: 'Самовивіз або індивідуальна домовленість з доставкою. Уточніть деталі при оформленні заявки.',
+    title: { uk: 'Бджолопакети та вулики', ru: 'Пчелопакеты и ульи' },
+    description: {
+      uk: 'Самовивіз або індивідуальна домовленість з доставкою. Уточніть деталі при оформленні заявки.',
+      ru: 'Самовывоз или индивидуальная договорённость о доставке. Уточните детали при оформлении заявки.',
+    },
     icon: (
       <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} aria-hidden="true">
         <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
@@ -31,7 +42,14 @@ const DELIVERY_CARDS = [
   },
 ]
 
-export function DeliveryTeaser() {
+const DELIVERY_METHODS: Tr[] = [
+  { uk: 'Нова Пошта', ru: 'Новая Почта' },
+  { uk: 'Укрпошта', ru: 'Укрпочта' },
+  { uk: 'Самовивіз', ru: 'Самовывоз' },
+]
+
+export async function DeliveryTeaser() {
+  const locale: Locale = await getRequestLocale()
   return (
     <section className="py-20 md:py-28 bg-white" aria-labelledby="delivery-teaser-heading">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -39,16 +57,19 @@ export function DeliveryTeaser() {
           {/* Text side */}
           <div>
             <span className="text-xs font-semibold text-honey-700 uppercase tracking-widest mb-4 block">
-              Доставка
+              {tr({ uk: 'Доставка', ru: 'Доставка' }, locale)}
             </span>
             <h2 id="delivery-teaser-heading" className="font-serif text-3xl md:text-4xl font-bold text-bark mb-5 leading-tight">
-              По всій Україні — надійно і вчасно
+              {tr({ uk: 'По всій Україні — надійно і вчасно', ru: 'По всей Украине — надёжно и вовремя' }, locale)}
             </h2>
             <p className="text-gray-500 text-lg mb-8 leading-relaxed">
-              Ми на Харківщині, але відправляємо в будь-яку точку країни. Кожне замовлення — надійно упаковане, щоб дісталося до вас у цілості.
+              {tr({
+                uk: 'Ми на Харківщині, але відправляємо в будь-яку точку країни. Кожне замовлення — надійно упаковане, щоб дісталося до вас у цілості.',
+                ru: 'Мы в Харьковской области, но отправляем в любую точку страны. Каждый заказ надёжно упакован, чтобы дойти до вас в целости.',
+              }, locale)}
             </p>
-            <CTAButton href="/delivery" variant="outline">
-              Детальніше про доставку
+            <CTAButton href={localizedPath(locale, '/delivery')} variant="outline">
+              {tr({ uk: 'Детальніше про доставку', ru: 'Подробнее о доставке' }, locale)}
             </CTAButton>
           </div>
 
@@ -56,27 +77,27 @@ export function DeliveryTeaser() {
           <div className="flex flex-col gap-4">
             {DELIVERY_CARDS.map(({ title, description, icon }) => (
               <div
-                key={title}
+                key={title.uk}
                 className="flex items-start gap-5 bg-gray-50 rounded-2xl p-6 border border-gray-100"
               >
                 <div className="w-12 h-12 bg-honey-100 rounded-xl flex items-center justify-center flex-shrink-0 text-honey-700">
                   {icon}
                 </div>
                 <div>
-                  <h3 className="font-semibold text-bark text-base mb-1.5">{title}</h3>
-                  <p className="text-gray-500 text-sm leading-relaxed">{description}</p>
+                  <h3 className="font-semibold text-bark text-base mb-1.5">{tr(title, locale)}</h3>
+                  <p className="text-gray-500 text-sm leading-relaxed">{tr(description, locale)}</p>
                 </div>
               </div>
             ))}
 
             {/* Mini trust strip */}
             <div className="flex items-center gap-6 pt-2 pl-1">
-              {['Нова Пошта', 'Укрпошта', 'Самовивіз'].map((method) => (
-                <div key={method} className="flex items-center gap-1.5 text-sm text-gray-400">
+              {DELIVERY_METHODS.map((method) => (
+                <div key={method.uk} className="flex items-center gap-1.5 text-sm text-gray-400">
                   <svg className="w-4 h-4 text-honey-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5} aria-hidden="true">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
                   </svg>
-                  {method}
+                  {tr(method, locale)}
                 </div>
               ))}
             </div>

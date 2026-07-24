@@ -2,13 +2,14 @@ import { existsSync } from 'fs'
 import { join } from 'path'
 import { CTAButton } from '@/components/shared/CTAButton'
 import { SafeImage } from '@/components/shared/SafeImage'
-import { getRequestLocale } from '@/lib/i18n'
+import { getRequestLocale, localizedPath } from '@/lib/i18n'
 import { homeDict } from '@/lib/i18n/sections/home'
 
 const BRAND_STORY_IMAGE = '/images/dacha-tv/brand-story.jpg'
 
 export async function BrandStory() {
-  const t = homeDict(await getRequestLocale())
+  const locale = await getRequestLocale()
+  const t = homeDict(locale)
   const hasImage = existsSync(join(process.cwd(), 'public', BRAND_STORY_IMAGE))
 
   const TRUST_POINTS = [
@@ -90,7 +91,7 @@ export async function BrandStory() {
               ))}
             </ul>
 
-            <CTAButton href="/about" variant="outline">
+            <CTAButton href={localizedPath(locale, '/about')} variant="outline">
               {t.storyCta}
             </CTAButton>
           </div>

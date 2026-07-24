@@ -2,6 +2,8 @@ import Link from 'next/link'
 import Image from 'next/image'
 import type { FlowerProduct } from '@/types'
 import { AddToCartButton } from '@/components/cart/AddToCartButton'
+import { getRequestLocale, localizedPath } from '@/lib/i18n'
+import { tr } from '@/lib/i18n/pages'
 
 const BLUR_DATA_URL =
   'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjQwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZjNmNGY2Ii8+PC9zdmc+'
@@ -19,13 +21,14 @@ function resolveImage(product: FlowerProduct): { src: string; alt: string } | nu
   return null
 }
 
-export function FlowerCard({ product }: FlowerCardProps) {
+export async function FlowerCard({ product }: FlowerCardProps) {
+  const locale = await getRequestLocale()
   const img = resolveImage(product)
   const canBuy = Boolean(product.price_uah && product.price_uah > 0 && (product.status === 'available' || product.status === 'preorder'))
 
   return (
     <article className="group bg-white rounded-2xl overflow-hidden border border-gray-100 hover:border-gray-300 hover:shadow-xl transition-all duration-300 flex flex-col">
-      <Link href={`/flowers/${product.slug}`} className="block relative aspect-square bg-gray-50 overflow-hidden">
+      <Link href={localizedPath(locale, `/flowers/${product.slug}`)} className="block relative aspect-square bg-gray-50 overflow-hidden">
         {img ? (
           <Image
             src={img.src}
@@ -46,7 +49,7 @@ export function FlowerCard({ product }: FlowerCardProps) {
         {product.is_featured && (
           <div className="absolute top-3 left-3">
             <span className="bg-gray-900 text-white text-xs font-semibold px-3 py-1.5 rounded-full shadow-sm">
-              Популярна
+              {tr({ uk: 'Популярна', ru: 'Популярный' }, locale)}
             </span>
           </div>
         )}
@@ -54,7 +57,7 @@ export function FlowerCard({ product }: FlowerCardProps) {
         {product.status !== 'available' && product.status !== 'preorder' && (
           <div className="absolute inset-0 bg-white/75 backdrop-blur-[1px] flex items-center justify-center">
             <span className="bg-gray-800 text-white text-sm font-semibold px-4 py-2 rounded-full">
-              Немає в наявності
+              {tr({ uk: 'Немає в наявності', ru: 'Нет в наличии' }, locale)}
             </span>
           </div>
         )}
@@ -95,7 +98,7 @@ export function FlowerCard({ product }: FlowerCardProps) {
         <div className="mt-auto">
           {product.price_uah ? (
             <p className="text-lg font-bold text-gray-900 mb-3">
-              від {Number(product.price_uah).toLocaleString('uk-UA')} грн
+              {tr({ uk: 'від', ru: 'от' }, locale)} {Number(product.price_uah).toLocaleString('uk-UA')} грн
             </p>
           ) : null}
 
@@ -112,11 +115,11 @@ export function FlowerCard({ product }: FlowerCardProps) {
             />
           ) : null}
           <Link
-            href={`/flowers/${product.slug}`}
+            href={localizedPath(locale, `/flowers/${product.slug}`)}
             className="block text-center text-xs font-medium mt-2 text-gray-400 hover:text-gray-700 transition-colors"
-            aria-label={`Детальніше про ${product.name}`}
+            aria-label={tr({ uk: `Детальніше про ${product.name}`, ru: `Подробнее о ${product.name}` }, locale)}
           >
-            Детальніше →
+            {tr({ uk: 'Детальніше →', ru: 'Подробнее →' }, locale)}
           </Link>
         </div>
       </div>

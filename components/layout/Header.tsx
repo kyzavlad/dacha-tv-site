@@ -9,15 +9,21 @@ import { PhoneLink } from '@/components/shared/PhoneLink'
 import { CartButton } from '@/components/cart/CartButton'
 import { LanguageSwitcher } from '@/components/shared/LanguageSwitcher'
 import { LAUNCH_PHONE, LAUNCH_PHONE_SECONDARY, LAUNCH_LOGO_PATH } from '@/lib/launch-defaults'
+import { DEFAULT_LOCALE, isLocale, localizedPath } from '@/lib/i18n'
 import type { SiteSettings } from '@/types'
 
 interface HeaderProps {
   siteSettings: SiteSettings | null
+  // Active request locale (from the layout, which reads x-dacha-locale). The
+  // brand/home link is prefixed for it so clicking the logo on /ru keeps RU.
+  locale?: string
 }
 
 const LOGO_PATH = LAUNCH_LOGO_PATH
 
-export function Header({ siteSettings }: HeaderProps) {
+export function Header({ siteSettings, locale }: HeaderProps) {
+  const loc = isLocale(locale) ? locale : DEFAULT_LOCALE
+  const homeHref = localizedPath(loc, '/')
   const phone = siteSettings?.phone || LAUNCH_PHONE
   const phoneSecondary = siteSettings?.phone_secondary || LAUNCH_PHONE_SECONDARY
   const hasLogo = existsSync(join(process.cwd(), 'public', LOGO_PATH))
@@ -28,7 +34,7 @@ export function Header({ siteSettings }: HeaderProps) {
         <div className="flex items-center justify-between h-16">
           {/* Brand */}
           <Link
-            href="/"
+            href={homeHref}
             className="flex-shrink-0 flex items-center gap-2.5 hover:opacity-80 transition-opacity"
             aria-label="Дача TV — на головну"
           >

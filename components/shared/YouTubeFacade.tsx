@@ -2,6 +2,8 @@
 
 import { useState } from 'react'
 import Image from 'next/image'
+import { useLocale } from '@/lib/i18n/locale-context'
+import { tr } from '@/lib/i18n/pages'
 
 interface YouTubeFacadeProps {
   videoId: string
@@ -11,6 +13,7 @@ interface YouTubeFacadeProps {
 
 export function YouTubeFacade({ videoId, title, className }: YouTubeFacadeProps) {
   const [loaded, setLoaded] = useState(false)
+  const locale = useLocale()
   const thumbnailUrl = `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`
 
   if (loaded) {
@@ -32,11 +35,11 @@ export function YouTubeFacade({ videoId, title, className }: YouTubeFacadeProps)
       type="button"
       onClick={() => setLoaded(true)}
       className={`relative w-full aspect-video cursor-pointer group rounded-xl overflow-hidden focus:outline-none focus:ring-2 focus:ring-honey-600 focus:ring-offset-2 ${className ?? ''}`}
-      aria-label={`Відтворити відео: ${title}`}
+      aria-label={tr({ uk: `Відтворити відео: ${title}`, ru: `Воспроизвести видео: ${title}` }, locale)}
     >
       <Image
         src={thumbnailUrl}
-        alt={`Мініатюра відео: ${title}`}
+        alt={tr({ uk: `Мініатюра відео: ${title}`, ru: `Миниатюра видео: ${title}` }, locale)}
         fill
         className="object-cover transition-transform duration-300 group-hover:scale-105"
         sizes="(max-width: 768px) 100vw, (max-width: 1200px) 75vw, 800px"
