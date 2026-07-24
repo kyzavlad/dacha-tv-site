@@ -2,12 +2,15 @@ import Link from 'next/link'
 import Image from 'next/image'
 import type { ApiaryProduct } from '@/types'
 import { AddToCartButton } from '@/components/cart/AddToCartButton'
+import { DEFAULT_LOCALE, isLocale, localizedPath } from '@/lib/i18n'
 
 const BLUR_DATA_URL =
   'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjQwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmJiZjI0Ii8+PC9zdmc+'
 
 interface ProductCardProps {
   product: ApiaryProduct
+  // Active locale — keeps the /ru prefix on the product link. Default uk.
+  locale?: string
 }
 
 function resolveImage(product: ApiaryProduct): { src: string; alt: string } | null {
@@ -19,14 +22,16 @@ function resolveImage(product: ApiaryProduct): { src: string; alt: string } | nu
   return null
 }
 
-export function ProductCard({ product }: ProductCardProps) {
+export function ProductCard({ product, locale }: ProductCardProps) {
+  const loc = isLocale(locale) ? locale : DEFAULT_LOCALE
+  const href = localizedPath(loc, `/products/${product.slug}`)
   const img = resolveImage(product)
   const blurb = product.short_description || product.description || null
   const canBuy = Boolean(product.price_uah && product.price_uah > 0 && (product.status === 'available' || product.status === 'preorder'))
 
   return (
     <article className="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-shadow border border-honey-100 flex flex-col">
-      <Link href={`/products/${product.slug}`} className="block relative aspect-square bg-honey-50">
+      <Link href={href} className="block relative aspect-square bg-honey-50">
         {img ? (
           <Image
             src={img.src}
@@ -98,7 +103,7 @@ export function ProductCard({ product }: ProductCardProps) {
             />
           ) : null}
           <Link
-            href={`/products/${product.slug}`}
+            href={href}
             className="block text-center text-xs font-medium mt-2 text-bark/50 hover:text-bark transition-colors"
           >
             Детальніше →

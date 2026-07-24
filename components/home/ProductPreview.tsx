@@ -1,13 +1,17 @@
 import { HoneyCard } from '@/components/honey/HoneyCard'
 import { CTAButton } from '@/components/shared/CTAButton'
 import type { HoneyProduct } from '@/types'
+import { getRequestLocale, localizedPath } from '@/lib/i18n'
+import { tr } from '@/lib/i18n/pages'
 
 interface ProductPreviewProps {
   products: HoneyProduct[]
 }
 
-export function ProductPreview({ products }: ProductPreviewProps) {
+export async function ProductPreview({ products }: ProductPreviewProps) {
   if (products.length === 0) return null
+
+  const locale = await getRequestLocale()
 
   return (
     <section className="py-20 md:py-28 bg-cream" aria-labelledby="products-heading">
@@ -16,14 +20,14 @@ export function ProductPreview({ products }: ProductPreviewProps) {
         <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-12">
           <div>
             <span className="text-xs font-semibold text-honey-700 uppercase tracking-widest mb-3 block">
-              Мед і продукти пасіки
+              {tr({ uk: 'Мед і продукти пасіки', ru: 'Мёд и продукты пасеки' }, locale)}
             </span>
             <h2 id="products-heading" className="font-serif text-3xl md:text-4xl font-bold text-bark">
-              Наш мед
+              {tr({ uk: 'Наш мед', ru: 'Наш мёд' }, locale)}
             </h2>
           </div>
           <p className="text-gray-500 max-w-sm text-sm leading-relaxed">
-            Сезонний мед без домішок. Кожен сорт — у свій час, з конкретних угідь.
+            {tr({ uk: 'Сезонний мед без домішок. Кожен сорт — у свій час, з конкретних угідь.', ru: 'Сезонный мёд без примесей. Каждый сорт — в своё время, с конкретных угодий.' }, locale)}
           </p>
         </div>
 
@@ -34,8 +38,8 @@ export function ProductPreview({ products }: ProductPreviewProps) {
         </div>
 
         <div className="text-center">
-          <CTAButton href="/honey" variant="outline" size="md">
-            Переглянути всі сорти
+          <CTAButton href={localizedPath(locale, '/honey')} variant="outline" size="md">
+            {tr({ uk: 'Переглянути всі сорти', ru: 'Посмотреть все сорта' }, locale)}
           </CTAButton>
         </div>
       </div>

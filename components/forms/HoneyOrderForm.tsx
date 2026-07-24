@@ -1,12 +1,14 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { submitHoneyOrder } from '@/actions/submitInquiry'
 import { CTAButton } from '@/components/shared/CTAButton'
 import { cn } from '@/lib/utils'
+import { useLocale } from '@/lib/i18n/locale-context'
+import { tr } from '@/lib/i18n/pages'
 
 const ukrainianPhone = /^(\+380|0)\d{9}$/
 
@@ -49,8 +51,26 @@ export function HoneyOrderForm({
   productOptions = DEFAULT_PRODUCTS,
   source,
 }: HoneyOrderFormProps) {
+  const locale = useLocale()
   const [submitState, setSubmitState] = useState<'idle' | 'loading' | 'success' | 'error'>('idle')
   const [errorMessage, setErrorMessage] = useState('')
+
+  const localizedSchema = useMemo(
+    () =>
+      z.object({
+        name: z.string().min(2, tr({ uk: "Ім'я має містити щонайменше 2 символи", ru: 'Имя должно содержать минимум 2 символа' }, locale)),
+        phone: z
+          .string()
+          .regex(ukrainianPhone, tr({ uk: 'Введіть номер у форматі +380XXXXXXXXX або 0XXXXXXXXX', ru: 'Введите номер в формате +380XXXXXXXXX или 0XXXXXXXXX' }, locale)),
+        product: z.string().min(1, tr({ uk: 'Оберіть продукт', ru: 'Выберите продукт' }, locale)),
+        packaging: z.string().optional(),
+        quantity: z.string().optional(),
+        message: z.string().max(500).optional(),
+        source: z.string().optional(),
+        _honeypot: z.string().max(0).optional(),
+      }),
+    [locale]
+  )
 
   const {
     register,
@@ -58,7 +78,7 @@ export function HoneyOrderForm({
     formState: { errors },
     reset,
   } = useForm<FormData>({
-    resolver: zodResolver(schema),
+    resolver: zodResolver(localizedSchema),
     defaultValues: {
       product: preselectedProduct || '',
       source: source || '',
@@ -95,17 +115,17 @@ export function HoneyOrderForm({
           </svg>
         </div>
         <h3 className="font-serif text-xl font-semibold text-forest-800 mb-2">
-          Дякуємо за заявку!
+          {tr({ uk: 'Дякуємо за заявку!', ru: 'Спасибо за заявку!' }, locale)}
         </h3>
         <p className="text-forest-700">
-          Ми зв&apos;яжемося з вами найближчим часом.
+          {tr({ uk: "Ми зв'яжемося з вами найближчим часом.", ru: 'Мы свяжемся с вами в ближайшее время.' }, locale)}
         </p>
         <button
           type="button"
           onClick={() => setSubmitState('idle')}
           className="mt-4 text-sm text-forest-600 underline hover:no-underline"
         >
-          Надіслати ще одну заявку
+          {tr({ uk: 'Надіслати ще одну заявку', ru: 'Отправить ещё одну заявку' }, locale)}
         </button>
       </div>
     )
@@ -121,7 +141,7 @@ export function HoneyOrderForm({
       {/* Name */}
       <div>
         <label htmlFor="honey-name" className="block text-sm font-medium text-bark mb-1">
-          Ваше ім&apos;я <span className="text-red-500">*</span>
+          {tr({ uk: "Ваше ім'я", ru: 'Ваше имя' }, locale)} <span className="text-red-500">*</span>
         </label>
         <input
           id="honey-name"
@@ -134,7 +154,7 @@ export function HoneyOrderForm({
             'min-h-[48px] text-base',
             errors.name ? 'border-red-400' : 'border-honey-200'
           )}
-          placeholder="Ваше ім'я"
+          placeholder={tr({ uk: "Ваше ім'я", ru: 'Ваше имя' }, locale)}
         />
         {errors.name && (
           <p className="mt-1 text-sm text-red-600">{errors.name.message}</p>
@@ -144,7 +164,7 @@ export function HoneyOrderForm({
       {/* Phone */}
       <div>
         <label htmlFor="honey-phone" className="block text-sm font-medium text-bark mb-1">
-          Телефон <span className="text-red-500">*</span>
+          {tr({ uk: 'Телефон', ru: 'Телефон' }, locale)} <span className="text-red-500">*</span>
         </label>
         <input
           id="honey-phone"
@@ -168,7 +188,7 @@ export function HoneyOrderForm({
       {!preselectedProduct && (
         <div>
           <label htmlFor="honey-product" className="block text-sm font-medium text-bark mb-1">
-            Продукт <span className="text-red-500">*</span>
+            {tr({ uk: 'Продукт', ru: 'Продукт' }, locale)} <span className="text-red-500">*</span>
           </label>
           <select
             id="honey-product"
@@ -180,7 +200,7 @@ export function HoneyOrderForm({
               errors.product ? 'border-red-400' : 'border-honey-200'
             )}
           >
-            <option value="">Оберіть сорт</option>
+            <option value="">{tr({ uk: 'Оберіть сорт', ru: 'Выберите сорт' }, locale)}</option>
             {productOptions.map((p) => (
               <option key={p} value={p}>{p}</option>
             ))}
@@ -199,14 +219,14 @@ export function HoneyOrderForm({
       {packagingOptions.length > 0 && (
         <div>
           <label htmlFor="honey-packaging" className="block text-sm font-medium text-bark mb-1">
-            Упаковка
+            {tr({ uk: 'Упаковка', ru: 'Упаковка' }, locale)}
           </label>
           <select
             id="honey-packaging"
             {...register('packaging')}
             className="w-full px-4 py-3 rounded-lg border border-honey-200 bg-white text-bark focus:outline-none focus:ring-2 focus:ring-honey-500 focus:border-transparent min-h-[48px] text-base"
           >
-            <option value="">Будь-яка</option>
+            <option value="">{tr({ uk: 'Будь-яка', ru: 'Любая' }, locale)}</option>
             {packagingOptions.map((p) => (
               <option key={p} value={p}>{p}</option>
             ))}
@@ -217,21 +237,21 @@ export function HoneyOrderForm({
       {/* Quantity */}
       <div>
         <label htmlFor="honey-quantity" className="block text-sm font-medium text-bark mb-1">
-          Кількість
+          {tr({ uk: 'Кількість', ru: 'Количество' }, locale)}
         </label>
         <input
           id="honey-quantity"
           type="text"
           {...register('quantity')}
           className="w-full px-4 py-3 rounded-lg border border-honey-200 bg-white text-bark placeholder-bark/40 focus:outline-none focus:ring-2 focus:ring-honey-500 focus:border-transparent min-h-[48px] text-base"
-          placeholder="Наприклад: 2 банки"
+          placeholder={tr({ uk: 'Наприклад: 2 банки', ru: 'Например: 2 банки' }, locale)}
         />
       </div>
 
       {/* Message */}
       <div>
         <label htmlFor="honey-message" className="block text-sm font-medium text-bark mb-1">
-          Повідомлення
+          {tr({ uk: 'Повідомлення', ru: 'Сообщение' }, locale)}
         </label>
         <textarea
           id="honey-message"
@@ -243,7 +263,7 @@ export function HoneyOrderForm({
             'text-base resize-none',
             errors.message ? 'border-red-400' : 'border-honey-200'
           )}
-          placeholder="Додаткові побажання..."
+          placeholder={tr({ uk: 'Додаткові побажання...', ru: 'Дополнительные пожелания...' }, locale)}
         />
         {errors.message && (
           <p className="mt-1 text-sm text-red-600">{errors.message.message}</p>
@@ -262,11 +282,13 @@ export function HoneyOrderForm({
         fullWidth
         size="lg"
       >
-        {submitState === 'loading' ? 'Надсилаємо...' : 'Залишити заявку'}
+        {submitState === 'loading'
+          ? tr({ uk: 'Надсилаємо...', ru: 'Отправляем...' }, locale)
+          : tr({ uk: 'Залишити заявку', ru: 'Оставить заявку' }, locale)}
       </CTAButton>
 
       <p className="text-xs text-bark/50 text-center">
-        Ми зв&apos;яжемося з вами протягом кількох годин
+        {tr({ uk: "Ми зв'яжемося з вами протягом кількох годин", ru: 'Мы свяжемся с вами в течение нескольких часов' }, locale)}
       </p>
     </form>
   )

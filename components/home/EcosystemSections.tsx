@@ -1,9 +1,10 @@
 import Link from 'next/link'
-import { getRequestLocale } from '@/lib/i18n'
+import { getRequestLocale, localizedPath } from '@/lib/i18n'
 import { homeDict } from '@/lib/i18n/sections/home'
 
 export async function EcosystemSections() {
-  const t = homeDict(await getRequestLocale())
+  const locale = await getRequestLocale()
+  const t = homeDict(locale)
 
   // The full Dacha TV ecosystem — the homepage is no longer a honey-only landing.
   // Each card links into one pillar of the site.
@@ -85,7 +86,7 @@ export async function EcosystemSections() {
           {SECTIONS.map(({ href, emoji, title, text, accent }) => (
             <Link
               key={href}
-              href={href}
+              href={localizedPath(locale, href)}
               className={`group bg-gradient-to-br ${accent} border rounded-2xl p-6 flex flex-col transition-all hover:shadow-md`}
             >
               <span className="text-3xl mb-4" aria-hidden="true">{emoji}</span>

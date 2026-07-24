@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { CTAButton } from '@/components/shared/CTAButton'
 import { PhoneLink } from '@/components/shared/PhoneLink'
-import { getRequestLocale } from '@/lib/i18n'
+import { getRequestLocale, localizedPath } from '@/lib/i18n'
 import { homeDict } from '@/lib/i18n/sections/home'
 import type { SiteSettings } from '@/types'
 
@@ -65,7 +65,7 @@ export async function Hero({ tagline, subtext, siteSettings }: HeroProps) {
 
           {/* CTA row */}
           <div className="flex flex-col sm:flex-row gap-4 items-start">
-            <CTAButton href="/catalog" size="lg" variant="primary">
+            <CTAButton href={localizedPath(locale, '/catalog')} size="lg" variant="primary">
               {t.heroCta}
             </CTAButton>
             <Link

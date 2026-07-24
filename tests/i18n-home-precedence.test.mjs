@@ -51,10 +51,10 @@ test('homepage buildAlternates: canonical differs per locale, uk has no prefix',
   assert.notEqual(ru.canonical, en.canonical)
 })
 
-test('homepage buildAlternates: hreflang map includes uk, ru, en and x-default (-> uk)', () => {
+test('homepage buildAlternates: hreflang map includes uk + ru + x-default (-> uk), NOT en while EN is launch-disabled', () => {
   const { canonical, languages } = buildAlternates('uk', '/')
   assert.ok(languages.uk)
   assert.ok(languages.ru)
-  assert.ok(languages.en)
+  assert.equal(languages.en, undefined, 'EN is hidden for launch — no en hreflang until it is re-enabled')
   assert.equal(languages['x-default'], canonical)
 })

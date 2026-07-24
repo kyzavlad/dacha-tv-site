@@ -1,25 +1,43 @@
 import { existsSync } from 'fs'
 import { join } from 'path'
 import Image from 'next/image'
+import { getRequestLocale } from '@/lib/i18n'
+import { tr, type Tr } from '@/lib/i18n/pages'
 
 const PASSPORT_IMAGE = '/images/dacha-tv/documents/apiary-passport.jpg'
 
-const TRUST_POINTS = [
+const TRUST_POINTS: { title: Tr; body: Tr }[] = [
   {
-    title: 'Пасіка зареєстрована',
-    body: 'Офіційна реєстрація пасіки відповідно до законодавства України.',
+    title: { uk: 'Пасіка зареєстрована', ru: 'Пасека зарегистрирована' },
+    body: {
+      uk: 'Офіційна реєстрація пасіки відповідно до законодавства України.',
+      ru: 'Официальная регистрация пасеки в соответствии с законодательством Украины.',
+    },
   },
   {
-    title: 'Є ветеринарно-санітарний паспорт пасіки',
-    body: 'Документ державного зразка, що підтверджує санітарний стан та відповідність норм.',
+    title: { uk: 'Є ветеринарно-санітарний паспорт пасіки', ru: 'Есть ветеринарно-санитарный паспорт пасеки' },
+    body: {
+      uk: 'Документ державного зразка, що підтверджує санітарний стан та відповідність норм.',
+      ru: 'Документ государственного образца, подтверждающий санитарное состояние и соответствие нормам.',
+    },
   },
   {
-    title: 'Працюємо відкрито та прозоро',
-    body: 'Вся робота задокументована. Документи надаємо на вимогу.',
+    title: { uk: 'Працюємо відкрито та прозоро', ru: 'Работаем открыто и прозрачно' },
+    body: {
+      uk: 'Вся робота задокументована. Документи надаємо на вимогу.',
+      ru: 'Вся работа задокументирована. Документы предоставляем по запросу.',
+    },
   },
 ]
 
-export function ApiaryTrust() {
+const TRUST_TAGS: Tr[] = [
+  { uk: 'Офіційна реєстрація', ru: 'Официальная регистрация' },
+  { uk: 'Ветеринарний нагляд', ru: 'Ветеринарный надзор' },
+  { uk: 'Прозоре виробництво', ru: 'Прозрачное производство' },
+]
+
+export async function ApiaryTrust() {
+  const locale = await getRequestLocale()
   const hasPassportImage = existsSync(join(process.cwd(), 'public', PASSPORT_IMAGE))
 
   return (
@@ -33,25 +51,25 @@ export function ApiaryTrust() {
           </div>
           <div>
             <h3 id="trust-apiary-heading" className="font-serif text-xl font-bold text-gray-900">
-              Офіційно зареєстрована пасіка
+              {tr({ uk: 'Офіційно зареєстрована пасіка', ru: 'Официально зарегистрированная пасека' }, locale)}
             </h3>
             <p className="text-gray-500 text-sm mt-0.5">
-              Документи підтверджують якість і відкритість нашого виробництва
+              {tr({ uk: 'Документи підтверджують якість і відкритість нашого виробництва', ru: 'Документы подтверждают качество и открытость нашего производства' }, locale)}
             </p>
           </div>
         </div>
 
         <ul className="space-y-4 mb-6">
           {TRUST_POINTS.map(({ title, body }) => (
-            <li key={title} className="flex items-start gap-3">
+            <li key={title.uk} className="flex items-start gap-3">
               <span className="mt-0.5 w-5 h-5 rounded-full bg-green-50 border border-green-200 flex items-center justify-center flex-shrink-0">
                 <svg className="w-2.5 h-2.5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3} aria-hidden="true">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
                 </svg>
               </span>
               <div>
-                <p className="font-semibold text-gray-900 text-sm">{title}</p>
-                <p className="text-gray-500 text-xs leading-relaxed mt-0.5">{body}</p>
+                <p className="font-semibold text-gray-900 text-sm">{tr(title, locale)}</p>
+                <p className="text-gray-500 text-xs leading-relaxed mt-0.5">{tr(body, locale)}</p>
               </div>
             </li>
           ))}
@@ -64,11 +82,11 @@ export function ApiaryTrust() {
               target="_blank"
               rel="noopener"
               className="block relative aspect-[16/10] rounded-xl overflow-hidden border border-gray-100 hover:border-gray-300 transition-colors bg-gray-50"
-              aria-label="Відкрити ветеринарно-санітарний паспорт пасіки у повному розмірі"
+              aria-label={tr({ uk: 'Відкрити ветеринарно-санітарний паспорт пасіки у повному розмірі', ru: 'Открыть ветеринарно-санитарный паспорт пасеки в полном размере' }, locale)}
             >
               <Image
                 src={PASSPORT_IMAGE}
-                alt="Ветеринарно-санітарний паспорт пасіки Дача TV"
+                alt={tr({ uk: 'Ветеринарно-санітарний паспорт пасіки Дача TV', ru: 'Ветеринарно-санитарный паспорт пасеки Дача TV' }, locale)}
                 fill
                 className="object-contain object-center"
                 sizes="(max-width: 768px) 100vw, 700px"
@@ -80,7 +98,7 @@ export function ApiaryTrust() {
               rel="noopener"
               className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 mt-2 transition-colors"
             >
-              Відкрити документ
+              {tr({ uk: 'Відкрити документ', ru: 'Открыть документ' }, locale)}
               <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
               </svg>
@@ -91,16 +109,16 @@ export function ApiaryTrust() {
             <svg className="w-8 h-8 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} aria-hidden="true">
               <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
             </svg>
-            <p className="text-sm text-gray-400">Фото паспорта пасіки</p>
+            <p className="text-sm text-gray-400">{tr({ uk: 'Фото паспорта пасіки', ru: 'Фото паспорта пасеки' }, locale)}</p>
             <p className="text-xs text-gray-300">public/images/dacha-tv/documents/apiary-passport.jpg</p>
           </div>
         )}
 
         <div className="flex flex-wrap gap-2">
-          {['Офіційна реєстрація', 'Ветеринарний нагляд', 'Прозоре виробництво'].map((tag) => (
-            <span key={tag} className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-600 bg-gray-50 border border-gray-200 px-3 py-1.5 rounded-full">
+          {TRUST_TAGS.map((tag) => (
+            <span key={tag.uk} className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-600 bg-gray-50 border border-gray-200 px-3 py-1.5 rounded-full">
               <span className="w-1.5 h-1.5 rounded-full bg-green-500 flex-shrink-0" aria-hidden="true" />
-              {tag}
+              {tr(tag, locale)}
             </span>
           ))}
         </div>

@@ -1,15 +1,24 @@
 'use client'
 
 import { useCart } from '@/lib/cart/CartContext'
+import { useLocale } from '@/lib/i18n/locale-context'
+import { tr } from '@/lib/i18n/pages'
 
 export function CartButton() {
   const { totalItems, openCart } = useCart()
+  const locale = useLocale()
+
+  const cartLabel = tr({ uk: 'Кошик', ru: 'Корзина' }, locale)
+  const itemsNoun =
+    totalItems === 1
+      ? tr({ uk: 'товар', ru: 'товар' }, locale)
+      : tr({ uk: 'товарів', ru: 'товаров' }, locale)
 
   return (
     <button
       type="button"
       onClick={openCart}
-      aria-label={`Кошик${totalItems > 0 ? ` — ${totalItems} товар${totalItems === 1 ? '' : 'ів'}` : ''}`}
+      aria-label={`${cartLabel}${totalItems > 0 ? ` — ${totalItems} ${itemsNoun}` : ''}`}
       className="relative flex items-center justify-center w-10 h-10 rounded-full text-bark/70 hover:text-bark hover:bg-honey-50 transition-colors"
     >
       {/* Cart icon */}

@@ -1,7 +1,7 @@
 import { CTAButton } from '@/components/shared/CTAButton'
 import { PhoneLink } from '@/components/shared/PhoneLink'
 import { LAUNCH_PHONE } from '@/lib/launch-defaults'
-import { getRequestLocale } from '@/lib/i18n'
+import { getRequestLocale, localizedPath } from '@/lib/i18n'
 import { homeDict } from '@/lib/i18n/sections/home'
 import type { SiteSettings } from '@/types'
 
@@ -10,7 +10,8 @@ interface HowToOrderProps {
 }
 
 export async function HowToOrder({ siteSettings }: HowToOrderProps) {
-  const t = homeDict(await getRequestLocale())
+  const locale = await getRequestLocale()
+  const t = homeDict(locale)
 
   const STEPS = [
   {
@@ -81,7 +82,7 @@ export async function HowToOrder({ siteSettings }: HowToOrderProps) {
         </div>
 
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-          <CTAButton href="/catalog" size="lg" variant="primary">
+          <CTAButton href={localizedPath(locale, '/catalog')} size="lg" variant="primary">
             {t.orderCta}
           </CTAButton>
 

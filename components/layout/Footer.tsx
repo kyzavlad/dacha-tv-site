@@ -5,7 +5,7 @@ import { join } from 'path'
 import { PhoneLink } from '@/components/shared/PhoneLink'
 import { LanguageSwitcher } from '@/components/shared/LanguageSwitcher'
 import { PRIMARY_NAV, FOOTER_SECONDARY_NAV } from '@/lib/navigation'
-import { getRequestLocale } from '@/lib/i18n'
+import { getRequestLocale, localizedPath } from '@/lib/i18n'
 import { pageDict } from '@/lib/i18n/pages'
 import { navLabel } from '@/lib/i18n-ui'
 import {
@@ -90,7 +90,7 @@ export async function Footer({ siteSettings }: FooterProps) {
           {/* Brand column */}
           <div className="md:col-span-1">
             <Link
-              href="/"
+              href={localizedPath(locale, '/')}
               className="inline-flex items-center gap-2.5 hover:opacity-80 transition-opacity mb-3"
             >
               {hasLogo && (
@@ -134,7 +134,7 @@ export async function Footer({ siteSettings }: FooterProps) {
               {PRIMARY_NAV.map(({ href, label }) => (
                 <Link
                   key={href}
-                  href={href}
+                  href={localizedPath(locale, href)}
                   className="text-sm text-gray-600 hover:text-bark transition-colors"
                 >
                   {navLabel(href, locale, label)}
@@ -152,7 +152,7 @@ export async function Footer({ siteSettings }: FooterProps) {
               {FOOTER_SECONDARY_NAV.map(({ href, label }) => (
                 <Link
                   key={label}
-                  href={href}
+                  href={localizedPath(locale, href)}
                   className="text-sm text-gray-600 hover:text-bark transition-colors"
                 >
                   {navLabel(href, locale, label)}
@@ -206,10 +206,10 @@ export async function Footer({ siteSettings }: FooterProps) {
               © {currentYear} Дача TV. ФОП Кузьменко Владислав Сергійович · Україна
             </p>
             <div className="flex items-center gap-4">
-              <Link href="/delivery" className="text-xs text-gray-400 hover:text-bark transition-colors">
+              <Link href={localizedPath(locale, '/delivery')} className="text-xs text-gray-400 hover:text-bark transition-colors">
                 {navLabel('/delivery', locale, 'Доставка')}
               </Link>
-              <Link href="/privacy" className="text-xs text-gray-400 hover:text-bark transition-colors">
+              <Link href={localizedPath(locale, '/privacy')} className="text-xs text-gray-400 hover:text-bark transition-colors">
                 {navLabel('/privacy', locale, 'Політика конфіденційності')}
               </Link>
             </div>

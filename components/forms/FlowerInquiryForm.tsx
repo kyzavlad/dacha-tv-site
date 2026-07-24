@@ -2,6 +2,8 @@
 
 import { useState, useTransition } from 'react'
 import { submitFlowerInquiry } from '@/actions/submitInquiry'
+import { useLocale } from '@/lib/i18n/locale-context'
+import { tr } from '@/lib/i18n/pages'
 
 interface FlowerInquiryFormProps {
   preselectedProduct?: string
@@ -9,6 +11,7 @@ interface FlowerInquiryFormProps {
 }
 
 export function FlowerInquiryForm({ preselectedProduct, source }: FlowerInquiryFormProps) {
+  const locale = useLocale()
   const [isPending, startTransition] = useTransition()
   const [result, setResult] = useState<{ success: boolean; error?: string } | null>(null)
 
@@ -29,15 +32,15 @@ export function FlowerInquiryForm({ preselectedProduct, source }: FlowerInquiryF
             <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
           </svg>
         </div>
-        <h3 className="font-serif text-xl font-bold text-gray-900 mb-2">Заявку отримано!</h3>
+        <h3 className="font-serif text-xl font-bold text-gray-900 mb-2">{tr({ uk: 'Заявку отримано!', ru: 'Заявка получена!' }, locale)}</h3>
         <p className="text-gray-600 text-sm mb-4">
-          Ми зв&apos;яжемося з вами найближчим часом.
+          {tr({ uk: "Ми зв'яжемося з вами найближчим часом.", ru: 'Мы свяжемся с вами в ближайшее время.' }, locale)}
         </p>
         <button
           onClick={() => setResult(null)}
           className="text-sm text-gray-500 underline hover:no-underline"
         >
-          Надіслати ще одну
+          {tr({ uk: 'Надіслати ще одну', ru: 'Отправить ещё одну' }, locale)}
         </button>
       </div>
     )
@@ -57,7 +60,7 @@ export function FlowerInquiryForm({ preselectedProduct, source }: FlowerInquiryF
 
       <div>
         <label htmlFor="flower-name" className="block text-sm font-semibold text-gray-800 mb-1">
-          Ваше ім&apos;я <span className="text-red-500">*</span>
+          {tr({ uk: "Ваше ім'я", ru: 'Ваше имя' }, locale)} <span className="text-red-500">*</span>
         </label>
         <input
           id="flower-name"
@@ -66,13 +69,13 @@ export function FlowerInquiryForm({ preselectedProduct, source }: FlowerInquiryF
           required
           autoComplete="name"
           className="w-full border border-gray-300 rounded-xl px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-gray-400"
-          placeholder="Ім'я"
+          placeholder={tr({ uk: "Ім'я", ru: 'Имя' }, locale)}
         />
       </div>
 
       <div>
         <label htmlFor="flower-phone" className="block text-sm font-semibold text-gray-800 mb-1">
-          Номер телефону <span className="text-red-500">*</span>
+          {tr({ uk: 'Номер телефону', ru: 'Номер телефона' }, locale)} <span className="text-red-500">*</span>
         </label>
         <input
           id="flower-phone"
@@ -81,7 +84,7 @@ export function FlowerInquiryForm({ preselectedProduct, source }: FlowerInquiryF
           required
           autoComplete="tel"
           pattern="(\+380|0)\d{9}"
-          title="Введіть номер у форматі +380XXXXXXXXX або 0XXXXXXXXX"
+          title={tr({ uk: 'Введіть номер у форматі +380XXXXXXXXX або 0XXXXXXXXX', ru: 'Введите номер в формате +380XXXXXXXXX или 0XXXXXXXXX' }, locale)}
           className="w-full border border-gray-300 rounded-xl px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-gray-400"
           placeholder="+380 XX XXX XXXX"
         />
@@ -90,21 +93,21 @@ export function FlowerInquiryForm({ preselectedProduct, source }: FlowerInquiryF
       {!preselectedProduct && (
         <div>
           <label htmlFor="flower-product" className="block text-sm font-semibold text-gray-800 mb-1">
-            Яка квітка вас цікавить?
+            {tr({ uk: 'Яка квітка вас цікавить?', ru: 'Какой цветок вас интересует?' }, locale)}
           </label>
           <input
             id="flower-product"
             name="product"
             type="text"
             className="w-full border border-gray-300 rounded-xl px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-gray-400"
-            placeholder="Назва або опис"
+            placeholder={tr({ uk: 'Назва або опис', ru: 'Название или описание' }, locale)}
           />
         </div>
       )}
 
       <div>
         <label htmlFor="flower-message" className="block text-sm font-semibold text-gray-800 mb-1">
-          Повідомлення <span className="text-gray-400 font-normal">(необов&apos;язково)</span>
+          {tr({ uk: 'Повідомлення', ru: 'Сообщение' }, locale)} <span className="text-gray-400 font-normal">{tr({ uk: "(необов'язково)", ru: '(необязательно)' }, locale)}</span>
         </label>
         <textarea
           id="flower-message"
@@ -112,7 +115,7 @@ export function FlowerInquiryForm({ preselectedProduct, source }: FlowerInquiryF
           rows={3}
           maxLength={500}
           className="w-full border border-gray-300 rounded-xl px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-gray-400 resize-none"
-          placeholder="Кількість, термін, побажання..."
+          placeholder={tr({ uk: 'Кількість, термін, побажання...', ru: 'Количество, срок, пожелания...' }, locale)}
         />
       </div>
 
@@ -121,7 +124,9 @@ export function FlowerInquiryForm({ preselectedProduct, source }: FlowerInquiryF
         disabled={isPending}
         className="w-full bg-gray-900 text-white font-semibold py-4 px-6 rounded-xl hover:bg-gray-800 transition-colors min-h-[52px] text-base disabled:opacity-60"
       >
-        {isPending ? 'Надсилаємо...' : 'Надіслати заявку'}
+        {isPending
+          ? tr({ uk: 'Надсилаємо...', ru: 'Отправляем...' }, locale)
+          : tr({ uk: 'Надіслати заявку', ru: 'Отправить заявку' }, locale)}
       </button>
     </form>
   )

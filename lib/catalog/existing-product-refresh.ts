@@ -30,15 +30,25 @@ export interface RefreshExistingResult {
   processed: number
   updated: number
   approved: number
-  remainingExisting: number
-  remainingNew: number
-  remainingTotal: number
+  // Progress-based loop signal (requirement 5). True when this batch was full
+  // (processed >= the requested, clamped limit), meaning the queue very likely
+  // still has more existing rows to refresh — so the caller should call again.
+  // A partial batch (processed < limit) grabbed everything left, so hasMore is
+  // false and the loop terminates. This is derived from cheap batch progress —
+  // NOT from an exact whole-queue COUNT scan (those were the v6 timeout cause).
+  hasMore: boolean
+  // Exact backlog figures. NULL/undefined on the fast path (the v7 RPC no
+  // longer computes them per call). Populated only when explicitly fetched via
+  // getRefreshQueueCounts() / an old-style RPC row that still carries them, so
+  // existing callers/tests that provided them keep working.
+  remainingExisting?: number
+  remainingNew?: number
+  remainingTotal?: number
   // Diagnostics only: valid, unapproved supplier rows shadowed by a
   // source='manual' catalog row. Neither this RPC nor the new-product insert
-  // path may ever touch them (a human owns that row) — they are reported
-  // separately so they never block remainingTotal from reaching zero, and are
-  // NEVER auto-approved.
-  blockedManual: number
+  // path may ever touch them (a human owns that row) — reported separately so
+  // they never block a "loop until drained" runner, and are NEVER auto-approved.
+  blockedManual?: number
   message: string
 }
 
@@ -70,8 +80,7 @@ export async function refreshExistingCatalogFromSupplier(
   if (error) {
     return {
       ok: false,
-      processed: 0, updated: 0, approved: 0,
-      remainingExisting: 0, remainingNew: 0, remainingTotal: 0, blockedManual: 0,
+      processed: 0, updated: 0, approved: 0, hasMore: false,
       message: `refresh_existing_catalog_from_supplier RPC failed: ${error.message}`,
     }
   }
@@ -80,8 +89,7 @@ export async function refreshExistingCatalogFromSupplier(
   if (!row) {
     return {
       ok: false,
-      processed: 0, updated: 0, approved: 0,
-      remainingExisting: 0, remainingNew: 0, remainingTotal: 0, blockedManual: 0,
+      processed: 0, updated: 0, approved: 0, hasMore: false,
       message: 'refresh_existing_catalog_from_supplier RPC returned no result row',
     }
   }
@@ -89,16 +97,63 @@ export async function refreshExistingCatalogFromSupplier(
   const processed = row.processed ?? 0
   const updated = row.updated ?? 0
   const approved = row.approved ?? 0
-  const remainingExisting = row.remaining_existing ?? 0
-  const remainingNew = row.remaining_new ?? 0
-  const remainingTotal = row.remaining_total ?? (remainingExisting + remainingNew)
-  const blockedManual = row.blocked_manual ?? 0
+  // Full batch ⇒ probably more to do. A partial batch drained the queue (it
+  // grabbed everything remaining) even though those rows WERE just processed,
+  // so hasMore is correctly false. Terminates in ceil(N / p_limit) calls.
+  const hasMore = processed >= p_limit
+  // Exact counts are NULL on the v7 fast path; pass them through only when a
+  // row actually carries them (diagnostic call, or a pre-v7 shaped row).
+  const remainingExisting = row.remaining_existing ?? undefined
+  const remainingNew = row.remaining_new ?? undefined
+  const remainingTotal = row.remaining_total
+    ?? (remainingExisting != null && remainingNew != null ? remainingExisting + remainingNew : undefined)
+  const blockedManual = row.blocked_manual ?? undefined
 
   return {
     ok: true,
-    processed, updated, approved,
+    processed, updated, approved, hasMore,
     remainingExisting, remainingNew, remainingTotal, blockedManual,
     message: `Оновлення існуючих товарів: оброблено ${processed}, оновлено ${updated}, підтверджено ${approved}`,
+  }
+}
+
+// ── Diagnostic-only exact queue counts (never on the import hot path) ─────────
+export interface RefreshQueueCounts {
+  ok: boolean
+  remainingExisting: number
+  remainingNew: number
+  remainingTotal: number
+  blockedManual: number
+  message?: string
+}
+
+// Calls the separate catalog_refresh_queue_counts() RPC — the three exact,
+// full-queue COUNT scans deliberately kept OFF the per-batch refresh path (v7).
+// Use only when exact backlog figures are explicitly requested (an admin
+// dashboard, or import-products?counts=true), never inside a batch loop.
+export async function getRefreshQueueCounts(client: AdminClient): Promise<RefreshQueueCounts> {
+  const { data, error } = await client.rpc('catalog_refresh_queue_counts')
+  if (error) {
+    return {
+      ok: false,
+      remainingExisting: 0, remainingNew: 0, remainingTotal: 0, blockedManual: 0,
+      message: `catalog_refresh_queue_counts RPC failed: ${error.message}`,
+    }
+  }
+  const row = (Array.isArray(data) ? data[0] : data) as {
+    remaining_existing: number | null
+    remaining_new: number | null
+    remaining_total: number | null
+    blocked_manual: number | null
+  } | null | undefined
+  const remainingExisting = row?.remaining_existing ?? 0
+  const remainingNew = row?.remaining_new ?? 0
+  return {
+    ok: true,
+    remainingExisting,
+    remainingNew,
+    remainingTotal: row?.remaining_total ?? remainingExisting + remainingNew,
+    blockedManual: row?.blocked_manual ?? 0,
   }
 }
 
