@@ -70,8 +70,12 @@ test('the hot function default batch is 5000 and stays clamped to <= 10000', () 
   assert.match(hotFn, /least\(coalesce\(p_limit, 5000\), 10000\)/i)
 })
 
-test('config exposes EXISTING_REFRESH_BATCH_SIZE=5000 and NEW_PRODUCT_INSERT_BATCH_CAP=500', () => {
-  assert.equal(EXISTING_REFRESH_BATCH_SIZE, 5000)
+test('config exposes EXISTING_REFRESH_BATCH_SIZE=300 (lowered for the 3.7GiB server) and NEW_PRODUCT_INSERT_BATCH_CAP=500', () => {
+  // The JS-caller default batch was reduced 5000 → 300 to keep each import
+  // request's memory footprint small on the production box (PM2 memory_restart);
+  // the SQL RPC keeps its own 5000 default/clamp (asserted above) and the
+  // explicit ?limit=N override still reaches up to 10000.
+  assert.equal(EXISTING_REFRESH_BATCH_SIZE, 300)
   assert.equal(NEW_PRODUCT_INSERT_BATCH_CAP, 500)
 })
 
