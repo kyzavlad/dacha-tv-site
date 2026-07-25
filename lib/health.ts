@@ -28,6 +28,29 @@ export function checkHealthEnv(supabaseUrl: string | undefined, anonKey: string 
   return { configured: true }
 }
 
+// ── Pure liveness body (no backend, no network, no per-request allocation) ────
+// GET /api/health returns ONLY this: proof the Node process is alive + uptime.
+// It must never create a Supabase client, open a socket, or start a timer — it
+// is polled every few seconds by PM2/Nginx, so any per-request resource that can
+// outlive the response would accumulate (the confirmed RSS-growth leak).
+export interface LivenessBody {
+  ok: true
+  status: 'alive'
+  uptime_s: number
+  pid: number
+  timestamp: string
+}
+
+export function buildLivenessBody(opts?: { uptimeSeconds?: number; pid?: number; nowIso?: string }): LivenessBody {
+  return {
+    ok: true,
+    status: 'alive',
+    uptime_s: opts?.uptimeSeconds ?? Math.round(process.uptime()),
+    pid: opts?.pid ?? process.pid,
+    timestamp: opts?.nowIso ?? new Date().toISOString(),
+  }
+}
+
 export type HealthBackendStatus = 'ok' | 'unreachable' | 'unconfigured'
 
 export interface HealthBody {

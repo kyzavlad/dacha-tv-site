@@ -1,12 +1,20 @@
-import { createClient } from '@supabase/supabase-js'
+import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import type { CatalogCategory, CatalogProduct, CatalogImageMeta } from '@/types'
 import { resolveImageEntries, primaryImageAlt } from '@/lib/catalog/image-metadata'
 
+// Singleton anon client — reused across the many getClient() calls per catalog
+// page render instead of allocating one each time (per-request createClient leaks).
+let _anon: SupabaseClient | null = null
+let _anonKey = ''
 function getClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
   if (!url || !key) return null
-  return createClient(url, key)
+  const cacheKey = `${url} ${key}`
+  if (_anon && _anonKey === cacheKey) return _anon
+  _anon = createClient(url, key)
+  _anonKey = cacheKey
+  return _anon
 }
 
 export const CATALOG_PAGE_SIZE = 24

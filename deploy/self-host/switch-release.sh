@@ -16,6 +16,8 @@ RELEASES_DIR="$BASE_DIR/releases"
 CURRENT_LINK="$BASE_DIR/current"
 SHARED_ENV="$BASE_DIR/shared/.env.production"
 APP_NAME="dacha-tv"
+# Lightweight liveness route (pure, no Supabase client / no network) — safe to
+# poll repeatedly during the release retry loop without leaking resources.
 HEALTH_URL="http://127.0.0.1:3030/api/health"
 HEALTH_RETRIES=10
 HEALTH_DELAY_S=2

@@ -137,7 +137,7 @@ export async function getBlockedHours(serviceSlug: string, date: string): Promis
     .select('block_hour')
     .eq('service_slug', serviceSlug)
     .eq('block_date', date)
-  return (data ?? []).map((r: { block_hour: number | null }) => r.block_hour).filter((h): h is number => h !== null)
+  return (data ?? []).map((r: { block_hour: number | null }) => r.block_hour).filter((h: number | null): h is number => h !== null)
 }
 
 export async function getBookedDates(serviceSlug: string, fromDate: string, toDate: string): Promise<string[]> {

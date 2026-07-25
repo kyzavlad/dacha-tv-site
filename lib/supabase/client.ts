@@ -24,7 +24,7 @@
  * CREATE INDEX inquiries_status_created ON inquiries (status, created_at DESC);
  */
 
-import { createClient } from '@supabase/supabase-js'
+import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import type { Inquiry } from '@/types'
 
 // Expose row type for typed queries
@@ -39,6 +39,12 @@ function normalizeSupabaseUrl(raw: string): string {
   }
 }
 
+// Process-wide singleton (see lib/supabase/admin.ts for the rationale): reuse one
+// service-role client instead of allocating one per call, which leaks under
+// steady traffic.
+let _serverClient: SupabaseClient | null = null
+let _serverKey = ''
+
 export function getSupabaseClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -47,10 +53,14 @@ export function getSupabaseClient() {
     throw new Error('Missing Supabase environment variables')
   }
 
-  return createClient(normalizeSupabaseUrl(url), key, {
+  const cacheKey = `${url} ${key}`
+  if (_serverClient && _serverKey === cacheKey) return _serverClient
+  _serverClient = createClient(normalizeSupabaseUrl(url), key, {
     auth: {
       autoRefreshToken: false,
       persistSession: false,
     },
   })
+  _serverKey = cacheKey
+  return _serverClient
 }
