@@ -4,14 +4,14 @@ export const AUTOMATION_BATCH_SIZE = 300
 // Normal per-call batch size for the EXISTING-row set-based refresh RPC
 // (refresh_existing_catalog_from_supplier). The refresh is one bounded
 // set-based UPDATE with no full-table scans (v7 migration), so a larger batch
-// is safe at the DB level. It was lowered from 5000 to 1000 because production
+// is safe at the DB level. It was lowered from 5000 to 300 because production
 // runs on a 3.7 GiB server where repeated 5000-row calls built a large enough
 // per-call JS working set to trip PM2's memory_restart and drop the process
-// mid-import. 1000 keeps each request's footprint small while still draining
+// mid-import. 300 keeps each request's footprint small while still draining
 // the ~112k-row daily queue in far fewer round-trips than the old 300 default.
 // The explicit `?limit=N` override (manual bulk imports) and the v7 bounded RPC
 // are unchanged; the value is still clamped to [1, 10000] here and in the SQL.
-export const EXISTING_REFRESH_BATCH_SIZE = 1000
+export const EXISTING_REFRESH_BATCH_SIZE = 300
 
 // Genuinely-new supplier products (no existing catalog_products row) still go
 // through the JS insert path. That path was never the timeout risk — the
