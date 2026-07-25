@@ -21,6 +21,7 @@ import {
   LAUNCH_TIKTOK_URL,
 } from '@/lib/launch-defaults'
 import type { SiteSettings } from '@/types'
+import { tr } from '@/lib/i18n/pages'
 
 interface MobileMenuProps {
   phone?: string | null
@@ -96,17 +97,17 @@ export function MobileMenu({ phone, phoneSecondary, siteSettings, logoPath }: Mo
       style={{ zIndex: 9999 }}
       role="dialog"
       aria-modal="true"
-      aria-label="Мобільна навігація"
+      aria-label={tr({ uk: 'Мобільна навігація', ru: 'Мобильная навигация', en: 'Mobile navigation' }, locale)}
     >
       {/* Top bar: logo left, close right */}
       <div className="flex items-center justify-between px-5 h-16 border-b border-gray-100 flex-shrink-0 bg-white">
-        <Link href={localizedPath(locale, '/')} onClick={() => setMenuOpen(false)} aria-label="Дача TV — на головну" className="flex items-center gap-2.5">
+        <Link href={localizedPath(locale, '/')} onClick={() => setMenuOpen(false)} aria-label={tr({ uk: 'Дача TV — на головну', ru: 'Дача TV — на главную', en: 'Dacha TV — home' }, locale)} className="flex items-center gap-2.5">
           {logoPath && <Image src={logoPath} alt="" width={36} height={36} className="w-9 h-9 object-contain" />}
           <span className="font-serif font-bold text-xl text-bark">Дача TV</span>
         </Link>
         <button type="button" onClick={() => setMenuOpen(false)}
           className="w-11 h-11 flex items-center justify-center text-bark/50 hover:text-bark hover:bg-gray-100 rounded-xl transition-colors"
-          aria-label="Закрити меню">
+          aria-label={tr({ uk: 'Закрити меню', ru: 'Закрыть меню', en: 'Close menu' }, locale)}>
           <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
             <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
           </svg>
@@ -114,7 +115,7 @@ export function MobileMenu({ phone, phoneSecondary, siteSettings, logoPath }: Mo
       </div>
 
       {/* Nav links */}
-      <nav className="flex-1 overflow-y-auto px-3 py-4" aria-label="Мобільне меню">
+      <nav className="flex-1 overflow-y-auto px-3 py-4" aria-label={tr({ uk: 'Мобільне меню', ru: 'Мобильное меню', en: 'Mobile menu' }, locale)}>
         <ul className="space-y-0.5">
           {PRIMARY_NAV.map(({ href, label }) => (
             <li key={href}>
@@ -168,7 +169,7 @@ export function MobileMenu({ phone, phoneSecondary, siteSettings, logoPath }: Mo
     <>
       <button type="button"
         className="md:hidden p-2 text-bark/70 hover:text-bark transition-colors w-11 h-11 flex items-center justify-center"
-        onClick={() => setMenuOpen(true)} aria-label="Відкрити меню" aria-expanded={menuOpen}>
+        onClick={() => setMenuOpen(true)} aria-label={tr({ uk: 'Відкрити меню', ru: 'Открыть меню', en: 'Open menu' }, locale)} aria-expanded={menuOpen}>
         <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
           <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
         </svg>

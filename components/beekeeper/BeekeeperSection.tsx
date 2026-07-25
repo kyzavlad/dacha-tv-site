@@ -63,7 +63,7 @@ export async function BeekeeperSection({ products }: BeekeeperSectionProps) {
 
               {product.breeds && product.breeds.length > 0 && (
                 <div className="mb-4">
-                  <p className="text-sm font-medium text-bark/60 mb-2">{tr({ uk: 'Доступні породи:', ru: 'Доступные породы:' }, locale)}</p>
+                  <p className="text-sm font-medium text-bark/60 mb-2">{tr({ uk: 'Доступні породи:', ru: 'Доступные породы:', en: 'Available breeds:' }, locale)}</p>
                   <div className="flex flex-wrap gap-2">
                     {product.breeds.map((breed) => (
                       <span

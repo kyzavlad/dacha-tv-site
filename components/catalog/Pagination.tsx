@@ -28,10 +28,10 @@ interface PaginationProps {
 export async function Pagination({ page, total, baseHref, params, labels, hasNext }: PaginationProps) {
   const locale = await getRequestLocale()
   const defaultLabels: PaginationLabels = {
-    prev: tr({ uk: 'Попередня', ru: 'Предыдущая' }, locale),
-    next: tr({ uk: 'Наступна', ru: 'Следующая' }, locale),
+    prev: tr({ uk: 'Попередня', ru: 'Предыдущая', en: 'Previous' }, locale),
+    next: tr({ uk: 'Наступна', ru: 'Следующая', en: 'Next' }, locale),
     pageOf: (page, total) =>
-      `${tr({ uk: 'Сторінка', ru: 'Страница' }, locale)} ${page} ${tr({ uk: 'з', ru: 'из' }, locale)} ${total}`,
+      `${tr({ uk: 'Сторінка', ru: 'Страница', en: 'Page' }, locale)} ${page} ${tr({ uk: 'з', ru: 'из', en: 'of' }, locale)} ${total}`,
   }
   const l = labels ?? defaultLabels
   const countedPages = Math.max(1, Math.ceil(total / CATALOG_PAGE_SIZE))
@@ -67,7 +67,7 @@ export async function Pagination({ page, total, baseHref, params, labels, hasNex
   const arrowDisabled = 'inline-flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg border border-gray-100 text-gray-300 cursor-not-allowed select-none'
 
   return (
-    <nav aria-label={tr({ uk: 'Сторінки', ru: 'Страницы' }, locale)} className="flex flex-col items-center gap-3 mt-10">
+    <nav aria-label={tr({ uk: 'Сторінки', ru: 'Страницы', en: 'Pages' }, locale)} className="flex flex-col items-center gap-3 mt-10">
       <div className="flex items-center justify-center gap-1.5 flex-wrap">
         {canPrev ? (
           <Link href={pageUrl(page - 1)} className={arrowBtn} aria-label={l.prev} rel="prev">

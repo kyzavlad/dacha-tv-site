@@ -4,10 +4,11 @@ import { tr, type Tr } from '@/lib/i18n/pages'
 
 const DELIVERY_CARDS: { title: Tr; description: Tr; icon: React.ReactNode }[] = [
   {
-    title: { uk: 'Товари з каталогу', ru: 'Товары из каталога' },
+    title: { uk: 'Товари з каталогу', ru: 'Товары из каталога', en: 'Catalog products' },
     description: {
       uk: 'Відправляємо Новою Поштою по всій Україні. Оплата накладеним платежем при отриманні.',
       ru: 'Отправляем Новой Почтой по всей Украине. Оплата наложенным платежом при получении.',
+      en: 'We ship via Nova Poshta across Ukraine. Cash on delivery when you receive your order.',
     },
     icon: (
       <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} aria-hidden="true">
@@ -16,10 +17,11 @@ const DELIVERY_CARDS: { title: Tr; description: Tr; icon: React.ReactNode }[] = 
     ),
   },
   {
-    title: { uk: 'Мед та продукти пасіки', ru: 'Мёд и продукты пасеки' },
+    title: { uk: 'Мед та продукти пасіки', ru: 'Мёд и продукты пасеки', en: 'Honey & apiary products' },
     description: {
       uk: 'Відправляємо по всій Україні — Новою Поштою або Укрпоштою. Надійна упаковка для безпечного транспортування.',
       ru: 'Отправляем по всей Украине — Новой Почтой или Укрпочтой. Надёжная упаковка для безопасной транспортировки.',
+      en: 'We ship across Ukraine via Nova Poshta or Ukrposhta. Sturdy packaging for safe transport.',
     },
     icon: (
       <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} aria-hidden="true">
@@ -28,10 +30,11 @@ const DELIVERY_CARDS: { title: Tr; description: Tr; icon: React.ReactNode }[] = 
     ),
   },
   {
-    title: { uk: 'Бджолопакети та вулики', ru: 'Пчелопакеты и ульи' },
+    title: { uk: 'Бджолопакети та вулики', ru: 'Пчелопакеты и ульи', en: 'Bee packages & hives' },
     description: {
       uk: 'Самовивіз або індивідуальна домовленість з доставкою. Уточніть деталі при оформленні заявки.',
       ru: 'Самовывоз или индивидуальная договорённость о доставке. Уточните детали при оформлении заявки.',
+      en: 'Self-pickup or an individual delivery arrangement. Confirm the details when you place your request.',
     },
     icon: (
       <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} aria-hidden="true">
@@ -43,9 +46,9 @@ const DELIVERY_CARDS: { title: Tr; description: Tr; icon: React.ReactNode }[] = 
 ]
 
 const DELIVERY_METHODS: Tr[] = [
-  { uk: 'Нова Пошта', ru: 'Новая Почта' },
-  { uk: 'Укрпошта', ru: 'Укрпочта' },
-  { uk: 'Самовивіз', ru: 'Самовывоз' },
+  { uk: 'Нова Пошта', ru: 'Новая Почта', en: 'Nova Poshta' },
+  { uk: 'Укрпошта', ru: 'Укрпочта', en: 'Ukrposhta' },
+  { uk: 'Самовивіз', ru: 'Самовывоз', en: 'Self-pickup' },
 ]
 
 export async function DeliveryTeaser() {
@@ -57,19 +60,20 @@ export async function DeliveryTeaser() {
           {/* Text side */}
           <div>
             <span className="text-xs font-semibold text-honey-700 uppercase tracking-widest mb-4 block">
-              {tr({ uk: 'Доставка', ru: 'Доставка' }, locale)}
+              {tr({ uk: 'Доставка', ru: 'Доставка', en: 'Delivery' }, locale)}
             </span>
             <h2 id="delivery-teaser-heading" className="font-serif text-3xl md:text-4xl font-bold text-bark mb-5 leading-tight">
-              {tr({ uk: 'По всій Україні — надійно і вчасно', ru: 'По всей Украине — надёжно и вовремя' }, locale)}
+              {tr({ uk: 'По всій Україні — надійно і вчасно', ru: 'По всей Украине — надёжно и вовремя', en: 'Across Ukraine — reliably and on time' }, locale)}
             </h2>
             <p className="text-gray-500 text-lg mb-8 leading-relaxed">
               {tr({
                 uk: 'Ми на Харківщині, але відправляємо в будь-яку точку країни. Кожне замовлення — надійно упаковане, щоб дісталося до вас у цілості.',
                 ru: 'Мы в Харьковской области, но отправляем в любую точку страны. Каждый заказ надёжно упакован, чтобы дойти до вас в целости.',
+                en: 'We are in the Kharkiv region, but we ship anywhere in the country. Every order is packed securely so it reaches you intact.',
               }, locale)}
             </p>
             <CTAButton href={localizedPath(locale, '/delivery')} variant="outline">
-              {tr({ uk: 'Детальніше про доставку', ru: 'Подробнее о доставке' }, locale)}
+              {tr({ uk: 'Детальніше про доставку', ru: 'Подробнее о доставке', en: 'More about delivery' }, locale)}
             </CTAButton>
           </div>
 

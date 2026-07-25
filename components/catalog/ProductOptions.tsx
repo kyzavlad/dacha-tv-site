@@ -41,7 +41,7 @@ export async function ProductOptions({ options }: ProductOptionsProps) {
 
   return (
     <div className="border-t border-gray-100 pt-6 mb-6">
-      <h2 className="font-semibold text-bark mb-3 text-sm uppercase tracking-wide">{tr({ uk: 'Характеристики', ru: 'Характеристики' }, locale)}</h2>
+      <h2 className="font-semibold text-bark mb-3 text-sm uppercase tracking-wide">{tr({ uk: 'Характеристики', ru: 'Характеристики', en: 'Specifications' }, locale)}</h2>
       <dl className="divide-y divide-gray-100">
         {entries.map(([key, value]) => (
           <div key={key} className="py-2 grid grid-cols-1 sm:grid-cols-3 gap-1 sm:gap-3">

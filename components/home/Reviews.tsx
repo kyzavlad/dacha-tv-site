@@ -4,23 +4,27 @@ import { useMemo, useState } from 'react'
 import type { Review } from '@/types'
 import { DEFAULT_LOCALE, type Locale } from '@/lib/i18n'
 import { homeDict } from '@/lib/i18n/sections/home'
+import { tr, type Tr } from '@/lib/i18n/pages'
 
 interface ReviewsProps {
   reviews?: Review[]
   locale?: Locale
 }
 
-const CURATED_REVIEWS: Array<{ quote: string; name: string; city: string; tag: string; rating: number }> = [
-  { quote: 'Мед справжній, ароматний, кристалізується як натуральний. Замовляю вже третій раз.', name: 'Олена', city: 'Харків', tag: 'Мед', rating: 5 },
-  { quote: 'Акацієвий мед брали на подарунок — смак ніжний, баночка акуратна, усе гарно запаковано.', name: 'Дмитро', city: 'Харків', tag: 'Мед', rating: 5 },
-  { quote: 'Брали пилок і прополіс. Все свіже, якісне, відправили швидко Новою Поштою.', name: 'Андрій', city: 'Полтава', tag: 'Продукти', rating: 5 },
-  { quote: 'Горіхи в меду дуже сподобались. Видно, що роблять не масово, а нормально для людей.', name: 'Світлана', city: 'Люботин', tag: 'Продукти', rating: 5 },
-  { quote: 'Замовляла букет на свято — квіти свіжі, зібрані красиво, привезли вчасно.', name: 'Марія', city: 'Мерефа', tag: 'Квіти', rating: 5 },
-  { quote: 'Лавандове поле гарне для фото й заходів. Забронювали час, усе підтвердили, без зайвої метушні.', name: 'Ірина', city: 'Харків', tag: 'Лаванда', rating: 5 },
-  { quote: 'Брали профнастил і металочерепицю на дах. Порахували під розмір, доставили по області.', name: 'Сергій', city: 'Коротич', tag: 'Метал', rating: 5 },
-  { quote: 'Замовляли металевий штахетник на паркан — колір підібрали, саморізи в тон. Монтувати було зручно.', name: 'Олександр', city: 'Валки', tag: 'Метал', rating: 5 },
-  { quote: 'Жимолість і живі олії — справжній смак з господарства. Гарбузова олія дуже сподобалась.', name: 'Тетяна', city: 'Дергачі', tag: 'Натуральні продукти', rating: 5 },
-  { quote: 'Замовлення зібрали швидко, тримали в курсі, відправили того ж дня. Все чесно.', name: 'Володимир', city: 'Чугуїв', tag: 'Доставка', rating: 5 },
+// Curated fallback testimonials (shown only when fewer than 3 DB reviews exist).
+// quote + tag are localized; reviewer names/cities are Ukrainian proper nouns
+// kept verbatim across locales.
+const CURATED_REVIEWS: Array<{ quote: Tr; name: string; city: string; tag: Tr; rating: number }> = [
+  { quote: { uk: 'Мед справжній, ароматний, кристалізується як натуральний. Замовляю вже третій раз.', ru: 'Мёд настоящий, ароматный, кристаллизуется как натуральный. Заказываю уже третий раз.', en: 'The honey is real, fragrant, crystallizes like natural honey. Ordering for the third time already.' }, name: 'Олена', city: 'Харків', tag: { uk: 'Мед', ru: 'Мёд', en: 'Honey' }, rating: 5 },
+  { quote: { uk: 'Акацієвий мед брали на подарунок — смак ніжний, баночка акуратна, усе гарно запаковано.', ru: 'Акациевый мёд брали в подарок — вкус нежный, баночка аккуратная, всё красиво упаковано.', en: 'We bought acacia honey as a gift — delicate taste, neat jar, everything nicely packaged.' }, name: 'Дмитро', city: 'Харків', tag: { uk: 'Мед', ru: 'Мёд', en: 'Honey' }, rating: 5 },
+  { quote: { uk: 'Брали пилок і прополіс. Все свіже, якісне, відправили швидко Новою Поштою.', ru: 'Брали пыльцу и прополис. Всё свежее, качественное, отправили быстро Новой Почтой.', en: 'We bought pollen and propolis. All fresh, high quality, shipped quickly via Nova Poshta.' }, name: 'Андрій', city: 'Полтава', tag: { uk: 'Продукти', ru: 'Продукты', en: 'Products' }, rating: 5 },
+  { quote: { uk: 'Горіхи в меду дуже сподобались. Видно, що роблять не масово, а нормально для людей.', ru: 'Орехи в мёду очень понравились. Видно, что делают не массово, а нормально для людей.', en: 'We loved the nuts in honey. You can tell it’s made with care, not mass-produced.' }, name: 'Світлана', city: 'Люботин', tag: { uk: 'Продукти', ru: 'Продукты', en: 'Products' }, rating: 5 },
+  { quote: { uk: 'Замовляла букет на свято — квіти свіжі, зібрані красиво, привезли вчасно.', ru: 'Заказывала букет на праздник — цветы свежие, собраны красиво, привезли вовремя.', en: 'I ordered a bouquet for a holiday — fresh flowers, beautifully arranged, delivered on time.' }, name: 'Марія', city: 'Мерефа', tag: { uk: 'Квіти', ru: 'Цветы', en: 'Flowers' }, rating: 5 },
+  { quote: { uk: 'Лавандове поле гарне для фото й заходів. Забронювали час, усе підтвердили, без зайвої метушні.', ru: 'Лавандовое поле отличное для фото и мероприятий. Забронировали время, всё подтвердили, без лишней суеты.', en: 'The lavender field is great for photos and events. We booked a slot, everything was confirmed, no fuss.' }, name: 'Ірина', city: 'Харків', tag: { uk: 'Лаванда', ru: 'Лаванда', en: 'Lavender' }, rating: 5 },
+  { quote: { uk: 'Брали профнастил і металочерепицю на дах. Порахували під розмір, доставили по області.', ru: 'Брали профнастил и металлочерепицу на крышу. Посчитали под размер, доставили по области.', en: 'We bought corrugated sheeting and metal tiles for the roof. Cut to size, delivered across the region.' }, name: 'Сергій', city: 'Коротич', tag: { uk: 'Метал', ru: 'Металл', en: 'Metal' }, rating: 5 },
+  { quote: { uk: 'Замовляли металевий штахетник на паркан — колір підібрали, саморізи в тон. Монтувати було зручно.', ru: 'Заказывали металлический штакетник на забор — цвет подобрали, саморезы в тон. Монтировать было удобно.', en: 'We ordered a metal picket fence — matched the color, screws to tone. Easy to install.' }, name: 'Олександр', city: 'Валки', tag: { uk: 'Метал', ru: 'Металл', en: 'Metal' }, rating: 5 },
+  { quote: { uk: 'Жимолість і живі олії — справжній смак з господарства. Гарбузова олія дуже сподобалась.', ru: 'Жимолость и живые масла — настоящий вкус из хозяйства. Тыквенное масло очень понравилось.', en: 'Honeyberries and cold-pressed oils — real farm taste. The pumpkin oil was excellent.' }, name: 'Тетяна', city: 'Дергачі', tag: { uk: 'Натуральні продукти', ru: 'Натуральные продукты', en: 'Natural products' }, rating: 5 },
+  { quote: { uk: 'Замовлення зібрали швидко, тримали в курсі, відправили того ж дня. Все чесно.', ru: 'Заказ собрали быстро, держали в курсе, отправили в тот же день. Всё честно.', en: 'The order was packed quickly, kept me updated, shipped the same day. All honest.' }, name: 'Володимир', city: 'Чугуїв', tag: { uk: 'Доставка', ru: 'Доставка', en: 'Delivery' }, rating: 5 },
 ]
 
 function StarRating({ rating, ariaLabel }: { rating: number; ariaLabel: string }) {
@@ -71,8 +75,8 @@ export function Reviews({ reviews, locale = DEFAULT_LOCALE }: ReviewsProps) {
   const items = useMemo(() => {
     return (reviews && reviews.length >= 3)
       ? reviews.slice(0, 10).map((r) => ({ quote: r.quote, name: r.reviewer_name, city: r.city ?? '', tag: '', rating: r.rating }))
-      : CURATED_REVIEWS
-  }, [reviews])
+      : CURATED_REVIEWS.map((r) => ({ quote: tr(r.quote, locale), name: r.name, city: r.city, tag: tr(r.tag, locale), rating: r.rating }))
+  }, [reviews, locale])
 
   const [index, setIndex] = useState(0)
 

@@ -381,10 +381,13 @@ export function bestProductName(product: NameBearingProduct, locale?: string): s
     if (sku && s.toLowerCase() === sku) return null // name IS the SKU → code-like
     return s
   }
-  // ru: prefer the Russian supplier feed name (catalog_products.name), then the
-  // Ukrainian name. Otherwise Ukrainian first. Always falls back so a card is
-  // never blank just because the locale-preferred name is missing (RU→UA→original).
-  if (locale === 'ru') return consider(product.name) ?? consider(product.name_ua) ?? null
+  // ru + en: prefer the Russian supplier feed name (catalog_products.name), then
+  // the Ukrainian name. English has no dedicated product-name column yet, so — per
+  // the launch localization spec — EN names intentionally fall back to the RU
+  // translation, then the UK base, so an EN card is never blank and never shows a
+  // raw code. uk (and anything else): Ukrainian first. Always falls back so a card
+  // is never blank just because the locale-preferred name is missing.
+  if (locale === 'ru' || locale === 'en') return consider(product.name) ?? consider(product.name_ua) ?? null
   return consider(product.name_ua) ?? consider(product.name) ?? null
 }
 

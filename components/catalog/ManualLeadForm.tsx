@@ -41,8 +41,8 @@ export function ManualLeadForm({ productName, productSlug, leadType, category, o
   const localizedSchema = useMemo(
     () =>
       z.object({
-        name: z.string().min(2, tr({ uk: "Ім'я має містити щонайменше 2 символи", ru: 'Имя должно содержать минимум 2 символа' }, locale)),
-        phone: z.string().regex(ukrainianPhone, tr({ uk: 'Введіть номер у форматі +380XXXXXXXXX або 0XXXXXXXXX', ru: 'Введите номер в формате +380XXXXXXXXX или 0XXXXXXXXX' }, locale)),
+        name: z.string().min(2, tr({ uk: "Ім'я має містити щонайменше 2 символи", ru: 'Имя должно содержать минимум 2 символа', en: 'Name must be at least 2 characters' }, locale)),
+        phone: z.string().regex(ukrainianPhone, tr({ uk: 'Введіть номер у форматі +380XXXXXXXXX або 0XXXXXXXXX', ru: 'Введите номер в формате +380XXXXXXXXX или 0XXXXXXXXX', en: 'Enter a number in the format +380XXXXXXXXX or 0XXXXXXXXX' }, locale)),
         message: z.string().max(500).optional(),
       }),
     [locale]
@@ -90,14 +90,14 @@ export function ManualLeadForm({ productName, productSlug, leadType, category, o
             <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
           </svg>
         </div>
-        <h3 className="font-serif text-xl font-semibold text-forest-800 mb-2">{tr({ uk: 'Дякуємо за запит!', ru: 'Спасибо за запрос!' }, locale)}</h3>
-        <p className="text-forest-700">{tr({ uk: "Ми зв'яжемося з вами найближчим часом, щоб уточнити деталі.", ru: 'Мы свяжемся с вами в ближайшее время, чтобы уточнить детали.' }, locale)}</p>
+        <h3 className="font-serif text-xl font-semibold text-forest-800 mb-2">{tr({ uk: 'Дякуємо за запит!', ru: 'Спасибо за запрос!', en: 'Thank you for your request!' }, locale)}</h3>
+        <p className="text-forest-700">{tr({ uk: "Ми зв'яжемося з вами найближчим часом, щоб уточнити деталі.", ru: 'Мы свяжемся с вами в ближайшее время, чтобы уточнить детали.', en: "We'll get in touch with you shortly to confirm the details." }, locale)}</p>
         <button
           type="button"
           onClick={() => setSubmitState('idle')}
           className="mt-4 text-sm text-forest-600 underline hover:no-underline"
         >
-          {tr({ uk: 'Надіслати ще один запит', ru: 'Отправить ещё один запрос' }, locale)}
+          {tr({ uk: 'Надіслати ще один запит', ru: 'Отправить ещё один запрос', en: 'Send another request' }, locale)}
         </button>
       </div>
     )
@@ -106,13 +106,13 @@ export function ManualLeadForm({ productName, productSlug, leadType, category, o
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 bg-white border border-honey-200 rounded-xl p-5" noValidate>
       <p className="text-sm text-bark/70">
-        {tr({ uk: 'Залиште контакти — ми зателефонуємо та уточнимо ціну, наявність і деталі по товару', ru: 'Оставьте контакты — мы позвоним и уточним цену, наличие и детали по товару' }, locale)}
+        {tr({ uk: 'Залиште контакти — ми зателефонуємо та уточнимо ціну, наявність і деталі по товару', ru: 'Оставьте контакты — мы позвоним и уточним цену, наличие и детали по товару', en: 'Leave your contacts — we will call you to confirm the price, availability and product details' }, locale)}
         {' '}«{productName}».
       </p>
 
       <div>
         <label htmlFor="lead-name" className="block text-sm font-medium text-bark mb-1">
-          {tr({ uk: "Ваше ім'я", ru: 'Ваше имя' }, locale)} <span className="text-red-500">*</span>
+          {tr({ uk: "Ваше ім'я", ru: 'Ваше имя', en: 'Your name' }, locale)} <span className="text-red-500">*</span>
         </label>
         <input
           id="lead-name"
@@ -125,14 +125,14 @@ export function ManualLeadForm({ productName, productSlug, leadType, category, o
             'min-h-[48px] text-base',
             errors.name ? 'border-red-400' : 'border-honey-200'
           )}
-          placeholder={tr({ uk: "Ваше ім'я", ru: 'Ваше имя' }, locale)}
+          placeholder={tr({ uk: "Ваше ім'я", ru: 'Ваше имя', en: 'Your name' }, locale)}
         />
         {errors.name && <p className="mt-1 text-sm text-red-600">{errors.name.message}</p>}
       </div>
 
       <div>
         <label htmlFor="lead-phone" className="block text-sm font-medium text-bark mb-1">
-          {tr({ uk: 'Телефон', ru: 'Телефон' }, locale)} <span className="text-red-500">*</span>
+          {tr({ uk: 'Телефон', ru: 'Телефон', en: 'Phone' }, locale)} <span className="text-red-500">*</span>
         </label>
         <input
           id="lead-phone"
@@ -152,7 +152,7 @@ export function ManualLeadForm({ productName, productSlug, leadType, category, o
 
       <div>
         <label htmlFor="lead-message" className="block text-sm font-medium text-bark mb-1">
-          {tr({ uk: 'Коментар', ru: 'Комментарий' }, locale)}
+          {tr({ uk: 'Коментар', ru: 'Комментарий', en: 'Comment' }, locale)}
         </label>
         <textarea
           id="lead-message"
@@ -164,7 +164,7 @@ export function ManualLeadForm({ productName, productSlug, leadType, category, o
             'text-base resize-none',
             errors.message ? 'border-red-400' : 'border-honey-200'
           )}
-          placeholder={tr({ uk: 'Кількість, кольори, розміри, бажана дата…', ru: 'Количество, цвета, размеры, желаемая дата…' }, locale)}
+          placeholder={tr({ uk: 'Кількість, кольори, розміри, бажана дата…', ru: 'Количество, цвета, размеры, желаемая дата…', en: 'Quantity, colors, sizes, preferred date…' }, locale)}
         />
         {errors.message && <p className="mt-1 text-sm text-red-600">{errors.message.message}</p>}
       </div>
@@ -176,7 +176,9 @@ export function ManualLeadForm({ productName, productSlug, leadType, category, o
       )}
 
       <CTAButton type="submit" disabled={submitState === 'loading'} fullWidth size="lg">
-        {submitState === 'loading' ? 'Надсилаємо...' : 'Уточнити ціну'}
+        {submitState === 'loading'
+          ? tr({ uk: 'Надсилаємо...', ru: 'Отправляем...', en: 'Sending...' }, locale)
+          : tr({ uk: 'Уточнити ціну', ru: 'Уточнить цену', en: 'Price on request' }, locale)}
       </CTAButton>
     </form>
   )

@@ -11,6 +11,7 @@ import { LanguageSwitcher } from '@/components/shared/LanguageSwitcher'
 import { LAUNCH_PHONE, LAUNCH_PHONE_SECONDARY, LAUNCH_LOGO_PATH } from '@/lib/launch-defaults'
 import { DEFAULT_LOCALE, isLocale, localizedPath } from '@/lib/i18n'
 import type { SiteSettings } from '@/types'
+import { tr } from '@/lib/i18n/pages'
 
 interface HeaderProps {
   siteSettings: SiteSettings | null
@@ -36,7 +37,7 @@ export function Header({ siteSettings, locale }: HeaderProps) {
           <Link
             href={homeHref}
             className="flex-shrink-0 flex items-center gap-2.5 hover:opacity-80 transition-opacity"
-            aria-label="Дача TV — на головну"
+            aria-label={tr({ uk: 'Дача TV — на головну', ru: 'Дача TV — на главную', en: 'Dacha TV — home' }, loc)}
           >
             {hasLogo ? (
               <Image

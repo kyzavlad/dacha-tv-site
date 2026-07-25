@@ -13,16 +13,16 @@ export const DEFAULT_LOCALE: Locale = 'uk'
 export const PREFIXED_LOCALES = ['ru', 'en'] as const
 
 // ── Launch gate: which locales are PUBLICLY exposed right now ─────────────────
-// EN is temporarily disabled for launch (its dictionaries stay in code for a
-// future phase — see LOCALE_LABELS/HREFLANG below, which still list all three).
 // PUBLIC_LOCALES is the single source of truth for what the public sees:
 //   • the LanguageSwitcher only offers these,
 //   • hreflang/alternate links only advertise these (lib/seo buildAlternates),
-//   • proxy.ts permanently redirects any disabled-locale prefix (/en, /en/*) to
-//     the canonical UA path.
-// To re-enable EN later, add 'en' back here (and to proxy.ts's rewrite set) —
-// no dictionary or page code has to change.
-export const PUBLIC_LOCALES = ['uk', 'ru'] as const
+//   • proxy.ts rewrites these prefixes (and redirects any DISABLED-locale prefix
+//     to the canonical UA path).
+// All three locales (uk, ru, en) are now publicly enabled: English is served as
+// real 200 pages under /en. To temporarily hide a locale again, remove it here —
+// proxy.ts then redirects its prefix and no hreflang/switcher advertises it, with
+// no page or dictionary change required.
+export const PUBLIC_LOCALES = ['uk', 'ru', 'en'] as const
 export type PublicLocale = (typeof PUBLIC_LOCALES)[number]
 
 export function isPublicLocale(x: unknown): x is PublicLocale {

@@ -8,11 +8,11 @@ export function CartButton() {
   const { totalItems, openCart } = useCart()
   const locale = useLocale()
 
-  const cartLabel = tr({ uk: 'Кошик', ru: 'Корзина' }, locale)
+  const cartLabel = tr({ uk: 'Кошик', ru: 'Корзина', en: 'Cart' }, locale)
   const itemsNoun =
     totalItems === 1
-      ? tr({ uk: 'товар', ru: 'товар' }, locale)
-      : tr({ uk: 'товарів', ru: 'товаров' }, locale)
+      ? tr({ uk: 'товар', ru: 'товар', en: 'item' }, locale)
+      : tr({ uk: 'товарів', ru: 'товаров', en: 'items' }, locale)
 
   return (
     <button

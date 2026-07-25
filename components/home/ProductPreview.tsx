@@ -20,14 +20,14 @@ export async function ProductPreview({ products }: ProductPreviewProps) {
         <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-12">
           <div>
             <span className="text-xs font-semibold text-honey-700 uppercase tracking-widest mb-3 block">
-              {tr({ uk: 'Мед і продукти пасіки', ru: 'Мёд и продукты пасеки' }, locale)}
+              {tr({ uk: 'Мед і продукти пасіки', ru: 'Мёд и продукты пасеки', en: 'Honey & apiary products' }, locale)}
             </span>
             <h2 id="products-heading" className="font-serif text-3xl md:text-4xl font-bold text-bark">
-              {tr({ uk: 'Наш мед', ru: 'Наш мёд' }, locale)}
+              {tr({ uk: 'Наш мед', ru: 'Наш мёд', en: 'Our honey' }, locale)}
             </h2>
           </div>
           <p className="text-gray-500 max-w-sm text-sm leading-relaxed">
-            {tr({ uk: 'Сезонний мед без домішок. Кожен сорт — у свій час, з конкретних угідь.', ru: 'Сезонный мёд без примесей. Каждый сорт — в своё время, с конкретных угодий.' }, locale)}
+            {tr({ uk: 'Сезонний мед без домішок. Кожен сорт — у свій час, з конкретних угідь.', ru: 'Сезонный мёд без примесей. Каждый сорт — в своё время, с конкретных угодий.', en: 'Seasonal honey with no additives. Each variety in its own time, from specific grounds.' }, locale)}
           </p>
         </div>
 
@@ -39,7 +39,7 @@ export async function ProductPreview({ products }: ProductPreviewProps) {
 
         <div className="text-center">
           <CTAButton href={localizedPath(locale, '/honey')} variant="outline" size="md">
-            {tr({ uk: 'Переглянути всі сорти', ru: 'Посмотреть все сорта' }, locale)}
+            {tr({ uk: 'Переглянути всі сорти', ru: 'Посмотреть все сорта', en: 'View all varieties' }, locale)}
           </CTAButton>
         </div>
       </div>

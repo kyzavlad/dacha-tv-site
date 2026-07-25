@@ -55,11 +55,11 @@ export function BeekeeperInquiryForm({ preselectedProductType, source }: Beekeep
   const localizedSchema = useMemo(
     () =>
       z.object({
-        name: z.string().min(2, tr({ uk: "Ім'я має містити щонайменше 2 символи", ru: 'Имя должно содержать минимум 2 символа' }, locale)),
+        name: z.string().min(2, tr({ uk: "Ім'я має містити щонайменше 2 символи", ru: 'Имя должно содержать минимум 2 символа', en: 'Name must contain at least 2 characters' }, locale)),
         phone: z
           .string()
-          .regex(ukrainianPhone, tr({ uk: 'Введіть номер у форматі +380XXXXXXXXX або 0XXXXXXXXX', ru: 'Введите номер в формате +380XXXXXXXXX или 0XXXXXXXXX' }, locale)),
-        productType: z.string().min(1, tr({ uk: 'Оберіть тип продукту', ru: 'Выберите тип продукта' }, locale)),
+          .regex(ukrainianPhone, tr({ uk: 'Введіть номер у форматі +380XXXXXXXXX або 0XXXXXXXXX', ru: 'Введите номер в формате +380XXXXXXXXX или 0XXXXXXXXX', en: 'Enter a number in the format +380XXXXXXXXX or 0XXXXXXXXX' }, locale)),
+        productType: z.string().min(1, tr({ uk: 'Оберіть тип продукту', ru: 'Выберите тип продукта', en: 'Choose a product type' }, locale)),
         breed: z.string().optional(),
         quantity: z.string().optional(),
         timing: z.string().optional(),
@@ -117,17 +117,17 @@ export function BeekeeperInquiryForm({ preselectedProductType, source }: Beekeep
           </svg>
         </div>
         <h3 className="font-serif text-xl font-semibold text-forest-800 mb-2">
-          {tr({ uk: 'Заявку прийнято!', ru: 'Заявка принята!' }, locale)}
+          {tr({ uk: 'Заявку прийнято!', ru: 'Заявка принята!', en: 'Request accepted!' }, locale)}
         </h3>
         <p className="text-forest-700">
-          {tr({ uk: "Ми зв'яжемося з вами найближчим часом.", ru: 'Мы свяжемся с вами в ближайшее время.' }, locale)}
+          {tr({ uk: "Ми зв'яжемося з вами найближчим часом.", ru: 'Мы свяжемся с вами в ближайшее время.', en: 'We’ll get in touch with you shortly.' }, locale)}
         </p>
         <button
           type="button"
           onClick={() => setSubmitState('idle')}
           className="mt-4 text-sm text-forest-600 underline hover:no-underline"
         >
-          {tr({ uk: 'Надіслати ще одну заявку', ru: 'Отправить ещё одну заявку' }, locale)}
+          {tr({ uk: 'Надіслати ще одну заявку', ru: 'Отправить ещё одну заявку', en: 'Send another request' }, locale)}
         </button>
       </div>
     )
@@ -143,7 +143,7 @@ export function BeekeeperInquiryForm({ preselectedProductType, source }: Beekeep
       {/* Name */}
       <div>
         <label htmlFor="bee-name" className="block text-sm font-medium text-bark mb-1">
-          {tr({ uk: "Ваше ім'я", ru: 'Ваше имя' }, locale)} <span className="text-red-500">*</span>
+          {tr({ uk: "Ваше ім'я", ru: 'Ваше имя', en: 'Your name' }, locale)} <span className="text-red-500">*</span>
         </label>
         <input
           id="bee-name"
@@ -156,7 +156,7 @@ export function BeekeeperInquiryForm({ preselectedProductType, source }: Beekeep
             'min-h-[48px] text-base',
             errors.name ? 'border-red-400' : 'border-forest-200'
           )}
-          placeholder={tr({ uk: "Ваше ім'я", ru: 'Ваше имя' }, locale)}
+          placeholder={tr({ uk: "Ваше ім'я", ru: 'Ваше имя', en: 'Your name' }, locale)}
         />
         {errors.name && <p className="mt-1 text-sm text-red-600">{errors.name.message}</p>}
       </div>
@@ -164,7 +164,7 @@ export function BeekeeperInquiryForm({ preselectedProductType, source }: Beekeep
       {/* Phone */}
       <div>
         <label htmlFor="bee-phone" className="block text-sm font-medium text-bark mb-1">
-          {tr({ uk: 'Телефон', ru: 'Телефон' }, locale)} <span className="text-red-500">*</span>
+          {tr({ uk: 'Телефон', ru: 'Телефон', en: 'Phone' }, locale)} <span className="text-red-500">*</span>
         </label>
         <input
           id="bee-phone"
@@ -186,7 +186,7 @@ export function BeekeeperInquiryForm({ preselectedProductType, source }: Beekeep
       {!preselectedProductType && (
         <div>
           <label htmlFor="bee-product-type" className="block text-sm font-medium text-bark mb-1">
-            {tr({ uk: 'Що вас цікавить', ru: 'Что вас интересует' }, locale)} <span className="text-red-500">*</span>
+            {tr({ uk: 'Що вас цікавить', ru: 'Что вас интересует', en: 'What are you interested in' }, locale)} <span className="text-red-500">*</span>
           </label>
           <select
             id="bee-product-type"
@@ -198,7 +198,7 @@ export function BeekeeperInquiryForm({ preselectedProductType, source }: Beekeep
               errors.productType ? 'border-red-400' : 'border-forest-200'
             )}
           >
-            <option value="">{tr({ uk: 'Оберіть', ru: 'Выберите' }, locale)}</option>
+            <option value="">{tr({ uk: 'Оберіть', ru: 'Выберите', en: 'Choose' }, locale)}</option>
             {PRODUCT_TYPES.map((t) => (
               <option key={t.value} value={t.value}>{t.label}</option>
             ))}
@@ -217,17 +217,17 @@ export function BeekeeperInquiryForm({ preselectedProductType, source }: Beekeep
       {(showBreed || preselectedProductType === 'bee_packages') && (
         <div>
           <label htmlFor="bee-breed" className="block text-sm font-medium text-bark mb-1">
-            {tr({ uk: 'Порода бджіл', ru: 'Порода пчёл' }, locale)}
+            {tr({ uk: 'Порода бджіл', ru: 'Порода пчёл', en: 'Bee breed' }, locale)}
           </label>
           <select
             id="bee-breed"
             {...register('breed')}
             className="w-full px-4 py-3 rounded-lg border border-forest-200 bg-white text-bark focus:outline-none focus:ring-2 focus:ring-forest-500 focus:border-transparent min-h-[48px] text-base"
           >
-            <option value="">{tr({ uk: 'Будь-яка', ru: 'Любая' }, locale)}</option>
+            <option value="">{tr({ uk: 'Будь-яка', ru: 'Любая', en: 'Any' }, locale)}</option>
             {BREEDS.map((b) => (
               <option key={b} value={b}>
-                {b === 'Не визначився' ? tr({ uk: 'Не визначився', ru: 'Не определился' }, locale) : b}
+                {b === 'Не визначився' ? tr({ uk: 'Не визначився', ru: 'Не определился', en: 'Not sure yet' }, locale) : b}
               </option>
             ))}
           </select>
@@ -237,35 +237,35 @@ export function BeekeeperInquiryForm({ preselectedProductType, source }: Beekeep
       {/* Quantity */}
       <div>
         <label htmlFor="bee-quantity" className="block text-sm font-medium text-bark mb-1">
-          {tr({ uk: 'Орієнтовна кількість', ru: 'Ориентировочное количество' }, locale)}
+          {tr({ uk: 'Орієнтовна кількість', ru: 'Ориентировочное количество', en: 'Approximate quantity' }, locale)}
         </label>
         <input
           id="bee-quantity"
           type="text"
           {...register('quantity')}
           className="w-full px-4 py-3 rounded-lg border border-forest-200 bg-white text-bark placeholder-bark/40 focus:outline-none focus:ring-2 focus:ring-forest-500 focus:border-transparent min-h-[48px] text-base"
-          placeholder={tr({ uk: 'Наприклад: 2–3 пакети', ru: 'Например: 2–3 пакета' }, locale)}
+          placeholder={tr({ uk: 'Наприклад: 2–3 пакети', ru: 'Например: 2–3 пакета', en: 'E.g. 2–3 packages' }, locale)}
         />
       </div>
 
       {/* Timing */}
       <div>
         <label htmlFor="bee-timing" className="block text-sm font-medium text-bark mb-1">
-          {tr({ uk: 'Коли потрібно', ru: 'Когда нужно' }, locale)}
+          {tr({ uk: 'Коли потрібно', ru: 'Когда нужно', en: 'When needed' }, locale)}
         </label>
         <input
           id="bee-timing"
           type="text"
           {...register('timing')}
           className="w-full px-4 py-3 rounded-lg border border-forest-200 bg-white text-bark placeholder-bark/40 focus:outline-none focus:ring-2 focus:ring-forest-500 focus:border-transparent min-h-[48px] text-base"
-          placeholder={tr({ uk: 'Наприклад: навесні, у квітні', ru: 'Например: весной, в апреле' }, locale)}
+          placeholder={tr({ uk: 'Наприклад: навесні, у квітні', ru: 'Например: весной, в апреле', en: 'E.g. in spring, in April' }, locale)}
         />
       </div>
 
       {/* Message */}
       <div>
         <label htmlFor="bee-message" className="block text-sm font-medium text-bark mb-1">
-          {tr({ uk: 'Повідомлення', ru: 'Сообщение' }, locale)}
+          {tr({ uk: 'Повідомлення', ru: 'Сообщение', en: 'Message' }, locale)}
         </label>
         <textarea
           id="bee-message"
@@ -277,7 +277,7 @@ export function BeekeeperInquiryForm({ preselectedProductType, source }: Beekeep
             'text-base resize-none',
             errors.message ? 'border-red-400' : 'border-forest-200'
           )}
-          placeholder={tr({ uk: 'Додаткові запитання...', ru: 'Дополнительные вопросы...' }, locale)}
+          placeholder={tr({ uk: 'Додаткові запитання...', ru: 'Дополнительные вопросы...', en: 'Additional questions...' }, locale)}
         />
         {errors.message && <p className="mt-1 text-sm text-red-600">{errors.message.message}</p>}
       </div>
@@ -296,12 +296,12 @@ export function BeekeeperInquiryForm({ preselectedProductType, source }: Beekeep
         size="lg"
       >
         {submitState === 'loading'
-          ? tr({ uk: 'Надсилаємо...', ru: 'Отправляем...' }, locale)
-          : tr({ uk: 'Залишити заявку', ru: 'Оставить заявку' }, locale)}
+          ? tr({ uk: 'Надсилаємо...', ru: 'Отправляем...', en: 'Sending...' }, locale)
+          : tr({ uk: 'Залишити заявку', ru: 'Оставить заявку', en: 'Submit request' }, locale)}
       </CTAButton>
 
       <p className="text-xs text-bark/50 text-center">
-        {tr({ uk: "Ми зв'яжемося з вами найближчим часом", ru: 'Мы свяжемся с вами в ближайшее время' }, locale)}
+        {tr({ uk: "Ми зв'яжемося з вами найближчим часом", ru: 'Мы свяжемся с вами в ближайшее время', en: 'We’ll get in touch with you shortly' }, locale)}
       </p>
     </form>
   )

@@ -3,6 +3,7 @@ import Image from 'next/image'
 import type { ApiaryProduct } from '@/types'
 import { AddToCartButton } from '@/components/cart/AddToCartButton'
 import { DEFAULT_LOCALE, isLocale, localizedPath } from '@/lib/i18n'
+import { tr } from '@/lib/i18n/pages'
 
 const BLUR_DATA_URL =
   'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjQwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmJiZjI0Ii8+PC9zdmc+'
@@ -53,7 +54,7 @@ export function ProductCard({ product, locale }: ProductCardProps) {
         {product.status !== 'available' && product.status !== 'preorder' && (
           <div className="absolute inset-0 bg-white/70 flex items-center justify-center">
             <span className="bg-gray-800 text-white text-sm font-semibold px-3 py-1.5 rounded-full">
-              Немає в наявності
+              {tr({ uk: 'Немає в наявності', ru: 'Нет в наличии', en: 'Out of stock' }, loc)}
             </span>
           </div>
         )}
@@ -86,7 +87,7 @@ export function ProductCard({ product, locale }: ProductCardProps) {
         <div className="mt-auto">
           {product.price_uah ? (
             <p className="text-lg font-bold text-bark mb-3">
-              від {product.price_uah.toLocaleString('uk-UA')} грн
+              {tr({ uk: 'від', ru: 'от', en: 'from' }, loc)} {product.price_uah.toLocaleString('uk-UA')} грн
             </p>
           ) : null}
 
@@ -106,7 +107,7 @@ export function ProductCard({ product, locale }: ProductCardProps) {
             href={href}
             className="block text-center text-xs font-medium mt-2 text-bark/50 hover:text-bark transition-colors"
           >
-            Детальніше →
+            {tr({ uk: 'Детальніше →', ru: 'Подробнее →', en: 'Details →' }, loc)}
           </Link>
         </div>
       </div>

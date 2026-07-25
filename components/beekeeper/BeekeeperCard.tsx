@@ -48,7 +48,7 @@ export async function BeekeeperCard({ product }: BeekeeperCardProps) {
         {product.is_featured && (
           <div className="absolute top-3 left-3">
             <span className="bg-honey-600 text-white text-xs font-semibold px-2.5 py-1 rounded-full">
-              {tr({ uk: 'Популярне', ru: 'Популярный' }, locale)}
+              {tr({ uk: 'Популярне', ru: 'Популярный', en: 'Popular' }, locale)}
             </span>
           </div>
         )}
@@ -56,8 +56,8 @@ export async function BeekeeperCard({ product }: BeekeeperCardProps) {
           <div className="absolute top-3 right-3">
             <span className="bg-gray-800/80 text-white text-xs font-medium px-2.5 py-1 rounded-full">
               {product.status === 'preorder'
-                ? tr({ uk: 'Передзамовлення', ru: 'Предзаказ' }, locale)
-                : tr({ uk: 'Немає', ru: 'Нет' }, locale)}
+                ? tr({ uk: 'Передзамовлення', ru: 'Предзаказ', en: 'Pre-order' }, locale)
+                : tr({ uk: 'Немає', ru: 'Нет', en: 'Unavailable' }, locale)}
             </span>
           </div>
         )}
@@ -108,7 +108,7 @@ export async function BeekeeperCard({ product }: BeekeeperCardProps) {
           href={localizedPath(locale, `/beekeeper/${product.slug}`)}
           className="mt-4 inline-flex items-center justify-center w-full px-4 py-2.5 bg-forest-700 text-white font-semibold text-sm rounded-lg hover:bg-forest-800 transition-colors min-h-[44px]"
         >
-          {tr({ uk: 'Детальніше', ru: 'Подробнее' }, locale)}
+          {tr({ uk: 'Детальніше', ru: 'Подробнее', en: 'Details' }, locale)}
         </Link>
       </div>
     </article>

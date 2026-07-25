@@ -50,13 +50,13 @@ export function ProductsCatalog({ honey, apiary, natural, locale }: Props) {
   const totalVisible = honey.length + apiary.length + natural.length
 
   const allTabs: { id: Tab; label: string; count: number }[] = [
-    { id: 'all', label: tr({ uk: 'Усі', ru: 'Все' }, loc), count: totalVisible },
-    { id: 'honey', label: tr({ uk: 'Мед', ru: 'Мёд' }, loc), count: honey.length },
-    { id: 'oils', label: tr({ uk: 'Олії', ru: 'Масла' }, loc), count: oils.length },
-    { id: 'gifts', label: tr({ uk: 'Подарункові набори', ru: 'Подарочные наборы' }, loc), count: giftSets.length },
-    { id: 'apiary', label: tr({ uk: 'Продукти пасіки', ru: 'Продукты пасеки' }, loc), count: apiary.length },
-    { id: 'natural', label: tr({ uk: 'Натуральні продукти', ru: 'Натуральные продукты' }, loc), count: naturalOnly.length },
-    { id: 'saplings', label: tr({ uk: 'Саджанці', ru: 'Саженцы' }, loc), count: saplings.length },
+    { id: 'all', label: tr({ uk: 'Усі', ru: 'Все', en: 'All' }, loc), count: totalVisible },
+    { id: 'honey', label: tr({ uk: 'Мед', ru: 'Мёд', en: 'Honey' }, loc), count: honey.length },
+    { id: 'oils', label: tr({ uk: 'Олії', ru: 'Масла', en: 'Oils' }, loc), count: oils.length },
+    { id: 'gifts', label: tr({ uk: 'Подарункові набори', ru: 'Подарочные наборы', en: 'Gift sets' }, loc), count: giftSets.length },
+    { id: 'apiary', label: tr({ uk: 'Продукти пасіки', ru: 'Продукты пасеки', en: 'Apiary products' }, loc), count: apiary.length },
+    { id: 'natural', label: tr({ uk: 'Натуральні продукти', ru: 'Натуральные продукты', en: 'Natural products' }, loc), count: naturalOnly.length },
+    { id: 'saplings', label: tr({ uk: 'Саджанці', ru: 'Саженцы', en: 'Saplings' }, loc), count: saplings.length },
   ]
   const tabs = allTabs.filter((t) => t.id === 'all' || t.count > 0)
 
@@ -76,14 +76,16 @@ export function ProductsCatalog({ honey, apiary, natural, locale }: Props) {
     <div>
       {/* Available-now count */}
       <p className="text-sm text-bark/60 mb-4">
-        {tr({ uk: 'Доступно зараз:', ru: 'Доступно сейчас:' }, loc)} <span className="font-semibold text-bark">{totalVisible}</span>{' '}
+        {tr({ uk: 'Доступно зараз:', ru: 'Доступно сейчас:', en: 'Available now:' }, loc)} <span className="font-semibold text-bark">{totalVisible}</span>{' '}
         {loc === 'ru'
           ? (totalVisible === 1 ? 'товар' : totalVisible >= 2 && totalVisible <= 4 ? 'товара' : 'товаров')
+          : loc === 'en'
+          ? (totalVisible === 1 ? 'product' : 'products')
           : (totalVisible === 1 ? 'товар' : totalVisible >= 2 && totalVisible <= 4 ? 'товари' : 'товарів')}
       </p>
 
       {/* Tabs */}
-      <div className="flex flex-wrap gap-2 mb-8" role="tablist" aria-label={tr({ uk: 'Категорії продуктів', ru: 'Категории продуктов' }, loc)}>
+      <div className="flex flex-wrap gap-2 mb-8" role="tablist" aria-label={tr({ uk: 'Категорії продуктів', ru: 'Категории продуктов', en: 'Product categories' }, loc)}>
         {tabs.map((t) => (
           <button
             key={t.id}
@@ -104,7 +106,7 @@ export function ProductsCatalog({ honey, apiary, natural, locale }: Props) {
       </div>
 
       {empty ? (
-        <p className="text-gray-500 py-12 text-center">{tr({ uk: 'У цій категорії поки немає товарів.', ru: 'В этой категории пока нет товаров.' }, loc)}</p>
+        <p className="text-gray-500 py-12 text-center">{tr({ uk: 'У цій категорії поки немає товарів.', ru: 'В этой категории пока нет товаров.', en: 'No products in this category yet.' }, loc)}</p>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
           {showHoney && honey.map((p) => <HoneyCard key={`h-${p.id}`} product={p} locale={locale} />)}

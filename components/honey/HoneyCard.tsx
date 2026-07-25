@@ -4,6 +4,7 @@ import type { HoneyProduct } from '@/types'
 import { honeyUnitPriceUah } from '@/lib/honey-pricing'
 import { AddToCartButton } from '@/components/cart/AddToCartButton'
 import { DEFAULT_LOCALE, isLocale, localizedPath } from '@/lib/i18n'
+import { tr } from '@/lib/i18n/pages'
 
 interface HoneyCardProps {
   product: HoneyProduct
@@ -16,7 +17,7 @@ const BLUR_DATA_URL =
 
 // Neutral brand placeholder label — never a specific honey variety (e.g.
 // "Акація"), so custom honey products don't inherit a fixed variety visual.
-const HONEY_PLACEHOLDER_LABEL = 'Мед Дача TV'
+const HONEY_PLACEHOLDER_LABEL = { uk: 'Мед Дача TV', ru: 'Мёд Дача TV', en: 'Honey Dacha TV' }
 
 function resolveImage(product: HoneyProduct): { src: string; alt: string } | null {
   const media = product.media ?? []
@@ -31,7 +32,7 @@ export function HoneyCard({ product, locale }: HoneyCardProps) {
   const href = localizedPath(loc, `/honey/${product.slug}`)
   // Description no longer derives from `variety` — use the product's own copy,
   // else a neutral brand line.
-  const shortDesc = product.short_description || 'Натуральний мед від пасіки Дача TV'
+  const shortDesc = product.short_description || tr({ uk: 'Натуральний мед від пасіки Дача TV', ru: 'Натуральный мёд с пасеки Дача TV', en: 'Natural honey from the Dacha TV apiary' }, loc)
   const img = resolveImage(product)
 
   const price = honeyUnitPriceUah(product)
@@ -57,7 +58,7 @@ export function HoneyCard({ product, locale }: HoneyCardProps) {
         ) : (
           <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-honey-50 to-honey-200">
             <span className="text-honey-600 font-serif font-bold text-2xl text-center px-4">
-              {HONEY_PLACEHOLDER_LABEL}
+              {tr(HONEY_PLACEHOLDER_LABEL, loc)}
             </span>
           </div>
         )}
@@ -65,7 +66,7 @@ export function HoneyCard({ product, locale }: HoneyCardProps) {
         {product.is_featured && (
           <div className="absolute top-3 left-3">
             <span className="bg-honey-700 text-white text-xs font-semibold px-3 py-1.5 rounded-full shadow-sm">
-              Популярний
+              {tr({ uk: 'Популярний', ru: 'Популярный', en: 'Popular' }, loc)}
             </span>
           </div>
         )}
@@ -73,7 +74,7 @@ export function HoneyCard({ product, locale }: HoneyCardProps) {
         {product.status !== 'available' && product.status !== 'preorder' && (
           <div className="absolute inset-0 bg-white/75 backdrop-blur-[1px] flex items-center justify-center">
             <span className="bg-bark text-white text-sm font-semibold px-4 py-2 rounded-full">
-              Немає в наявності
+              {tr({ uk: 'Немає в наявності', ru: 'Нет в наличии', en: 'Out of stock' }, loc)}
             </span>
           </div>
         )}
@@ -130,18 +131,18 @@ export function HoneyCard({ product, locale }: HoneyCardProps) {
             <Link
               href={href}
               className="block text-center text-sm font-medium text-bark/50 hover:text-bark transition-colors"
-              aria-label={`Детальніше про ${product.name}`}
+              aria-label={tr({ uk: `Детальніше про ${product.name}`, ru: `Подробнее о ${product.name}`, en: `Details about ${product.name}` }, loc)}
             >
-              Детальніше →
+              {tr({ uk: 'Детальніше →', ru: 'Подробнее →', en: 'Details →' }, loc)}
             </Link>
           </div>
         ) : (
           <Link
             href={href}
             className="inline-flex items-center justify-center gap-1.5 w-full px-4 py-3 bg-bark text-white font-semibold text-sm rounded-full transition-colors hover:bg-bark-light min-h-[44px] group-hover:bg-honey-700"
-            aria-label={`Детальніше про ${product.name}`}
+            aria-label={tr({ uk: `Детальніше про ${product.name}`, ru: `Подробнее о ${product.name}`, en: `Details about ${product.name}` }, loc)}
           >
-            Детальніше
+            {tr({ uk: 'Детальніше', ru: 'Подробнее', en: 'Details' }, loc)}
             <svg className="w-4 h-4 transition-transform group-hover:translate-x-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
               <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
             </svg>

@@ -55,15 +55,13 @@ test('/ru/flowers rewrites internally to /flowers', async () => {
   }
 })
 
-test('/en/* is launch-disabled: it 307-redirects to canonical UA, never rewrites', async () => {
+test('/en/* is restored: it rewrites to the canonical path with the internal origin, never redirects', async () => {
   const previous = process.env.INTERNAL_APP_ORIGIN
   process.env.INTERNAL_APP_ORIGIN = 'http://127.0.0.1:3030'
   try {
     const res = await proxy(req('https://dachatv.com/en/flowers', { headers: { 'x-forwarded-proto': 'https', host: 'dachatv.com' } }))
-    assert.equal(res.status, 307, 'EN is temporarily redirected (paused for launch)')
-    assert.equal(rewriteTarget(res), null, 'EN must NOT rewrite')
-    // Browser-facing redirect uses the public origin, never INTERNAL_APP_ORIGIN.
-    assert.equal(res.headers.get('location'), 'https://dachatv.com/flowers')
+    assert.equal(res.headers.get('location'), null, 'EN must NOT redirect anymore')
+    assert.equal(rewriteTarget(res), 'http://127.0.0.1:3030/flowers', 'EN rewrites to the canonical internal path')
   } finally {
     if (previous === undefined) delete process.env.INTERNAL_APP_ORIGIN
     else process.env.INTERNAL_APP_ORIGIN = previous
@@ -82,16 +80,16 @@ test('query strings survive the locale rewrite', async () => {
   }
 })
 
-test('x-dacha-locale is set for the active ru locale (en is redirected, so it never sets one)', async () => {
+test('x-dacha-locale is set for both active ru and en locales', async () => {
   const previous = process.env.INTERNAL_APP_ORIGIN
   process.env.INTERNAL_APP_ORIGIN = 'http://127.0.0.1:3030'
   try {
     const ru = await proxy(req('https://dachatv.com/ru/services', { headers: { 'x-forwarded-proto': 'https', host: 'dachatv.com' } }))
     assert.equal(overriddenLocale(ru), 'ru')
-    // EN is launch-disabled: it 307-redirects and never sets a locale header.
+    // EN is restored: it rewrites and sets its own locale header.
     const en = await proxy(req('https://dachatv.com/en/services', { headers: { 'x-forwarded-proto': 'https', host: 'dachatv.com' } }))
-    assert.equal(en.status, 307)
-    assert.equal(overriddenLocale(en), null)
+    assert.equal(en.headers.get('location'), null)
+    assert.equal(overriddenLocale(en), 'en')
   } finally {
     if (previous === undefined) delete process.env.INTERNAL_APP_ORIGIN
     else process.env.INTERNAL_APP_ORIGIN = previous

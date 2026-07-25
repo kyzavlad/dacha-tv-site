@@ -22,8 +22,8 @@ export function AddToCartButton({ item, quantity = 1, label, className, compact,
   const locale = useLocale()
   const [added, setAdded] = useState(false)
 
-  const resolvedLabel = label ?? tr({ uk: 'До кошика', ru: 'В корзину' }, locale)
-  const resolvedOutOfStock = outOfStockLabel ?? tr({ uk: 'Немає в наявності', ru: 'Нет в наличии' }, locale)
+  const resolvedLabel = label ?? tr({ uk: 'До кошика', ru: 'В корзину', en: 'Add to cart' }, locale)
+  const resolvedOutOfStock = outOfStockLabel ?? tr({ uk: 'Немає в наявності', ru: 'Нет в наличии', en: 'Out of stock' }, locale)
 
   function handleClick() {
     if (outOfStock) return
@@ -61,7 +61,7 @@ export function AddToCartButton({ item, quantity = 1, label, className, compact,
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5} aria-hidden="true">
             <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
           </svg>
-          {tr({ uk: 'Додано', ru: 'Добавлено' }, locale)}
+          {tr({ uk: 'Додано', ru: 'Добавлено', en: 'Added' }, locale)}
         </>
       ) : (
         <>

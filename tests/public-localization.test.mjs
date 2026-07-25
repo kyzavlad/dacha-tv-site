@@ -58,11 +58,11 @@ test('empty-cart + core actions are localized', () => {
   }
 })
 
-// ── EN dictionaries are preserved in code but never publicly exposed ──────────
+// ── EN is publicly restored (uk + ru + en all served) ────────────────────────
 
-test('EN stays a supported Locale in code (dictionaries preserved for a future phase)', () => {
+test('EN is a supported AND public Locale (English restored)', () => {
   assert.ok(LOCALES.includes('en'), 'en must remain in LOCALES')
-  assert.ok(!PUBLIC_LOCALES.includes('en'), 'en must NOT be public')
+  assert.ok(PUBLIC_LOCALES.includes('en'), 'en must be public again')
 })
 
 test('tr() falls back to Ukrainian for a value that has no ru (never blank)', () => {
@@ -73,11 +73,13 @@ test('tr() falls back to Ukrainian for a value that has no ru (never blank)', ()
   assert.equal(tr({ uk: 'Тест', ru: 'Тест-ру' }, 'uk'), 'Тест')
 })
 
-// ── Sitemap excludes EN (and only emits canonical UA paths) ───────────────────
+// ── Sitemap emits per-locale alternates for all enabled locales ───────────────
 
-test('sitemap source never constructs /en URLs', () => {
+test('sitemap source builds per-locale alternates over PUBLIC_LOCALES', () => {
   const src = readFileSync(new URL('../app/sitemap.ts', import.meta.url), 'utf8')
-  // No literal /en path and no en-locale prefixing in the sitemap generator.
-  assert.doesNotMatch(src, /['"`]\/en(\/|['"`])/, 'sitemap must not emit /en URLs')
-  assert.doesNotMatch(src, /localizedPath\(\s*['"]en['"]/, 'sitemap must not localize to en')
+  // The sitemap now emits alternates.languages for every URL, prefixing each
+  // enabled locale via localizedPath (so uk/ru/en are all represented).
+  assert.match(src, /alternates/, 'sitemap must emit alternates')
+  assert.match(src, /PUBLIC_LOCALES/, 'sitemap iterates the enabled public locales')
+  assert.match(src, /localizedPath\(loc,/, 'sitemap localizes each URL per locale')
 })

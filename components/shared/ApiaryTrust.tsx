@@ -8,32 +8,35 @@ const PASSPORT_IMAGE = '/images/dacha-tv/documents/apiary-passport.jpg'
 
 const TRUST_POINTS: { title: Tr; body: Tr }[] = [
   {
-    title: { uk: 'Пасіка зареєстрована', ru: 'Пасека зарегистрирована' },
+    title: { uk: 'Пасіка зареєстрована', ru: 'Пасека зарегистрирована', en: 'The apiary is registered' },
     body: {
       uk: 'Офіційна реєстрація пасіки відповідно до законодавства України.',
       ru: 'Официальная регистрация пасеки в соответствии с законодательством Украины.',
+      en: 'Official registration of the apiary in accordance with the laws of Ukraine.',
     },
   },
   {
-    title: { uk: 'Є ветеринарно-санітарний паспорт пасіки', ru: 'Есть ветеринарно-санитарный паспорт пасеки' },
+    title: { uk: 'Є ветеринарно-санітарний паспорт пасіки', ru: 'Есть ветеринарно-санитарный паспорт пасеки', en: 'The apiary has a veterinary-sanitary passport' },
     body: {
       uk: 'Документ державного зразка, що підтверджує санітарний стан та відповідність норм.',
       ru: 'Документ государственного образца, подтверждающий санитарное состояние и соответствие нормам.',
+      en: 'An official state-issued document confirming sanitary condition and compliance with standards.',
     },
   },
   {
-    title: { uk: 'Працюємо відкрито та прозоро', ru: 'Работаем открыто и прозрачно' },
+    title: { uk: 'Працюємо відкрито та прозоро', ru: 'Работаем открыто и прозрачно', en: 'We work openly and transparently' },
     body: {
       uk: 'Вся робота задокументована. Документи надаємо на вимогу.',
       ru: 'Вся работа задокументирована. Документы предоставляем по запросу.',
+      en: 'All our work is documented. We provide the documents on request.',
     },
   },
 ]
 
 const TRUST_TAGS: Tr[] = [
-  { uk: 'Офіційна реєстрація', ru: 'Официальная регистрация' },
-  { uk: 'Ветеринарний нагляд', ru: 'Ветеринарный надзор' },
-  { uk: 'Прозоре виробництво', ru: 'Прозрачное производство' },
+  { uk: 'Офіційна реєстрація', ru: 'Официальная регистрация', en: 'Official registration' },
+  { uk: 'Ветеринарний нагляд', ru: 'Ветеринарный надзор', en: 'Veterinary supervision' },
+  { uk: 'Прозоре виробництво', ru: 'Прозрачное производство', en: 'Transparent production' },
 ]
 
 export async function ApiaryTrust() {
@@ -51,10 +54,10 @@ export async function ApiaryTrust() {
           </div>
           <div>
             <h3 id="trust-apiary-heading" className="font-serif text-xl font-bold text-gray-900">
-              {tr({ uk: 'Офіційно зареєстрована пасіка', ru: 'Официально зарегистрированная пасека' }, locale)}
+              {tr({ uk: 'Офіційно зареєстрована пасіка', ru: 'Официально зарегистрированная пасека', en: 'Officially registered apiary' }, locale)}
             </h3>
             <p className="text-gray-500 text-sm mt-0.5">
-              {tr({ uk: 'Документи підтверджують якість і відкритість нашого виробництва', ru: 'Документы подтверждают качество и открытость нашего производства' }, locale)}
+              {tr({ uk: 'Документи підтверджують якість і відкритість нашого виробництва', ru: 'Документы подтверждают качество и открытость нашего производства', en: 'Our documents confirm the quality and openness of our production' }, locale)}
             </p>
           </div>
         </div>
@@ -82,11 +85,11 @@ export async function ApiaryTrust() {
               target="_blank"
               rel="noopener"
               className="block relative aspect-[16/10] rounded-xl overflow-hidden border border-gray-100 hover:border-gray-300 transition-colors bg-gray-50"
-              aria-label={tr({ uk: 'Відкрити ветеринарно-санітарний паспорт пасіки у повному розмірі', ru: 'Открыть ветеринарно-санитарный паспорт пасеки в полном размере' }, locale)}
+              aria-label={tr({ uk: 'Відкрити ветеринарно-санітарний паспорт пасіки у повному розмірі', ru: 'Открыть ветеринарно-санитарный паспорт пасеки в полном размере', en: 'Open the full-size veterinary-sanitary passport of the apiary' }, locale)}
             >
               <Image
                 src={PASSPORT_IMAGE}
-                alt={tr({ uk: 'Ветеринарно-санітарний паспорт пасіки Дача TV', ru: 'Ветеринарно-санитарный паспорт пасеки Дача TV' }, locale)}
+                alt={tr({ uk: 'Ветеринарно-санітарний паспорт пасіки Дача TV', ru: 'Ветеринарно-санитарный паспорт пасеки Дача TV', en: 'Veterinary-sanitary passport of the Dacha TV apiary' }, locale)}
                 fill
                 className="object-contain object-center"
                 sizes="(max-width: 768px) 100vw, 700px"
@@ -98,7 +101,7 @@ export async function ApiaryTrust() {
               rel="noopener"
               className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 mt-2 transition-colors"
             >
-              {tr({ uk: 'Відкрити документ', ru: 'Открыть документ' }, locale)}
+              {tr({ uk: 'Відкрити документ', ru: 'Открыть документ', en: 'Open document' }, locale)}
               <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
               </svg>
@@ -109,7 +112,7 @@ export async function ApiaryTrust() {
             <svg className="w-8 h-8 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} aria-hidden="true">
               <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
             </svg>
-            <p className="text-sm text-gray-400">{tr({ uk: 'Фото паспорта пасіки', ru: 'Фото паспорта пасеки' }, locale)}</p>
+            <p className="text-sm text-gray-400">{tr({ uk: 'Фото паспорта пасіки', ru: 'Фото паспорта пасеки', en: 'Photo of the apiary passport' }, locale)}</p>
             <p className="text-xs text-gray-300">public/images/dacha-tv/documents/apiary-passport.jpg</p>
           </div>
         )}

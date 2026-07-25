@@ -13,9 +13,9 @@ export async function HoneyGrid({ products }: HoneyGridProps) {
   if (products.length === 0) {
     return (
       <p className="text-center text-bark/50 text-sm py-12">
-        {tr({ uk: 'Актуальна наявність і ціни — за телефоном або через', ru: 'Актуальное наличие и цены — по телефону или через' }, locale)}{' '}
+        {tr({ uk: 'Актуальна наявність і ціни — за телефоном або через', ru: 'Актуальное наличие и цены — по телефону или через', en: 'Current availability and prices — by phone or via the' }, locale)}{' '}
         <Link href={localizedPath(locale, '/contact')} className="text-honey-700 underline hover:no-underline">
-          {tr({ uk: 'форму замовлення', ru: 'форму заказа' }, locale)}
+          {tr({ uk: 'форму замовлення', ru: 'форму заказа', en: 'order form' }, locale)}
         </Link>
         .
       </p>

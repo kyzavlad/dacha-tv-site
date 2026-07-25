@@ -10,6 +10,7 @@ import {
 } from '@/lib/supplier/order'
 import { normalizeUkrainianPhone, isValidUkrainianPhone } from '@/lib/utils'
 import { revalidateSupplierStock, type RevalRow } from '@/lib/cart/stock-revalidation'
+import { sendOrderNotifications, formatNotifyLog } from '@/lib/notify/order-notify'
 import { getRequestLocale } from '@/lib/i18n'
 import { pageDict } from '@/lib/i18n/pages'
 import { cookies } from 'next/headers'
@@ -65,81 +66,23 @@ function newTraceId(): string {
 // server-side under the [checkout-submit] prefix, never leaked to the customer.
 const FRIENDLY_ERROR = 'Не вдалося оформити замовлення. Спробуйте ще раз.'
 
-// Fail-safe product-order notification. Sends BOTH channels independently:
+// Fail-safe product-order notification. Delegates to the shared sender
+// (lib/notify/order-notify) which fires BOTH channels independently:
 //   • direct Telegram — whenever TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID are set
 //   • webhook / n8n   — whenever WEBHOOK_URL is set
-// There is deliberately NO "webhook OR Telegram" gating — that was the cause
-// of silently-lost order notifications. Each channel is awaited via
-// Promise.allSettled so the request actually completes in a serverless
-// environment, but a failure in either channel NEVER throws or blocks checkout.
+// There is deliberately NO "webhook OR Telegram" gating — that was the cause of
+// silently-lost order notifications. Both channels are awaited so the request
+// is not abandoned in a standalone/serverless runtime, and a failure in either
+// channel NEVER throws or blocks checkout. The per-channel outcome + HTTP status
+// (no secrets) is logged as one structured line for production diagnosis.
 async function notifyProductOrder(opts: {
   trace: string
   message: string
   payload: Record<string, unknown>
 }): Promise<void> {
   const { trace, message, payload } = opts
-  const tasks: Promise<void>[] = []
-
-  // ── Channel 1: direct Telegram (plain text, no parse_mode) ──────────────────
-  const token = process.env.TELEGRAM_BOT_TOKEN
-  const chatId = process.env.TELEGRAM_CHAT_ID
-  if (token && chatId) {
-    console.info(`[checkout-submit ${trace}] direct telegram queued`)
-    tasks.push(
-      (async () => {
-        try {
-          const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ chat_id: chatId, text: message }),
-          })
-          if (res.ok) {
-            console.info(`[checkout-submit ${trace}] direct telegram sent`)
-          } else {
-            const body = await res.text().catch(() => '')
-            console.error(`[checkout-submit ${trace}] direct telegram failed — HTTP ${res.status} ${body.slice(0, 300)}`)
-          }
-        } catch (e: unknown) {
-          console.error(`[checkout-submit ${trace}] direct telegram failed — ${e instanceof Error ? e.message : String(e)}`)
-        }
-      })(),
-    )
-  } else {
-    console.info(`[checkout-submit ${trace}] direct telegram skipped — TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID not set`)
-  }
-
-  // ── Channel 2: webhook / n8n ────────────────────────────────────────────────
-  const webhookUrl = process.env.WEBHOOK_URL
-  if (webhookUrl) {
-    console.info(`[checkout-submit ${trace}] webhook queued`)
-    tasks.push(
-      (async () => {
-        try {
-          const res = await fetch(webhookUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              source: 'website',
-              ...payload,
-              message,
-              created_at: new Date().toISOString(),
-            }),
-          })
-          if (!res.ok) {
-            console.error(`[checkout-submit ${trace}] webhook failed — HTTP ${res.status}`)
-          }
-        } catch (e: unknown) {
-          console.error(`[checkout-submit ${trace}] webhook failed — ${e instanceof Error ? e.message : String(e)}`)
-        }
-      })(),
-    )
-  } else {
-    console.info(`[checkout-submit ${trace}] webhook skipped — WEBHOOK_URL not set`)
-  }
-
-  // Promise.allSettled never rejects — checkout success is fully decoupled from
-  // notification delivery, but we still wait so the requests are not abandoned.
-  await Promise.allSettled(tasks)
+  const result = await sendOrderNotifications({ message, payload })
+  console.info(`[checkout-submit ${trace}] notify — ${formatNotifyLog(result)}`)
 }
 
 // Map a supplier mode+status to the customer-service notification line. The icon
@@ -314,10 +257,21 @@ export async function submitProductOrder(
         .select('slug, supplier_sku, supplier_product_id, source, lead_type, is_in_stock, stock_synced_at, name_ua')
         .in('slug', catalogSlugs)
 
+      // Freshness gate (fail closed). Personal.cab exposes NO per-SKU live
+      // availability endpoint (only the full ~112k feed, which must never be
+      // downloaded at checkout), so the authoritative preflight degrades to a
+      // staleness gate: a forwarded supplier SKU whose local stock_synced_at is
+      // older than SUPPLIER_STOCK_MAX_AGE_HOURS (default 48h) blocks the order.
+      // Set the env to 0 to disable. 48h leaves ample margin over the daily
+      // (~24h) stock sync while still catching a stalled sync.
+      const maxAgeHours = Number(process.env.SUPPLIER_STOCK_MAX_AGE_HOURS ?? '48')
+      const maxStockAgeMs = Number.isFinite(maxAgeHours) && maxAgeHours > 0 ? maxAgeHours * 3600_000 : 0
+
       const reval = revalidateSupplierStock({
         items: d.items,
         rows: (skuRows ?? []) as RevalRow[],
         lookupFailed: !!skuError,
+        maxStockAgeMs,
       })
 
       for (const row of skuRows ?? []) {
@@ -328,6 +282,12 @@ export async function submitProductOrder(
         const t = checkoutMessages(await getRequestLocale())
         if (reval.reason === 'lookup_failed') {
           console.error(`[checkout-submit ${trace}] blocked — stock lookup failed: ${skuError?.message ?? 'unknown'}`)
+          return { success: false, error: t.errStockCheckFailed }
+        }
+        if (reval.reason === 'stale') {
+          // Fail closed on stale stock — a transient "try again" message so the
+          // customer retries after the next sync rather than ordering blind.
+          console.error(`[checkout-submit ${trace}] blocked — stale supplier stock (>${Math.round(maxStockAgeMs / 3600_000)}h): ${reval.names.slice(0, 5).join(', ')}`)
           return { success: false, error: t.errStockCheckFailed }
         }
         const list = reval.names.slice(0, 5).join(', ')

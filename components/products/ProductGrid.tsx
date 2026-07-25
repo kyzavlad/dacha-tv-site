@@ -14,9 +14,9 @@ export async function ProductGrid({ products }: ProductGridProps) {
     return (
       <div className="text-center py-16">
         <p className="text-bark/50 text-sm">
-          {tr({ uk: 'Наявність та ціни уточнюйте за телефоном або через', ru: 'Наличие и цены уточняйте по телефону или через' }, locale)}{' '}
+          {tr({ uk: 'Наявність та ціни уточнюйте за телефоном або через', ru: 'Наличие и цены уточняйте по телефону или через', en: 'Check availability and prices by phone or via the' }, locale)}{' '}
           <Link href={localizedPath(locale, '/contact')} className="text-honey-700 underline hover:no-underline">
-            {tr({ uk: 'форму замовлення', ru: 'форму заказа' }, locale)}
+            {tr({ uk: 'форму замовлення', ru: 'форму заказа', en: 'order form' }, locale)}
           </Link>
           .
         </p>

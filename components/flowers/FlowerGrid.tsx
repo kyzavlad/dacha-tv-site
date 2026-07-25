@@ -22,9 +22,9 @@ export async function FlowerGrid({ products }: FlowerGridProps) {
         <div className="text-center py-20">
           <span className="text-4xl mb-4 block select-none">🌸</span>
           <p className="text-gray-400 text-sm">
-            {tr({ uk: 'Каталог поповнюється. Уточнюйте наявність через', ru: 'Каталог пополняется. Уточняйте наличие через' }, locale)}{' '}
+            {tr({ uk: 'Каталог поповнюється. Уточнюйте наявність через', ru: 'Каталог пополняется. Уточняйте наличие через', en: 'The catalog is being updated. Check availability via the' }, locale)}{' '}
             <Link href={localizedPath(locale, '/contact')} className="text-gray-600 underline hover:no-underline">
-              {tr({ uk: 'форму запиту', ru: 'форму запроса' }, locale)}
+              {tr({ uk: 'форму запиту', ru: 'форму запроса', en: 'request form' }, locale)}
             </Link>
             .
           </p>

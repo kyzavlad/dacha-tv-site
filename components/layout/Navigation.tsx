@@ -7,6 +7,7 @@ import { PRIMARY_NAV } from '@/lib/navigation'
 import { splitLocale, localizedPath } from '@/lib/i18n'
 import { useLocale } from '@/lib/i18n/locale-context'
 import { navLabel } from '@/lib/i18n-ui'
+import { tr } from '@/lib/i18n/pages'
 
 // Desktop primary navigation (centre of the header). The mobile menu lives in
 // its own component (MobileMenu) so its trigger can sit in the header's right
@@ -18,7 +19,7 @@ export function Navigation() {
   const locale = useLocale()
   const { path } = splitLocale(pathname)
   return (
-    <nav className="hidden md:flex items-center gap-1" aria-label="Навігація">
+    <nav className="hidden md:flex items-center gap-1" aria-label={tr({ uk: 'Навігація', ru: 'Навигация', en: 'Navigation' }, locale)}>
       {PRIMARY_NAV.map(({ href, label }) => (
         <Link key={href} href={localizedPath(locale, href)}
           className={cn('px-3.5 py-2 rounded-full text-sm font-medium transition-colors',

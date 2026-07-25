@@ -70,12 +70,50 @@ const RU_RULES = [
   'Без HTML и технических slug (cat-NNN).',
 ]
 
+// Explicit RU meta_title generation rules (requirement D1). These are the exact
+// levers that fix the production failure (98–100 invalid, "слишком много
+// латинских/технических токенов"): the AI must ADD Russian product-type +
+// purpose words instead of echoing a mostly-Latin/code source name. Kept as a
+// PRODUCT-only list so category SEO (RU_CATEGORY_TARGETS) is unaffected.
+const RU_PRODUCT_TITLE_RULES = [
+  'meta_title: длина 35–65 символов.',
+  'meta_title: минимум 2 значимых русских слова; если исходное имя перегружено латиницей/кодами/цифрами — минимум 3 русских слова.',
+  'meta_title: добавь русский ТИП товара и назначение/совместимость (например «для мотоцикла», «для бензопилы»), а не только бренд и код.',
+  'meta_title: латинские бренд/модель/размеры допустимы (Bosch, AMG, Gates, 6202-ZZ, 90×49×10), но НЕ должны доминировать над русскими словами.',
+  'meta_title: НИКОГДА не копируй исходный заголовок, если он состоит в основном из кодов/латиницы/цифр — переформулируй по-русски.',
+  'meta_title: без украинских букв (і/ї/є/ґ), без HTML, без брендового суффикса «| Дача TV».',
+] as const
+
+// Few-shot good/bad title examples shipped to n8n so the model has concrete
+// targets, not just prose. Every "good" example passes validateRussianMetaTitle
+// + validateMetaTitle; every "bad" one fails (code/brand-only or Latin-dominant).
+export const RU_TITLE_EXAMPLES = {
+  good: [
+    'Тормозные колодки AMG 90×49×10 для мотоцикла',
+    'Подшипник коленвала Bosch 6202-ZZ для мототехники',
+    'Ремень привода Gates 10×850 для оборудования',
+    'Цепь пильная INTERTOOL 3/8 для бензопилы',
+  ],
+  bad: [
+    { title: 'AMG 90x49x10 N-296705', why: 'только код/латиница/цифры, нет русских слов' },
+    { title: 'Bosch 6202-ZZ', why: 'только бренд и артикул' },
+    { title: 'CRF 250 New VV', why: 'латиница без русского типа товара' },
+    { title: 'INTERTOOL DT-0530', why: 'бренд + код, нет русского названия и назначения' },
+  ],
+} as const
+
 export const RU_PRODUCT_TARGETS = {
   language: 'ru',
   meta_title: { soft_min: META_TITLE_SOFT_MIN, soft_max: META_TITLE_SOFT_MAX, hard_max: META_TITLE_HARD_MAX },
   meta_description: { soft_min: META_DESC_SOFT_MIN, soft_max: META_DESC_SOFT_MAX, hard_max: META_DESC_HARD_MAX },
   description: { min: 200, recommended: '400–1200' },
-  rules: [...RU_RULES, 'Описание полезно покупателю и описывает именно этот товар.'],
+  rules: [
+    ...RU_RULES,
+    ...RU_PRODUCT_TITLE_RULES,
+    'Описание полезно покупателю и описывает именно этот товар.',
+  ],
+  // Worked examples so n8n can few-shot the model (requirement D2).
+  title_examples: RU_TITLE_EXAMPLES,
 } as const
 
 export const RU_CATEGORY_TARGETS = {

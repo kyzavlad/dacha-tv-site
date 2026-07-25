@@ -6,8 +6,23 @@ import {
   getPublishedCatalogProductCount,
   SITEMAP_PRODUCTS_PER_CHUNK,
 } from '@/lib/supabase/catalog'
+import { PUBLIC_LOCALES, HREFLANG, DEFAULT_LOCALE, localizedPath } from '@/lib/i18n'
 
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.dachatv.com'
+
+// Per-locale hreflang alternates for one canonical (uk, prefix-less) path, so
+// every enabled locale (uk/ru/en) is represented in the sitemap. x-default → uk.
+function langs(canonicalPath: string): { languages: Record<string, string> } {
+  const languages: Record<string, string> = {}
+  for (const loc of PUBLIC_LOCALES) languages[HREFLANG[loc]] = `${BASE_URL}${localizedPath(loc, canonicalPath)}`
+  languages['x-default'] = `${BASE_URL}${localizedPath(DEFAULT_LOCALE, canonicalPath)}`
+  return { languages }
+}
+
+// A sitemap entry for a canonical path, carrying its uk/ru/en alternates.
+function entry(canonicalPath: string, priority: number): MetadataRoute.Sitemap[number] {
+  return { url: `${BASE_URL}${canonicalPath}`, lastModified: new Date(), priority, alternates: langs(canonicalPath) }
+}
 
 // Refresh hourly so nightly-cron catalog changes reach the sitemap without a
 // redeploy (a plain sitemap.ts is otherwise cached at build time).
@@ -30,24 +45,25 @@ export default async function sitemap(props: { id: Promise<string> }): Promise<M
 
   if (id === 0) {
     const staticRoutes: MetadataRoute.Sitemap = [
-      { url: BASE_URL, lastModified: new Date(), priority: 1.0 },
-      { url: `${BASE_URL}/honey`, lastModified: new Date(), priority: 0.9 },
-      { url: `${BASE_URL}/catalog`, lastModified: new Date(), priority: 0.9 },
-      { url: `${BASE_URL}/catalog/all`, lastModified: new Date(), priority: 0.7 },
-      { url: `${BASE_URL}/products`, lastModified: new Date(), priority: 0.8 },
-      { url: `${BASE_URL}/flowers`, lastModified: new Date(), priority: 0.85 },
-      { url: `${BASE_URL}/flowers/catalog`, lastModified: new Date(), priority: 0.8 },
-      { url: `${BASE_URL}/lavender`, lastModified: new Date(), priority: 0.85 },
-      { url: `${BASE_URL}/services`, lastModified: new Date(), priority: 0.8 },
-      { url: `${BASE_URL}/beekeeper`, lastModified: new Date(), priority: 0.8 },
-      { url: `${BASE_URL}/about`, lastModified: new Date(), priority: 0.7 },
-      { url: `${BASE_URL}/contact`, lastModified: new Date(), priority: 0.7 },
-      { url: `${BASE_URL}/delivery`, lastModified: new Date(), priority: 0.6 },
-      { url: `${BASE_URL}/faq`, lastModified: new Date(), priority: 0.6 },
-      // Scooter model SEO/Ads landings (canonical uk; ru mirror via hreflang).
-      { url: `${BASE_URL}/moto/skutery/honda-dio`, lastModified: new Date(), priority: 0.85 },
-      { url: `${BASE_URL}/moto/skutery/yamaha-jog`, lastModified: new Date(), priority: 0.85 },
-      { url: `${BASE_URL}/moto/skutery/suzuki-lets`, lastModified: new Date(), priority: 0.85 },
+      entry('/', 1.0),
+      entry('/honey', 0.9),
+      entry('/catalog', 0.9),
+      entry('/catalog/all', 0.7),
+      entry('/products', 0.8),
+      entry('/flowers', 0.85),
+      entry('/flowers/catalog', 0.8),
+      entry('/lavender', 0.85),
+      entry('/services', 0.8),
+      entry('/beekeeper', 0.8),
+      entry('/about', 0.7),
+      entry('/contact', 0.7),
+      entry('/delivery', 0.6),
+      entry('/faq', 0.6),
+      // Scooter model SEO/Ads landings are uk/ru only (EN 404s), so they carry
+      // just the uk+ru alternates, not the shared en one.
+      { url: `${BASE_URL}/moto/skutery/honda-dio`, lastModified: new Date(), priority: 0.85, alternates: { languages: { uk: `${BASE_URL}/moto/skutery/honda-dio`, ru: `${BASE_URL}/ru/moto/skutery/honda-dio`, 'x-default': `${BASE_URL}/moto/skutery/honda-dio` } } },
+      { url: `${BASE_URL}/moto/skutery/yamaha-jog`, lastModified: new Date(), priority: 0.85, alternates: { languages: { uk: `${BASE_URL}/moto/skutery/yamaha-jog`, ru: `${BASE_URL}/ru/moto/skutery/yamaha-jog`, 'x-default': `${BASE_URL}/moto/skutery/yamaha-jog` } } },
+      { url: `${BASE_URL}/moto/skutery/suzuki-lets`, lastModified: new Date(), priority: 0.85, alternates: { languages: { uk: `${BASE_URL}/moto/skutery/suzuki-lets`, ru: `${BASE_URL}/ru/moto/skutery/suzuki-lets`, 'x-default': `${BASE_URL}/moto/skutery/suzuki-lets` } } },
     ]
 
     const [honeySlugs, flowerSlugs, apiarySlugs, beekeeperSlugs, serviceSlugs, catalogCategories] = await Promise.all([
@@ -60,7 +76,7 @@ export default async function sitemap(props: { id: Promise<string> }): Promise<M
     ])
 
     const map = (slugs: string[], prefix: string, priority: number): MetadataRoute.Sitemap =>
-      slugs.map((slug) => ({ url: `${BASE_URL}${prefix}/${slug}`, lastModified: new Date(), priority }))
+      slugs.map((slug) => entry(`${prefix}/${slug}`, priority))
 
     return [
       ...staticRoutes,
@@ -69,20 +85,12 @@ export default async function sitemap(props: { id: Promise<string> }): Promise<M
       ...map(apiarySlugs, '/products', 0.75),
       ...map(beekeeperSlugs, '/beekeeper', 0.75),
       ...map(serviceSlugs, '/services', 0.75),
-      ...catalogCategories.map((cat) => ({
-        url: `${BASE_URL}/catalog/${cat.slug}`,
-        lastModified: new Date(),
-        priority: 0.8,
-      })),
+      ...catalogCategories.map((cat) => entry(`/catalog/${cat.slug}`, 0.8)),
     ]
   }
 
   // Product shard N → the Nth SITEMAP_PRODUCTS_PER_CHUNK (1000) window.
   const offset = (id - 1) * SITEMAP_PRODUCTS_PER_CHUNK
   const slugs = await getPublishedCatalogSlugsPage(offset, SITEMAP_PRODUCTS_PER_CHUNK).catch(() => [])
-  return slugs.map(({ category, product }) => ({
-    url: `${BASE_URL}/catalog/${category}/${product}`,
-    lastModified: new Date(),
-    priority: 0.7,
-  }))
+  return slugs.map(({ category, product }) => entry(`/catalog/${category}/${product}`, 0.7))
 }

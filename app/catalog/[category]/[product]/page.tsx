@@ -220,7 +220,7 @@ export default async function ProductPage({ params }: Props) {
                   )}
                 </>
               ) : (
-                <span className="text-xl font-semibold text-honey-700">{tr({ uk: 'Ціна за запитом', ru: 'Цена по запросу' }, locale)}</span>
+                <span className="text-xl font-semibold text-honey-700">{tr({ uk: 'Ціна за запитом', ru: 'Цена по запросу', en: 'Price on request' }, locale)}</span>
               )}
             </div>
 
@@ -303,7 +303,7 @@ export default async function ProductPage({ params }: Props) {
                 terms, regardless of buyable/inquiry state. */}
             {product.lead_type === 'metal' && (
               <div className="rounded-xl border border-honey-200 bg-honey-50/60 p-4 mb-6 text-sm">
-                <div className="font-semibold text-bark mb-1">{tr({ uk: 'Замовлення та консультація', ru: 'Заказ и консультация' }, locale)}</div>
+                <div className="font-semibold text-bark mb-1">{tr({ uk: 'Замовлення та консультація', ru: 'Заказ и консультация', en: 'Order & consultation' }, locale)}</div>
                 <TrackedPhoneLink phone="+380996480485" location="product-metal" className="text-honey-700 font-bold text-lg hover:underline">
                   +380 99 648 04 85
                 </TrackedPhoneLink>
@@ -323,7 +323,7 @@ export default async function ProductPage({ params }: Props) {
             {product.lead_type !== 'metal' && (
               <div className="flex items-center gap-2 text-sm text-green-700 mb-6">
                 <span className="w-2 h-2 rounded-full bg-green-500 flex-shrink-0" />
-                {tr({ uk: 'Доставка по Україні', ru: 'Доставка по Украине' }, locale)}
+                {tr({ uk: 'Доставка по Україні', ru: 'Доставка по Украине', en: 'Delivery across Ukraine' }, locale)}
               </div>
             )}
 
@@ -333,25 +333,25 @@ export default async function ProductPage({ params }: Props) {
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
                 <div className="rounded-xl border border-honey-100 bg-honey-50/50 p-3">
                   <div className="text-lg" aria-hidden="true">🚚</div>
-                  <div className="text-xs font-semibold text-bark mt-1">{tr({ uk: 'Доставка по Україні', ru: 'Доставка по Украине' }, locale)}</div>
-                  <p className="text-[11px] text-bark/60 leading-snug mt-0.5">{tr({ uk: 'Нова Пошта та інші служби', ru: 'Новая Почта и другие службы' }, locale)}</p>
+                  <div className="text-xs font-semibold text-bark mt-1">{tr({ uk: 'Доставка по Україні', ru: 'Доставка по Украине', en: 'Delivery across Ukraine' }, locale)}</div>
+                  <p className="text-[11px] text-bark/60 leading-snug mt-0.5">{tr({ uk: 'Нова Пошта та інші служби', ru: 'Новая Почта и другие службы', en: 'Nova Poshta and other carriers' }, locale)}</p>
                 </div>
                 <div className="rounded-xl border border-honey-100 bg-honey-50/50 p-3">
                   <div className="text-lg" aria-hidden="true">💳</div>
-                  <div className="text-xs font-semibold text-bark mt-1">{tr({ uk: 'Зручна оплата', ru: 'Удобная оплата' }, locale)}</div>
-                  <p className="text-[11px] text-bark/60 leading-snug mt-0.5">{tr({ uk: 'Після підтвердження замовлення', ru: 'После подтверждения заказа' }, locale)}</p>
+                  <div className="text-xs font-semibold text-bark mt-1">{tr({ uk: 'Зручна оплата', ru: 'Удобная оплата', en: 'Convenient payment' }, locale)}</div>
+                  <p className="text-[11px] text-bark/60 leading-snug mt-0.5">{tr({ uk: 'Після підтвердження замовлення', ru: 'После подтверждения заказа', en: 'After order confirmation' }, locale)}</p>
                 </div>
                 <div className="rounded-xl border border-honey-100 bg-honey-50/50 p-3">
                   <div className="text-lg" aria-hidden="true">✅</div>
-                  <div className="text-xs font-semibold text-bark mt-1">{tr({ uk: 'Підтвердження', ru: 'Подтверждение' }, locale)}</div>
-                  <p className="text-[11px] text-bark/60 leading-snug mt-0.5">{tr({ uk: 'Менеджер зв’яжеться з вами', ru: 'Менеджер свяжется с вами' }, locale)}</p>
+                  <div className="text-xs font-semibold text-bark mt-1">{tr({ uk: 'Підтвердження', ru: 'Подтверждение', en: 'Confirmation' }, locale)}</div>
+                  <p className="text-[11px] text-bark/60 leading-snug mt-0.5">{tr({ uk: 'Менеджер зв’яжеться з вами', ru: 'Менеджер свяжется с вами', en: 'A manager will contact you' }, locale)}</p>
                 </div>
               </div>
             )}
 
             {product.description && (
               <div className="border-t border-gray-100 pt-6">
-                <h2 className="font-semibold text-bark mb-3 text-sm uppercase tracking-wide">{tr({ uk: 'Опис', ru: 'Описание' }, locale)}</h2>
+                <h2 className="font-semibold text-bark mb-3 text-sm uppercase tracking-wide">{tr({ uk: 'Опис', ru: 'Описание', en: 'Description' }, locale)}</h2>
                 <div className="text-gray-600 text-sm leading-relaxed whitespace-pre-line">
                   {product.description}
                 </div>
@@ -363,7 +363,7 @@ export default async function ProductPage({ params }: Props) {
         {/* Related / similar products from the same category */}
         {related.length > 0 && (
           <section className="mt-16 border-t border-gray-100 pt-10">
-            <h2 className="font-serif text-2xl font-bold text-bark mb-6">{tr({ uk: 'Схожі товари', ru: 'Похожие товары' }, locale)}</h2>
+            <h2 className="font-serif text-2xl font-bold text-bark mb-6">{tr({ uk: 'Схожі товари', ru: 'Похожие товары', en: 'Similar products' }, locale)}</h2>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-5">
               {related.map((p) => (
                 <CatalogProductCard

@@ -49,7 +49,7 @@ export async function FlowerCard({ product }: FlowerCardProps) {
         {product.is_featured && (
           <div className="absolute top-3 left-3">
             <span className="bg-gray-900 text-white text-xs font-semibold px-3 py-1.5 rounded-full shadow-sm">
-              {tr({ uk: 'Популярна', ru: 'Популярный' }, locale)}
+              {tr({ uk: 'Популярна', ru: 'Популярный', en: 'Popular' }, locale)}
             </span>
           </div>
         )}
@@ -57,7 +57,7 @@ export async function FlowerCard({ product }: FlowerCardProps) {
         {product.status !== 'available' && product.status !== 'preorder' && (
           <div className="absolute inset-0 bg-white/75 backdrop-blur-[1px] flex items-center justify-center">
             <span className="bg-gray-800 text-white text-sm font-semibold px-4 py-2 rounded-full">
-              {tr({ uk: 'Немає в наявності', ru: 'Нет в наличии' }, locale)}
+              {tr({ uk: 'Немає в наявності', ru: 'Нет в наличии', en: 'Out of stock' }, locale)}
             </span>
           </div>
         )}
@@ -98,7 +98,7 @@ export async function FlowerCard({ product }: FlowerCardProps) {
         <div className="mt-auto">
           {product.price_uah ? (
             <p className="text-lg font-bold text-gray-900 mb-3">
-              {tr({ uk: 'від', ru: 'от' }, locale)} {Number(product.price_uah).toLocaleString('uk-UA')} грн
+              {tr({ uk: 'від', ru: 'от', en: 'from' }, locale)} {Number(product.price_uah).toLocaleString('uk-UA')} грн
             </p>
           ) : null}
 
@@ -117,9 +117,9 @@ export async function FlowerCard({ product }: FlowerCardProps) {
           <Link
             href={localizedPath(locale, `/flowers/${product.slug}`)}
             className="block text-center text-xs font-medium mt-2 text-gray-400 hover:text-gray-700 transition-colors"
-            aria-label={tr({ uk: `Детальніше про ${product.name}`, ru: `Подробнее о ${product.name}` }, locale)}
+            aria-label={tr({ uk: `Детальніше про ${product.name}`, ru: `Подробнее о ${product.name}`, en: `Details about ${product.name}` }, locale)}
           >
-            {tr({ uk: 'Детальніше →', ru: 'Подробнее →' }, locale)}
+            {tr({ uk: 'Детальніше →', ru: 'Подробнее →', en: 'Details →' }, locale)}
           </Link>
         </div>
       </div>

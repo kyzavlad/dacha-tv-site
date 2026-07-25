@@ -9,7 +9,7 @@ import { tr } from '@/lib/i18n/pages'
 export async function FaqBlock({ items, heading }: { items: FaqItem[]; heading?: string }) {
   if (items.length === 0) return null
   const locale = await getRequestLocale()
-  const resolvedHeading = heading ?? tr({ uk: 'Часті запитання', ru: 'Частые вопросы' }, locale)
+  const resolvedHeading = heading ?? tr({ uk: 'Часті запитання', ru: 'Частые вопросы', en: 'Frequently asked questions' }, locale)
   return (
     <section className="mt-14 border-t border-gray-100 pt-10" aria-label={resolvedHeading}>
       <StructuredData data={faqSchema(items)} />
