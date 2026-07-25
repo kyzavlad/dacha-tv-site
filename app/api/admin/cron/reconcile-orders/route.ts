@@ -66,7 +66,12 @@ export async function GET(req: Request) {
       })
       .eq('id', order.id)
 
+    // Route through the SAME product_order_supplier_status branch the workflow
+    // already handles. Deterministic event_id (order + lifecycle) so repeated
+    // reconciliation runs finding the same state dedupe in n8n instead of
+    // re-alerting every 2 hours.
     await sendOrderNotifications({
+      eventId: `product_order_supplier_status:${decision.orderId}:${decision.lifecycle}`,
       message: [
         '⚠️ Замовлення потребує уваги (звірка з постачальником)',
         `Замовлення #${decision.orderId.slice(0, 8).toUpperCase()}`,
@@ -74,10 +79,11 @@ export async function GET(req: Request) {
         `Supplier order: ${decision.supplierOrderId}`,
       ].join('\n'),
       payload: {
-        type: 'product_order_reconciliation',
+        type: 'product_order_supplier_status',
         order_id: decision.orderId,
         supplier_order_id: decision.supplierOrderId,
         supplier_status: decision.lifecycle,
+        requires_attention: true,
       },
     })
   }

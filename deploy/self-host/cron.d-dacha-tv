@@ -1,0 +1,42 @@
+# /etc/cron.d/dacha-tv — Dacha TV scheduled jobs (self-host)
+# Install: sudo install -m 0644 -o root -g root cron.d-dacha-tv /etc/cron.d/dacha-tv
+#
+# Overlap protection: EVERY job is wrapped in `flock -n` on its own lock file, so
+# a slow run can never overlap the next tick (the resumable products sync in
+# particular — the next 15-min tick is skipped if the previous one is still
+# running, and simply resumes from its cursor on the following tick).
+#
+# The CRON_SECRET is read from the protected env file (chmod 600, outside git);
+# it is NEVER written into this cron file. Each line sources it, then curls the
+# local route. `-m 55` keeps every request under the route's maxDuration=60.
+#
+# Cadence (production-recommended for the 3.7 GiB server):
+#   categories            → daily 01:00 UTC
+#   supplier products     → every 15 min (resumable; flock-guarded)
+#   supplier→catalog import → every 15 min, staggered +7 min after products
+#   publish               → hourly at :50
+#   order reconciliation  → every 2 hours
+#
+# Do NOT lower SUPPLIER_STOCK_MAX_AGE_HOURS below the products+import interval
+# (see docs/production-completion-notes.md).
+
+SHELL=/bin/bash
+CRON_ENV=/var/www/dacha-tv/shared/.env.production
+BASE=http://127.0.0.1:3030
+# helper prefix expanded per line: source secret, then curl the route
+# (kept inline so cron.d stays a single self-contained file).
+
+# categories — daily 01:00
+0 1 * * *   www-data /usr/bin/flock -n /var/lock/dacha-categories.lock bash -lc 'set -a; . /var/www/dacha-tv/shared/.env.production; set +a; curl -fsS -m 55 -H "x-cron-secret: $CRON_SECRET" http://127.0.0.1:3030/api/admin/cron/sync-categories' >/dev/null 2>&1
+
+# supplier products — every 15 min, resumable (cursor in supplier_sync_state)
+*/15 * * * *  www-data /usr/bin/flock -n /var/lock/dacha-products.lock bash -lc 'set -a; . /var/www/dacha-tv/shared/.env.production; set +a; curl -fsS -m 55 -H "x-cron-secret: $CRON_SECRET" http://127.0.0.1:3030/api/admin/cron/sync-products' >/dev/null 2>&1
+
+# supplier→catalog import — every 15 min, staggered +7 min after products
+7,22,37,52 * * * *  www-data /usr/bin/flock -n /var/lock/dacha-import.lock bash -lc 'set -a; . /var/www/dacha-tv/shared/.env.production; set +a; curl -fsS -m 55 -H "x-cron-secret: $CRON_SECRET" http://127.0.0.1:3030/api/admin/cron/import-products' >/dev/null 2>&1
+
+# publish drafts — hourly at :50
+50 * * * *  www-data /usr/bin/flock -n /var/lock/dacha-publish.lock bash -lc 'set -a; . /var/www/dacha-tv/shared/.env.production; set +a; curl -fsS -m 55 -H "x-cron-secret: $CRON_SECRET" http://127.0.0.1:3030/api/admin/cron/publish-products' >/dev/null 2>&1
+
+# order reconciliation — every 2 hours
+0 */2 * * *  www-data /usr/bin/flock -n /var/lock/dacha-reconcile.lock bash -lc 'set -a; . /var/www/dacha-tv/shared/.env.production; set +a; curl -fsS -m 55 -H "x-cron-secret: $CRON_SECRET" http://127.0.0.1:3030/api/admin/cron/reconcile-orders' >/dev/null 2>&1

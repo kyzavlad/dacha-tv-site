@@ -112,3 +112,23 @@ test('decideReconciliation escalates not_fulfilled / cancelled and preserves sup
     assert.equal(d.supplierOrderId, 'MC-9', 'supplier id always preserved')
   }
 })
+
+// ── Regression fixture: supplier order 046064 / SKU AT-0132 ───────────────────
+// Reproduces the confirmed production incident: AT-0132 was shown available
+// locally, the supplier ACCEPTED order 046064 (status 'sent'), then later marked
+// it unfulfilled. Reconciliation must catch it, preserve the supplier order id,
+// and escalate — without ever having blocked the order at checkout on the stale
+// local snapshot (that is the freshness gate's job, tested above).
+test('fixture: order 046064 / AT-0132 accepted then unfulfilled → escalated, id preserved', () => {
+  const order046064 = { id: 'local-046064', supplier_order_id: '046064', supplier_order_status: 'sent' }
+
+  // It is a pollable, forwarded order.
+  assert.deepEqual(ordersToReconcile([order046064]).map((o) => o.supplier_order_id), ['046064'])
+
+  // Supplier now reports it unfulfilled.
+  const d = decideReconciliation(order046064, 'not_fulfilled')
+  assert.equal(d.needsAttention, true, 'must flag for attention')
+  assert.equal(d.supplierOrderId, '046064', 'supplier order id preserved')
+  assert.equal(d.newSupplierStatus, 'not_fulfilled', 'local status advanced to the real lifecycle')
+  assert.equal(d.lifecycle, 'not_fulfilled')
+})

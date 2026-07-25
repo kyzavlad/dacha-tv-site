@@ -77,11 +77,12 @@ const FRIENDLY_ERROR = 'Не вдалося оформити замовленн�
 // (no secrets) is logged as one structured line for production diagnosis.
 async function notifyProductOrder(opts: {
   trace: string
+  eventId: string
   message: string
   payload: Record<string, unknown>
 }): Promise<void> {
-  const { trace, message, payload } = opts
-  const result = await sendOrderNotifications({ message, payload })
+  const { trace, eventId, message, payload } = opts
+  const result = await sendOrderNotifications({ message, payload, eventId })
   console.info(`[checkout-submit ${trace}] notify — ${formatNotifyLog(result)}`)
 }
 
@@ -215,12 +216,19 @@ export async function submitProductOrder(
     attributionLine ? `📊 ${attributionLine}` : null,
   ].filter(Boolean).join('\n')
 
+  // Deterministic event id for THIS checkout attempt — the primary alert fires
+  // before the DB insert (no order id yet), so it is keyed on the trace. n8n can
+  // dedupe on event_id if the same attempt is ever retried.
+  const primaryEventId = `product_order_received:${trace}`
   console.info(`[checkout-submit ${trace}] primary order notification queued`)
   await notifyProductOrder({
     trace,
+    eventId: primaryEventId,
     message: primaryNotifyText,
     payload: {
       type: 'product_order_received',
+      order_id: null,
+      supplier_order_id: null,
       name: customerName,
       phone: d.phone,
       product: productSummary,
@@ -464,6 +472,7 @@ export async function submitProductOrder(
 
         await notifyProductOrder({
           trace,
+          eventId: `product_order_supplier_status:${fallbackId}:${fbSupplierStatus}`,
           message: fbSupplierStatusText,
           payload: {
             type: 'product_order_supplier_status',
@@ -682,6 +691,7 @@ export async function submitProductOrder(
 
       await notifyProductOrder({
         trace,
+        eventId: `product_order_supplier_status:${orderId}:${supplierStatus}`,
         message: supplierStatusText,
         payload: {
           type: 'product_order_supplier_status',

@@ -41,8 +41,10 @@ export async function POST(req: Request) {
 
   const stamp = new Date().toISOString()
   const result = await sendOrderNotifications({
+    // Deterministic per-minute event id so an accidental double-POST dedupes.
+    eventId: `notification_test:${stamp.slice(0, 16)}`,
     message: `🧪 Dacha TV notification test — ${stamp}. If you see this, order alerts are working. (No real order.)`,
-    payload: { type: 'notification_test', at: stamp },
+    payload: { type: 'notification_test', order_id: null, supplier_order_id: null, at: stamp },
   })
 
   return Response.json({ ok: true, configured: presence, result })

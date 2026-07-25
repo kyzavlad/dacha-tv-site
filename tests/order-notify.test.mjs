@@ -4,9 +4,10 @@ import {
   sendOrderNotifications,
   notifyPresence,
   formatNotifyLog,
+  buildOrderNotifyPayload,
 } from '../lib/notify/order-notify.ts'
 
-// A fake fetch that records calls and returns a scripted status per URL kind.
+// Fake fetch: records calls, returns a scripted status per channel kind.
 function fakeFetch(script) {
   const calls = []
   const impl = async (url, init) => {
@@ -14,86 +15,111 @@ function fakeFetch(script) {
     const kind = url.includes('api.telegram.org') ? 'telegram' : 'webhook'
     const s = script[kind]
     if (s === 'throw') throw new Error('network down')
-    return { ok: s < 400, status: s }
+    return { ok: s >= 200 && s < 300, status: s }
   }
   impl.calls = calls
+  impl.telegramCalls = () => calls.filter((c) => c.url.includes('api.telegram.org'))
+  impl.webhookCalls = () => calls.filter((c) => !c.url.includes('api.telegram.org'))
   return impl
 }
 
-const bothConfig = { telegramToken: 'T', telegramChatId: 'C', webhookUrl: 'https://hook' }
-const baseArgs = { message: 'hi', payload: { type: 'test' }, now: () => '2026-07-25T00:00:00.000Z' }
+const both = { telegramToken: 'T', telegramChatId: '1070085460', webhookUrl: 'https://n8n.example/webhook/dacha-tv-orders' }
+const base = { message: 'order!', payload: { type: 'product_order_received', order_id: 'o1' }, eventId: 'product_order_received:abc', now: () => '2026-07-25T00:00:00.000Z' }
 
-// ── Requirement B1/B2: both channels attempted independently ──────────────────
+// ── A1/A2/A3: webhook primary; Telegram is fallback only; no double-send ──────
 
-test('both channels configured → both attempted and reported sent', async () => {
-  const f = fakeFetch({ telegram: 200, webhook: 200 })
-  const r = await sendOrderNotifications({ ...baseArgs, config: bothConfig, fetchImpl: f })
-  assert.equal(r.direct_telegram, 'sent')
+test('webhook succeeds → direct Telegram is NOT called (no double notification)', async () => {
+  const f = fakeFetch({ webhook: 200, telegram: 200 })
+  const r = await sendOrderNotifications({ ...base, config: both, fetchImpl: f })
   assert.equal(r.webhook, 'sent')
-  assert.equal(r.telegram_http_status, 200)
-  assert.equal(r.webhook_http_status, 200)
-  assert.equal(f.calls.length, 2)
+  assert.equal(r.telegram_fallback, 'skipped')
+  assert.equal(f.webhookCalls().length, 1)
+  assert.equal(f.telegramCalls().length, 0, 'telegram must not fire when webhook succeeded')
 })
 
-test('only Telegram configured → webhook not_configured, telegram sent', async () => {
-  const f = fakeFetch({ telegram: 200, webhook: 200 })
-  const r = await sendOrderNotifications({ ...baseArgs, config: { telegramToken: 'T', telegramChatId: 'C', webhookUrl: null }, fetchImpl: f })
-  assert.equal(r.direct_telegram, 'sent')
-  assert.equal(r.webhook, 'not_configured')
-  assert.equal(f.calls.length, 1)
-  assert.ok(f.calls[0].url.includes('api.telegram.org'))
-})
-
-test('only webhook configured → telegram not_configured, webhook sent', async () => {
-  const f = fakeFetch({ telegram: 200, webhook: 200 })
-  const r = await sendOrderNotifications({ ...baseArgs, config: { telegramToken: null, telegramChatId: null, webhookUrl: 'https://hook' }, fetchImpl: f })
-  assert.equal(r.direct_telegram, 'not_configured')
-  assert.equal(r.webhook, 'sent')
-  assert.equal(f.calls.length, 1)
-})
-
-// ── Requirement B2: one channel failing NEVER suppresses the other ────────────
-
-test('telegram fails (HTTP 500) but webhook still sends', async () => {
-  const f = fakeFetch({ telegram: 500, webhook: 200 })
-  const r = await sendOrderNotifications({ ...baseArgs, config: bothConfig, fetchImpl: f })
-  assert.equal(r.direct_telegram, 'failed')
-  assert.equal(r.telegram_http_status, 500)
-  assert.equal(r.webhook, 'sent')
-})
-
-test('telegram throws (network) but webhook still sends; never rejects', async () => {
-  const f = fakeFetch({ telegram: 'throw', webhook: 200 })
-  const r = await sendOrderNotifications({ ...baseArgs, config: bothConfig, fetchImpl: f })
-  assert.equal(r.direct_telegram, 'failed')
-  assert.equal(r.webhook, 'sent')
-})
-
-// ── Requirement B4/B8: both fail → still returns (order is never lost) ─────────
-
-test('both channels fail → result returned, function never throws', async () => {
-  const f = fakeFetch({ telegram: 500, webhook: 500 })
-  const r = await sendOrderNotifications({ ...baseArgs, config: bothConfig, fetchImpl: f })
-  assert.equal(r.direct_telegram, 'failed')
+test('webhook fails (non-2xx) → direct Telegram fallback IS called', async () => {
+  const f = fakeFetch({ webhook: 500, telegram: 200 })
+  const r = await sendOrderNotifications({ ...base, config: both, fetchImpl: f })
   assert.equal(r.webhook, 'failed')
-  // The caller (checkout) ignores this result for order persistence — proven by
-  // the fact that it resolves cleanly with a structured value rather than throwing.
+  assert.equal(r.webhook_http_status, 500)
+  assert.equal(r.telegram_fallback, 'sent')
+  assert.equal(f.telegramCalls().length, 1)
 })
 
-// ── Requirement B5/B8: no token or URL leakage ────────────────────────────────
+test('webhook throws/times out → direct Telegram fallback IS called', async () => {
+  const f = fakeFetch({ webhook: 'throw', telegram: 200 })
+  const r = await sendOrderNotifications({ ...base, config: both, fetchImpl: f })
+  assert.equal(r.webhook, 'failed')
+  assert.equal(r.telegram_fallback, 'sent')
+})
 
-test('the structured result + log contain NO token or URL', async () => {
-  const f = fakeFetch({ telegram: 200, webhook: 403 })
-  const r = await sendOrderNotifications({ ...baseArgs, config: { telegramToken: 'SECRET-TOKEN', telegramChatId: '123', webhookUrl: 'https://secret.example/hook/abc' }, fetchImpl: f })
+test('webhook MISSING → direct Telegram fallback IS called', async () => {
+  const f = fakeFetch({ webhook: 200, telegram: 200 })
+  const r = await sendOrderNotifications({ ...base, config: { ...both, webhookUrl: null }, fetchImpl: f })
+  assert.equal(r.webhook, 'not_configured')
+  assert.equal(r.telegram_fallback, 'sent')
+  assert.equal(f.webhookCalls().length, 0)
+  assert.equal(f.telegramCalls().length, 1)
+})
+
+// ── A6: order never depends on notification — both fail, still returns ────────
+
+test('both channels fail → returns a result, never throws (order stays saved)', async () => {
+  const f = fakeFetch({ webhook: 500, telegram: 500 })
+  const r = await sendOrderNotifications({ ...base, config: both, fetchImpl: f })
+  assert.equal(r.webhook, 'failed')
+  assert.equal(r.telegram_fallback, 'failed')
+})
+
+// ── A4: deterministic event_id echoed everywhere ─────────────────────────────
+
+test('event_id is echoed into the result AND the webhook body', async () => {
+  const f = fakeFetch({ webhook: 200, telegram: 200 })
+  const r = await sendOrderNotifications({ ...base, config: both, fetchImpl: f })
+  assert.equal(r.event_id, 'product_order_received:abc')
+  const body = JSON.parse(f.webhookCalls()[0].init.body)
+  assert.equal(body.event_id, 'product_order_received:abc')
+  assert.equal(body.type, 'product_order_received')
+  assert.equal(body.message, 'order!')
+  assert.equal(body.created_at, '2026-07-25T00:00:00.000Z')
+})
+
+test('event_id is stable for the same logical event across retries', async () => {
+  const f1 = fakeFetch({ webhook: 500, telegram: 200 })
+  const f2 = fakeFetch({ webhook: 200, telegram: 200 })
+  const a = await sendOrderNotifications({ ...base, config: both, fetchImpl: f1 })
+  const b = await sendOrderNotifications({ ...base, config: both, fetchImpl: f2 })
+  assert.equal(a.event_id, b.event_id, 'same event → same id (n8n can dedupe)')
+})
+
+// ── A5: payload always carries the full contract ─────────────────────────────
+
+test('buildOrderNotifyPayload always includes every contract field', () => {
+  const p = buildOrderNotifyPayload({ type: 'product_order_received', eventId: 'e', message: 'm', createdAt: 't' })
+  for (const k of ['type', 'event_id', 'message', 'order_id', 'supplier_order_id', 'name', 'phone', 'product', 'items_text', 'total', 'payment_method', 'warehouse', 'comment', 'page_url', 'created_at']) {
+    assert.ok(k in p, `payload must contain ${k}`)
+  }
+  assert.equal(p.order_id, null)
+})
+
+// ── A7: secret-free logs + responses ─────────────────────────────────────────
+
+test('result + log never contain the token or webhook URL', async () => {
+  const f = fakeFetch({ webhook: 403, telegram: 200 })
+  const r = await sendOrderNotifications({
+    ...base,
+    config: { telegramToken: 'SECRET-BOT-TOKEN', telegramChatId: '1070085460', webhookUrl: 'https://n8n.example/webhook/SECRETPATH' },
+    fetchImpl: f,
+  })
   const blob = JSON.stringify(r) + ' ' + formatNotifyLog(r)
-  assert.ok(!blob.includes('SECRET-TOKEN'), 'no bot token in result/log')
-  assert.ok(!blob.includes('secret.example'), 'no webhook URL in result/log')
-  assert.ok(!blob.includes('/hook/abc'), 'no webhook path in result/log')
-  // But the HTTP status IS present (requirement B5).
+  assert.ok(!blob.includes('SECRET-BOT-TOKEN'))
+  assert.ok(!blob.includes('SECRETPATH'))
+  assert.ok(!blob.includes('n8n.example'))
   assert.match(formatNotifyLog(r), /webhook=failed http=403/)
+  assert.match(formatNotifyLog(r), /telegram_fallback=sent/)
 })
 
-test('notifyPresence returns booleans only', () => {
-  const p = notifyPresence({ telegramToken: 'T', telegramChatId: 'C', webhookUrl: null })
-  assert.deepEqual(p, { direct_telegram: true, webhook: false })
+test('notifyPresence returns booleans only (webhook + direct_telegram)', () => {
+  assert.deepEqual(notifyPresence({ telegramToken: 'T', telegramChatId: 'C', webhookUrl: null }), { webhook: false, direct_telegram: true })
+  assert.deepEqual(notifyPresence({ telegramToken: null, telegramChatId: null, webhookUrl: 'x' }), { webhook: true, direct_telegram: false })
 })
