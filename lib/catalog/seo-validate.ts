@@ -144,6 +144,50 @@ export function validateRussianText(raw: string | null | undefined): FieldValida
   return { ok: reasons.length === 0, reasons }
 }
 
+// A dedicated Russian-language gate for PRODUCT meta_title (requirement 2).
+// Technical product titles legitimately mix Russian words with Latin brands,
+// model codes, SKUs, dimensions and numbers. The blunt "Cyrillic must be >50%
+// of ALL Latin+Cyrillic letters" rule (validateRussianText) wrongly rejected
+// such titles — which is why ~90% of RU meta_titles failed in production with
+// "текст преимущественно не кириллицей". Here we instead:
+//   • reject Ukrainian letters і/ї/є/ґ;
+//   • IGNORE numbers, punctuation, dimensions, SKU and model codes when judging
+//     language (a token with no Cyrillic and any digit/Latin is "technical");
+//   • ALLOW legitimate Latin brands/models (Bosch, AMG, Gates) — they simply do
+//     not count toward the Russian-word requirement, they are not penalised;
+//   • require at least 2 MEANINGFUL Russian words (a token of ≥3 Cyrillic
+//     letters), and 3 once the title is heavily technical (≥3 Latin/technical
+//     tokens), so a title made only of a brand / SKU / numbers / model codes is
+//     rejected.
+// Reasons are Russian-facing since this validates RU output. This does NOT
+// replace the length/HTML/slug/banned-claim checks in validateMetaTitle — the
+// RU product path runs both.
+export function validateRussianMetaTitle(raw: string | null | undefined): FieldValidation {
+  const v = collapse(raw)
+  const reasons: string[] = []
+  if (!v) return { ok: false, reasons: ['пустой meta_title'] }
+  if (/[іїєґ]/i.test(v)) reasons.push('содержит украинские буквы (і/ї/є/ґ) — ожидается русский')
+
+  let ruWords = 0   // meaningful Russian words: a token with ≥3 Cyrillic letters
+  let latinTech = 0 // Latin brand/model + numeric/dimension/code tokens (ignored for language)
+  for (const token of v.split(/\s+/)) {
+    const cyr = (token.match(/[а-яёъыэ]/gi) ?? []).length
+    const lat = (token.match(/[a-z]/gi) ?? []).length
+    if (cyr >= 3 && cyr >= lat) ruWords++
+    else if (cyr === 0 && (lat > 0 || /\d/.test(token))) latinTech++
+    // Tokens with 1–2 Cyrillic letters (glue like «по»/«на», or a code like
+    // «Т-34») are neither meaningful words nor purely technical — ignored for
+    // both counts so they can neither satisfy nor break the language check.
+  }
+
+  if (ruWords < 2) {
+    reasons.push('недостаточно значимых русских слов (нужно ≥2; заголовок только из бренда/SKU/кода/цифр недопустим)')
+  } else if (latinTech >= 3 && ruWords < 3) {
+    reasons.push('слишком много латинских/технических токенов — для такого заголовка нужно ≥3 русских слова')
+  }
+  return { ok: reasons.length === 0, reasons }
+}
+
 // Checks common to every text field.
 function commonChecks(value: string, reasons: string[]): void {
   if (hasHtml(value)) reasons.push('містить HTML')

@@ -27,6 +27,7 @@ import {
   validateKeywords,
   validateDescription,
   validateRussianText,
+  validateRussianMetaTitle,
   bannedClaim,
   hasHtml,
   collapse,
@@ -137,13 +138,102 @@ async function fetchRuCategoryTx(client: ReturnType<typeof getAdminClient>, ids:
   return map
 }
 
-// RU product needs: missing RU row, or blank meta_title/meta_description/description.
-function productRuNeeds(tx: ProductTx | undefined): string[] {
+// The three required RU product SEO fields. n8n always regenerates and POSTs
+// all three together, and a product is only "complete" when all three are
+// present AND valid.
+export const REQUIRED_RU_PRODUCT_FIELDS = ['meta_title', 'meta_description', 'description'] as const
+export type RuProductField = (typeof REQUIRED_RU_PRODUCT_FIELDS)[number] | 'keywords'
+
+// Pure, side-effect-free RU PRODUCT field validity (requirement 1 & 2). Returns
+// the cleaned value to persist when ok. meta_title uses the dedicated RU-title
+// validator (technical titles with Latin brands/models are fine; brand/SKU/
+// code-only titles are not); meta_description and description keep the strict
+// Russian-language gate (validateRussianText) — their validation is NOT
+// weakened, and Ukrainian letters stay invalid everywhere. A blank value is
+// reported ok=false so callers treat it as "needed"/"missing".
+export function checkRuProductField(
+  kind: RuProductField,
+  value: unknown,
+): { ok: boolean; value: string | null; reasons: string[] } {
+  if (value == null || !collapse(value)) return { ok: false, value: null, reasons: [`${kind}: пусто`] }
+
+  if (kind === 'keywords') {
+    const v = validateKeywords(value as string)
+    return v.ok ? { ok: true, value: collapse(value), reasons: [] } : { ok: false, value: null, reasons: v.reasons.map((r) => `keywords: ${r}`) }
+  }
+  if (kind === 'description') {
+    const v = validateDescription(value as string) // strips HTML, returns cleaned value
+    const ru = validateRussianText(v.value)
+    return v.ok && ru.ok ? { ok: true, value: v.value, reasons: [] } : { ok: false, value: null, reasons: [...v.reasons, ...ru.reasons].map((r) => `description: ${r}`) }
+  }
+  if (kind === 'meta_title') {
+    const base = validateMetaTitle(value as string)
+    const ru = validateRussianMetaTitle(value as string)
+    return base.ok && ru.ok ? { ok: true, value: collapse(value), reasons: [] } : { ok: false, value: null, reasons: [...base.reasons, ...ru.reasons].map((r) => `meta_title: ${r}`) }
+  }
+  // meta_description
+  const base = validateMetaDescription(value as string)
+  const ru = validateRussianText(value as string)
+  return base.ok && ru.ok ? { ok: true, value: collapse(value), reasons: [] } : { ok: false, value: null, reasons: [...base.reasons, ...ru.reasons].map((r) => `meta_description: ${r}`) }
+}
+
+// RU product needs: missing RU row, or any required field that is blank OR
+// non-blank-but-invalid (requirement 1). An existing nonblank AI value that
+// fails content/Russian validation is now returned in `needs` so n8n
+// regenerates it — the previous blank-only check let invalid titles persist.
+// Manual-lock exclusion is the caller's responsibility (never reached here for
+// a locked row).
+export function productRuNeeds(tx: ProductTx | undefined): string[] {
   const needs: string[] = []
-  if (!tx || isBlank(tx.meta_title)) needs.push('meta_title')
-  if (!tx || isBlank(tx.meta_description)) needs.push('meta_description')
-  if (!tx || isBlank(tx.description)) needs.push('description')
+  for (const kind of REQUIRED_RU_PRODUCT_FIELDS) {
+    const cur = tx?.[kind]
+    if (isBlank(cur) || !checkRuProductField(kind, cur).ok) needs.push(kind)
+  }
   return needs
+}
+
+// Atomic per-item apply plan (requirement 3). Pure and DB-free so the
+// all-or-nothing rule is unit-testable. Validates every REQUIRED field; if any
+// is missing/invalid the whole product is `invalid` and NO content payload is
+// produced (no partial write). Only when all three required fields are valid is
+// the product `updated`, carrying the content payload (plus valid optional
+// keywords). `updated` therefore corresponds strictly to a fully-complete
+// product (requirement 4).
+export interface RuProductPlan {
+  status: 'updated' | 'invalid'
+  fields: string[]
+  reasons: string[]
+  payload: Record<string, unknown> | null
+}
+
+export function planRuProductItem(item: AiRuProductItem): RuProductPlan {
+  const reasons: string[] = []
+  const payload: Record<string, unknown> = {}
+  const fields: string[] = []
+  let allValid = true
+
+  for (const kind of REQUIRED_RU_PRODUCT_FIELDS) {
+    const res = checkRuProductField(kind, item[kind])
+    if (res.ok && res.value != null) {
+      payload[kind] = res.value
+      fields.push(kind)
+    } else {
+      allValid = false
+      reasons.push(...res.reasons)
+    }
+  }
+
+  if (!allValid) return { status: 'invalid', fields: [], reasons, payload: null }
+
+  // Optional keywords — only added when valid; never blocks the atomic update.
+  const kw = normalizeKeywords(item.keywords)
+  if (collapse(kw)) {
+    const res = checkRuProductField('keywords', kw)
+    if (res.ok && res.value != null) { payload.seo_keywords = res.value; fields.push('seo_keywords') }
+    else reasons.push(...res.reasons)
+  }
+
+  return { status: 'updated', fields, reasons, payload }
 }
 
 // RU category needs: missing RU row, or any blank field / empty FAQ.
@@ -615,12 +705,16 @@ function normalizeKeywords(kw: unknown): string {
   return ''
 }
 
-export async function applyRuProductAiBatch(items: AiRuProductItem[], opts: { dryRun?: boolean } = {}): Promise<ApplyResult> {
+export async function applyRuProductAiBatch(
+  items: AiRuProductItem[],
+  opts: { dryRun?: boolean; client?: ReturnType<typeof getAdminClient> } = {},
+): Promise<ApplyResult> {
   const dryRun = opts.dryRun === true
   const result = newResult(dryRun, items.length)
   if (items.length === 0) { result.message = 'Пустой список items.'; return result }
 
-  const client = getAdminClient()
+  const client = opts.client ?? getAdminClient()
+  const bump = (rs: string[]) => { for (const r of rs) result.errorGroups[r] = (result.errorGroups[r] ?? 0) + 1 }
   // Resolve products by id or SKU (Ukrainian source table).
   const ids = [...new Set(items.map((i) => (i.id ?? '').trim()).filter(Boolean))]
   const skus = [...new Set(items.map((i) => (i.sku ?? '').trim()).filter(Boolean))]
@@ -647,24 +741,33 @@ export async function applyRuProductAiBatch(items: AiRuProductItem[], opts: { dr
     const cur = existing.get(productId)
     if (cur?.seo_manual_lock === true) { result.skipped++; result.results.push({ key, status: 'skipped', fields: [], reasons: ['RU SEO заблокировано (manual_lock)'] }); continue }
 
-    const payload: Record<string, unknown> = {}
-    const fields: string[] = []
-    const reasons: string[] = []
-    for (const kind of ['meta_title', 'meta_description', 'description'] as const) {
-      const { value, reasons: rs } = validateRuField(kind, item[kind], result.errorGroups)
-      reasons.push(...rs)
-      if (value != null) { payload[kind] = value; fields.push(kind) }
-    }
-    const kw = normalizeKeywords(item.keywords)
-    if (collapse(kw)) {
-      const { value, reasons: rs } = validateRuField('keywords', kw, result.errorGroups)
-      reasons.push(...rs)
-      if (value != null) { payload.seo_keywords = value; fields.push('seo_keywords') }
+    // Atomic validation (requirement 3): the whole required set must be valid.
+    const plan = planRuProductItem(item)
+
+    if (plan.status === 'invalid') {
+      // No partial SEO content is written — existing valid fields are preserved.
+      bump(plan.reasons)
+      result.invalid++
+      result.results.push({ key, status: 'invalid', fields: [], reasons: plan.reasons.length ? plan.reasons : ['нет валидного полного набора полей'] })
+      // Rotate the failed attempt to the back of the retry queue (requirement 3
+      // & 7) by bumping ONLY seo_generated_at — never any content column, never
+      // seo_status='ai'. onConflict merge leaves existing content untouched; a
+      // brand-new marker row inserts with seo_status='missing' (default). The
+      // row stays incomplete, so it remains an eligible candidate, just no
+      // longer at the front of the oldest-first page.
+      if (!dryRun) {
+        const { error } = await client
+          .from('catalog_product_translations')
+          .upsert({ product_id: productId, locale: RU_LOCALE, seo_generated_at: now }, { onConflict: 'product_id,locale' })
+        if (error) { result.results[result.results.length - 1].reasons.push(`ротация: ${error.message}`) }
+      }
+      continue
     }
 
-    if (fields.length === 0) { result.invalid++; result.results.push({ key, status: 'invalid', fields: [], reasons: reasons.length ? reasons : ['нет валидных полей'] }); continue }
-    if (dryRun) { result.updated++; result.results.push({ key, status: 'updated', fields, reasons }); continue }
+    // Fully valid required set → this product will become complete.
+    if (dryRun) { result.updated++; result.results.push({ key, status: 'updated', fields: plan.fields, reasons: plan.reasons }); continue }
 
+    const payload = { ...(plan.payload as Record<string, unknown>) }
     payload.product_id = productId
     payload.locale = RU_LOCALE
     payload.seo_status = 'ai'
@@ -672,8 +775,8 @@ export async function applyRuProductAiBatch(items: AiRuProductItem[], opts: { dr
     payload.seo_generated_at = now
 
     const { error } = await client.from('catalog_product_translations').upsert(payload, { onConflict: 'product_id,locale' })
-    if (error) { result.errors++; result.results.push({ key, status: 'error', fields, reasons: [error.message] }) }
-    else { result.updated++; result.results.push({ key, status: 'updated', fields, reasons }) }
+    if (error) { result.errors++; result.results.push({ key, status: 'error', fields: plan.fields, reasons: [error.message] }) }
+    else { result.updated++; result.results.push({ key, status: 'updated', fields: plan.fields, reasons: plan.reasons }) }
   }
 
   result.ok = result.errors === 0
