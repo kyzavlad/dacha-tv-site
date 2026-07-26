@@ -107,6 +107,49 @@ test('UA product storefront uses Ukrainian SEO fields instead of raw Russian sup
   )
 })
 
+test('UA storefront rejects Russian supplier names that use only shared Cyrillic letters', async () => {
+  const [product] = await localizeCatalogProducts([{
+    id: 'p-shared-cyrillic',
+    supplier_product_id: 'sp-shared-cyrillic',
+    supplier_sku: 'KT-6022',
+    name: 'Сетка абразивная, 105 x 280 мм, К220, 10 шт.',
+    name_ua: 'Сетка абразивная, 105 x 280 мм, К220, 10 шт.',
+    slug: 'setka-abrazivnaya',
+    category_slug: 'abraziv',
+    short_description: 'Закажите сетку с доставкой по Украине.',
+    description: 'Сетка абразивная для шлифования поверхностей.',
+    price_uah: 113,
+    compare_price_uah: null,
+    main_image_url: 'https://example.com/product.jpg',
+    main_image_alt: 'Сетка абразивная',
+    images: ['https://example.com/product.jpg'],
+    attributes: null,
+    status: 'published',
+    is_featured: false,
+    is_price_suspicious: false,
+    display_order: 0,
+    meta_title: null,
+    meta_description: null,
+    created_at: '',
+    updated_at: '',
+  }], 'uk')
+
+  assert.equal(product.localized_name, 'Товар KT-6022')
+  assert.equal(product.main_image_alt, 'Товар KT-6022')
+  assert.match(product.localized_short_description, /^Замовте Товар KT-6022/)
+  assert.doesNotMatch(
+    [
+      product.localized_name,
+      product.localized_short_description,
+      product.localized_description,
+      product.main_image_alt,
+      product.meta_title,
+      product.meta_description,
+    ].join(' '),
+    /Сетка|абразивная|Закажите|Украине/i,
+  )
+})
+
 test('missing RU category translation does not leak a Ukrainian category name', async () => {
   const [category] = await localizeCatalogCategories([{
     id: 'c1',

@@ -439,9 +439,40 @@ function containsRussianOnlyLetters(value: string | null | undefined): boolean {
   return /[ыэъё]/i.test(value ?? '')
 }
 
+// Russian supplier text does not always contain ы/э/ъ/ё. Names such as
+// "Сетка абразивная" use only Cyrillic letters shared with Ukrainian and used to
+// slip through the alphabet-only guard. Detect unambiguous Russian forms and
+// storefront vocabulary before accepting a value as Ukrainian. Neutral brand,
+// SKU and shared-language words remain valid.
+const RUSSIAN_STOREFRONT_WORDS = new Set([
+  'сетка',
+  'лента',
+  'шкурка',
+  'наждачная',
+  'точильный',
+  'двухсторонний',
+  'шлифовальная',
+  'закажите',
+  'купить',
+  'цена',
+  'наличие',
+  'стоимость',
+  'украине',
+  'описание',
+  'подробнее',
+])
+
+function containsLikelyRussianWords(value: string | null | undefined): boolean {
+  const tokens = (value ?? '').toLowerCase().match(/[а-яё]+/g) ?? []
+  return tokens.some((token) =>
+    RUSSIAN_STOREFRONT_WORDS.has(token) ||
+    (token.length >= 4 && /(?:ая|яя|ое|ее|ую|юю)$/.test(token)),
+  )
+}
+
 function cleanUkrainianText(value: string | null | undefined): string | null {
   const text = cleanLocalizedText(value)
-  return text && !containsRussianOnlyLetters(text) ? text : null
+  return text && !containsRussianOnlyLetters(text) && !containsLikelyRussianWords(text) ? text : null
 }
 
 function ukrainianNameFromMetaTitle(value: string | null | undefined): string | null {
