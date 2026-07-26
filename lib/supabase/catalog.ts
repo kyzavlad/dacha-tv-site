@@ -1,7 +1,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { realtimeCompatOptions } from '@/lib/supabase/realtime-transport'
 import type { CatalogCategory, CatalogProduct, CatalogImageMeta } from '@/types'
-import { resolveImageEntries, primaryImageAlt } from '@/lib/catalog/image-metadata'
+import { parseImageMetadata, resolveImageEntries, primaryImageAlt } from '@/lib/catalog/image-metadata'
 import { metalContentBySlug } from '@/lib/catalog/metal-content'
 
 // Singleton anon client — reused across the many getClient() calls per catalog
@@ -435,6 +435,36 @@ function containsUkrainianSpecificLetters(value: string | null | undefined): boo
   return /[іїєґ]/i.test(value ?? '')
 }
 
+function containsRussianOnlyLetters(value: string | null | undefined): boolean {
+  return /[ыэъё]/i.test(value ?? '')
+}
+
+function cleanUkrainianText(value: string | null | undefined): string | null {
+  const text = cleanLocalizedText(value)
+  return text && !containsRussianOnlyLetters(text) ? text : null
+}
+
+function ukrainianNameFromMetaTitle(value: string | null | undefined): string | null {
+  const title = cleanUkrainianText(value)
+    ?.replace(/\s*[|–—-]\s*Дача\s*TV\s*$/i, '')
+    .replace(/^(?:купити|замовити)\s+/i, '')
+    .replace(/\s*[|–—-]\s*(?:купити|замовити|ціна|доставка)\b.*$/i, '')
+    .trim()
+  return title && !isGarbageProductName(title) ? title : null
+}
+
+function ukrainianProductFallbackName(product: CatalogProduct): string {
+  const curatedMetal = metalContentBySlug(product.slug)?.ua.name
+  if (curatedMetal) return curatedMetal
+  const ua = cleanUkrainianText(product.name_ua)
+  if (ua && containsUkrainianSpecificLetters(ua) && !isGarbageProductName(ua)) return ua
+  const seoTitle = ukrainianNameFromMetaTitle(product.meta_title)
+  if (seoTitle) return seoTitle
+  if (ua && !isGarbageProductName(ua)) return ua
+  const sku = cleanLocalizedText(product.supplier_sku)
+  return sku ? `Товар ${sku}` : 'Товар'
+}
+
 function russianProductFallbackName(product: CatalogProduct): string {
   const curatedMetal = metalContentBySlug(product.slug)?.ru.name
   if (curatedMetal) return curatedMetal
@@ -493,7 +523,54 @@ export async function localizeCatalogProducts(
   products: CatalogProduct[],
   locale: string,
 ): Promise<CatalogProduct[]> {
-  if (locale === 'uk' || products.length === 0) return products
+  if (products.length === 0) return products
+  if (locale === 'uk') {
+    return products.map((product) => {
+      const curatedMetal = metalContentBySlug(product.slug)?.ua
+      const name = ukrainianProductFallbackName(product)
+      const genericShort = `Замовте ${name} з доставкою по Україні. Наявність і вартість підтвердить менеджер.`
+      const shortDescription =
+        cleanUkrainianText(product.short_description) ??
+        cleanUkrainianText(product.meta_description) ??
+        cleanUkrainianText(curatedMetal?.short_description) ??
+        genericShort
+      const description =
+        cleanUkrainianText(product.description_ua) ??
+        cleanUkrainianText(product.seo_description) ??
+        cleanUkrainianText(curatedMetal?.description) ??
+        shortDescription
+      const imageMetadata = parseImageMetadata(product.image_metadata)
+      return {
+        ...product,
+        localized_name: name,
+        localized_short_description: shortDescription,
+        localized_description: description,
+        localized_seo_description:
+          cleanUkrainianText(product.seo_description) ??
+          cleanUkrainianText(curatedMetal?.seo_description) ??
+          description,
+        short_description: shortDescription,
+        description,
+        main_image_alt: name,
+        image_metadata: imageMetadata.length > 0
+          ? imageMetadata.map((entry, index) => ({
+              ...entry,
+              alt: index === 0 ? name : `${name} — фото ${index + 1}`,
+            }))
+          : product.image_metadata,
+        meta_title:
+          cleanUkrainianText(product.meta_title) ??
+          cleanUkrainianText(curatedMetal?.meta_title) ??
+          `${name} — купити в Україні`,
+        meta_description:
+          cleanUkrainianText(product.meta_description) ??
+          cleanUkrainianText(curatedMetal?.meta_description) ??
+          `${name}: ціна, наявність і замовлення з доставкою по Україні. Дача TV.`,
+        seo_keywords: cleanUkrainianText(product.seo_keywords) ?? cleanUkrainianText(curatedMetal?.seo_keywords),
+      }
+    })
+  }
+  if (locale !== 'ru') return products
   const client = getClient()
   const ids = products.map((p) => p.id).filter(Boolean)
   let rows: CatalogTranslationRow[] = []
@@ -509,7 +586,6 @@ export async function localizeCatalogProducts(
 
   return products.map((product) => {
     const tx = byId.get(product.id)
-    if (locale !== 'ru') return product
     const curatedMetal = metalContentBySlug(product.slug)?.ru
     const name = cleanLocalizedText(tx?.name) ?? russianProductFallbackName(product)
     const genericShort = `Закажите ${name} с доставкой по Украине. Наличие и стоимость подтверждает менеджер.`
@@ -553,7 +629,29 @@ export async function localizeCatalogCategories(
   categories: CatalogCategory[],
   locale: string,
 ): Promise<CatalogCategory[]> {
-  if (locale === 'uk' || categories.length === 0) return categories
+  if (categories.length === 0) return categories
+  if (locale === 'uk') {
+    return categories.map((category) => {
+      if (category.id === '__all__') return category
+      const name =
+        cleanUkrainianText(category.h1) ??
+        cleanUkrainianText(category.name_ua) ??
+        'Товари для дому та господарства'
+      const generic = `Товари категорії «${name}» у наявності — доставка Новою Поштою по всій Україні.`
+      const description = cleanUkrainianText(category.description) ?? generic
+      const seoDescription = cleanUkrainianText(category.description_ua) ?? description
+      return {
+        ...category,
+        localized_name: name,
+        localized_description: description,
+        localized_seo_description: seoDescription,
+        meta_title: cleanUkrainianText(category.meta_title) ?? `${name} — купити в Україні`,
+        meta_description: cleanUkrainianText(category.meta_description) ?? generic,
+        seo_keywords: cleanUkrainianText(category.seo_keywords),
+      }
+    })
+  }
+  if (locale !== 'ru') return categories
   const client = getClient()
   const ids = categories.map((c) => c.id).filter((id) => id && id !== '__all__')
   const supplierIds = categories
@@ -581,7 +679,7 @@ export async function localizeCatalogCategories(
   const supplierById = new Map(supplierRows.map((row) => [row.id, row.name]))
 
   return categories.map((category) => {
-    if (locale !== 'ru' || category.id === '__all__') return category
+    if (category.id === '__all__') return category
     const tx = txById.get(category.id)
     const name =
       cleanLocalizedText(tx?.h1) ??

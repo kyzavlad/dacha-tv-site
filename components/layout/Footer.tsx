@@ -71,7 +71,16 @@ export async function Footer({ siteSettings }: FooterProps) {
   const t = pageDict(locale)
   const phone = siteSettings?.phone || LAUNCH_PHONE
   const phoneSecondary = siteSettings?.phone_secondary || LAUNCH_PHONE_SECONDARY
-  const address = siteSettings?.address_full || LAUNCH_ADDRESS
+  const rawAddress = siteSettings?.address_full || LAUNCH_ADDRESS
+  const address = locale === 'ru'
+    ? rawAddress
+        .replace(/Пісочинська ОТГ/gi, 'Песочинская ОТГ')
+        .replace(/Харківська область/gi, 'Харьковская область')
+        .replace(/Україна/gi, 'Украина')
+    : rawAddress
+  const legalLine = locale === 'ru'
+    ? 'ФЛП Кузьменко Владислав Сергеевич · Украина'
+    : 'ФОП Кузьменко Владислав Сергійович · Україна'
   const currentYear = new Date().getFullYear()
   const hasLogo = existsSync(join(process.cwd(), 'public', LOGO_PATH))
 
@@ -203,7 +212,7 @@ export async function Footer({ siteSettings }: FooterProps) {
         <div className="border-t border-gray-100 pt-8 space-y-2">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
             <p className="text-xs text-gray-400">
-              © {currentYear} Дача TV. ФОП Кузьменко Владислав Сергійович · Україна
+              © {currentYear} Дача TV. {legalLine}
             </p>
             <div className="flex items-center gap-4">
               <Link href={localizedPath(locale, '/delivery')} className="text-xs text-gray-400 hover:text-bark transition-colors">

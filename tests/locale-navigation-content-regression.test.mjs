@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { localizeCatalogCategories, localizeCatalogProducts } from '../lib/supabase/catalog.ts'
 import { resolveProductSeo } from '../lib/catalog/localized-seo.ts'
+import { catalogFaq } from '../lib/catalog-faq.ts'
 
 const source = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
 
@@ -52,6 +53,58 @@ test('missing RU product translation uses Russian source/generic copy, never UA 
   assert.match(product.localized_short_description, /Закажите Брусок абразивный/)
   assert.doesNotMatch(product.localized_short_description, /Україн/)
   assert.match(product.meta_description, /доставкой по Украине/)
+})
+
+test('UA product storefront uses Ukrainian SEO fields instead of raw Russian supplier copy', async () => {
+  const [product] = await localizeCatalogProducts([{
+    id: 'p-ua',
+    supplier_product_id: 'sp-ua',
+    supplier_sku: 'HT-0551',
+    name: 'Брусок абразивный двухсторонний',
+    name_ua: 'Брусок абразивный двухсторонний',
+    slug: 'brusok-ua',
+    category_slug: 'abraziv',
+    short_description: 'Абразивный брусок для заточки инструмента',
+    description: 'Подробное описание товара',
+    description_ua: 'Докладний опис товару українською мовою.',
+    seo_description: 'Український опис для сторінки товару.',
+    price_uah: 100,
+    compare_price_uah: null,
+    main_image_url: 'https://example.com/product.jpg',
+    main_image_alt: 'Брусок абразивный',
+    image_metadata: [{
+      url: 'https://example.com/product.jpg',
+      alt: 'Брусок абразивный',
+      position: 0,
+      isPrimary: true,
+    }],
+    images: ['https://example.com/product.jpg'],
+    attributes: null,
+    status: 'published',
+    is_featured: false,
+    is_price_suspicious: false,
+    display_order: 0,
+    meta_title: 'Двосторонній абразивний брусок 150×50×25 мм | Дача TV',
+    meta_description: 'Двосторонній абразивний брусок для заточування інструменту.',
+    created_at: '',
+    updated_at: '',
+  }], 'uk')
+
+  assert.equal(product.localized_name, 'Двосторонній абразивний брусок 150×50×25 мм')
+  assert.equal(product.localized_description, 'Докладний опис товару українською мовою.')
+  assert.equal(product.main_image_alt, product.localized_name)
+  assert.equal(product.image_metadata[0].alt, product.localized_name)
+  assert.doesNotMatch(
+    [
+      product.localized_name,
+      product.localized_short_description,
+      product.localized_description,
+      product.main_image_alt,
+      product.meta_title,
+      product.meta_description,
+    ].join(' '),
+    /[ыэъё]/i,
+  )
 })
 
 test('missing RU category translation does not leak a Ukrainian category name', async () => {
@@ -128,4 +181,12 @@ test('localized SEO resolver leaves missing RU fields empty instead of copying U
   assert.equal(seo.meta_title, 'Русский заголовок')
   assert.equal(seo.meta_description, null)
   assert.equal(seo.description, null)
+})
+
+test('catalog landing FAQ follows the active language', () => {
+  const ruText = catalogFaq('ru').flatMap((item) => [item.question, item.answer]).join(' ')
+  const ukText = catalogFaq('uk').flatMap((item) => [item.question, item.answer]).join(' ')
+  assert.match(ruText, /Как сделать заказ/)
+  assert.doesNotMatch(ruText, /[іїєґ]/i)
+  assert.match(ukText, /Як зробити замовлення/)
 })

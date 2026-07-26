@@ -16,7 +16,7 @@ import { CatalogProductCard } from '@/components/catalog/CatalogProductCard'
 import { CatalogSearchBar } from '@/components/catalog/CatalogSearchBar'
 import { CatalogSortSelect } from '@/components/catalog/CatalogSortSelect'
 import { FaqBlock } from '@/components/shared/FaqBlock'
-import { CATALOG_FAQ } from '@/lib/catalog-faq'
+import { catalogFaq } from '@/lib/catalog-faq'
 import { buildAlternates } from '@/lib/seo'
 import { getRequestLocale, localizedPath } from '@/lib/i18n'
 import { catalogDict } from '@/lib/i18n/sections/catalog'
@@ -219,7 +219,7 @@ export default async function CatalogPage({ searchParams }: { searchParams: Prom
           </div>
         )}
 
-        <FaqBlock items={CATALOG_FAQ} heading={t.faqHeading} />
+        <FaqBlock items={catalogFaq(locale)} heading={t.faqHeading} />
       </div>
     </div>
   )

@@ -1,4 +1,5 @@
 import type { FaqItem } from '@/lib/schema'
+import type { Locale } from '@/lib/i18n'
 
 // Clean, honest FAQ copy — no forbidden/superlative claims, aligned with the
 // delivery/payment pages. Used to give /catalog and category pages real SEO
@@ -26,6 +27,33 @@ export const CATALOG_FAQ: FaqItem[] = [
       'Напишіть або зателефонуйте нам — ми уточнимо наявність і терміни у постачальника та повідомимо вас.',
   },
 ]
+
+const CATALOG_FAQ_RU: FaqItem[] = [
+  {
+    question: 'Как сделать заказ в магазине Дача TV?',
+    answer:
+      'Выберите товар, добавьте его в корзину и оформите заказ — укажите имя, телефон и отделение Новой Почты. Менеджер свяжется с вами для подтверждения. Также можно заказать по телефону.',
+  },
+  {
+    question: 'Вы доставляете по всей Украине?',
+    answer:
+      'Да, отправляем заказы по всей Украине Новой Почтой и другими службами. Мы — семейное хозяйство в Харьковской области (пгт Коротич), поэтому для Харькова и области возможна более быстрая передача.',
+  },
+  {
+    question: 'Какие способы оплаты доступны?',
+    answer:
+      'Доступна оплата при получении (наложенный платёж) или предоплата банковским переводом. Детали уточняйте при подтверждении заказа.',
+  },
+  {
+    question: 'Можно ли заказать товар, которого нет в наличии?',
+    answer:
+      'Напишите или позвоните нам — мы уточним наличие и сроки у поставщика и сообщим вам.',
+  },
+]
+
+export function catalogFaq(locale: Locale): FaqItem[] {
+  return locale === 'ru' ? CATALOG_FAQ_RU : CATALOG_FAQ
+}
 
 // Category-scoped FAQ — the same practical answers, phrased around one category.
 export function categoryFaq(categoryName: string): FaqItem[] {
