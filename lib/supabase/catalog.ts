@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import { realtimeCompatOptions } from '@/lib/supabase/realtime-transport'
 import type { CatalogCategory, CatalogProduct, CatalogImageMeta } from '@/types'
 import { resolveImageEntries, primaryImageAlt } from '@/lib/catalog/image-metadata'
 
@@ -12,7 +13,8 @@ function getClient() {
   if (!url || !key) return null
   const cacheKey = `${url} ${key}`
   if (_anon && _anonKey === cacheKey) return _anon
-  _anon = createClient(url, key)
+  // Node 20 has no native WebSocket — see lib/supabase/realtime-transport.ts.
+  _anon = createClient(url, key, { ...realtimeCompatOptions() })
   _anonKey = cacheKey
   return _anon
 }

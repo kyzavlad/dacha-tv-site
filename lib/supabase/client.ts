@@ -25,6 +25,7 @@
  */
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import { realtimeCompatOptions } from '@/lib/supabase/realtime-transport'
 import type { Inquiry } from '@/types'
 
 // Expose row type for typed queries
@@ -60,6 +61,8 @@ export function getSupabaseClient() {
       autoRefreshToken: false,
       persistSession: false,
     },
+    // Node 20 has no native WebSocket — see lib/supabase/realtime-transport.ts.
+    ...realtimeCompatOptions(),
   })
   _serverKey = cacheKey
   return _serverClient

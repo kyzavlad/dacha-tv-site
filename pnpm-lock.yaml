@@ -56,6 +56,9 @@ importers:
       tailwind-merge:
         specifier: ^3.6.0
         version: 3.6.0
+      ws:
+        specifier: 8.21.1
+        version: 8.21.1
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -90,9 +93,6 @@ importers:
       typescript:
         specifier: ^5
         version: 5.9.3
-      ws:
-        specifier: ^8.21.1
-        version: 8.21.1
 
 packages:
 
