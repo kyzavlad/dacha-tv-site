@@ -20,13 +20,13 @@ function req(url, opts = {}) {
   return new NextRequest(url, opts)
 }
 
-// ── EN is publicly RESTORED — served as real 200 pages under /en ──────────────
+// ── Public launch locales: complete UA + RU only ──────────────────────────────
 
-test('PUBLIC_LOCALES exposes uk + ru + en (English restored)', () => {
-  assert.deepEqual([...PUBLIC_LOCALES], ['uk', 'ru', 'en'])
+test('PUBLIC_LOCALES exposes only fully maintained uk + ru', () => {
+  assert.deepEqual([...PUBLIC_LOCALES], ['uk', 'ru'])
   assert.equal(isPublicLocale('uk'), true)
   assert.equal(isPublicLocale('ru'), true)
-  assert.equal(isPublicLocale('en'), true)
+  assert.equal(isPublicLocale('en'), false)
   assert.equal(isPublicLocale('de'), false)
 })
 
@@ -34,27 +34,27 @@ test('LOCALES is the full trilingual set', () => {
   assert.deepEqual([...LOCALES], ['uk', 'ru', 'en'])
 })
 
-test('ru and en are both publicly-served prefixed locales', () => {
-  assert.deepEqual([...PUBLIC_PREFIXED_LOCALES], ['ru', 'en'])
+test('ru is the only publicly-served prefixed locale', () => {
+  assert.deepEqual([...PUBLIC_PREFIXED_LOCALES], ['ru'])
 })
 
-// ── Requirement 3: EN is in hreflang/alternate links again ────────────────────
+// ── hreflang never advertises an incomplete English page ─────────────────────
 
-test('buildAlternates advertises uk + ru + en + x-default', () => {
+test('buildAlternates advertises uk + ru + x-default, not en', () => {
   const { canonical, languages } = buildAlternates('uk', '/products')
   assert.ok(languages.uk, 'uk hreflang present')
   assert.ok(languages.ru, 'ru hreflang present')
-  assert.ok(languages.en && languages.en.endsWith('/en/products'), 'en hreflang present and /en-prefixed')
+  assert.equal(languages.en, undefined, 'disabled en hreflang must be absent')
   assert.equal(languages['x-default'], languages.uk, 'x-default points at uk')
   assert.ok(canonical.endsWith('/products'), 'uk canonical is prefix-less')
 })
 
-test('buildAlternates en canonical is /en-prefixed and lists all three', () => {
+test('an internal en canonical still never advertises en as public', () => {
   const { canonical, languages } = buildAlternates('en', '/products')
   assert.ok(canonical.endsWith('/en/products'))
   assert.ok(languages.uk.endsWith('/products'))
   assert.ok(languages.ru.endsWith('/ru/products'))
-  assert.ok(languages.en.endsWith('/en/products'))
+  assert.equal(languages.en, undefined)
 })
 
 // ── Prefix persistence primitives ─────────────────────────────────────────────
@@ -66,37 +66,34 @@ test('localizedPath keeps ru/en prefixes and leaves uk prefix-less', () => {
   assert.equal(localizedPath('uk', '/catalog'), '/catalog')
 })
 
-test('switchLocaleHref targets every public locale prefix', () => {
+test('switchLocaleHref retains the supported en primitive for a future launch', () => {
   assert.equal(switchLocaleHref('ru', '/catalog/x'), '/ru/catalog/x')
   assert.equal(switchLocaleHref('en', '/catalog/x'), '/en/catalog/x')
   assert.equal(switchLocaleHref('uk', '/en/catalog/x'), '/catalog/x')
 })
 
-// ── /en is now REWRITTEN (like /ru), not redirected ───────────────────────────
+// ── /en redirects to the equivalent RU page (never Russian under /en) ─────────
 
-test('/en rewrites (not redirects) and sets x-dacha-locale=en', async () => {
+test('/en redirects to /ru', async () => {
   const res = await proxy(req('https://dachatv.com/en'))
-  assert.equal(res.headers.get('location'), null, '/en must NOT redirect anymore')
-  assert.ok(res.headers.get('x-middleware-rewrite'), '/en is rewritten internally')
-  assert.equal(res.headers.get('x-middleware-request-x-dacha-locale'), 'en')
+  assert.equal(res.status, 307)
+  assert.equal(res.headers.get('location'), 'https://dachatv.com/ru')
+  assert.equal(res.headers.get('x-middleware-rewrite'), null)
 })
 
-test('/en/products rewrites to /products with the en locale header', async () => {
+test('/en/products redirects to the equivalent /ru/products page', async () => {
   const res = await proxy(req('https://dachatv.com/en/products'))
-  assert.equal(res.headers.get('location'), null)
-  const rewrite = res.headers.get('x-middleware-rewrite')
-  assert.ok(rewrite)
-  assert.equal(new URL(rewrite).pathname, '/products')
-  assert.equal(res.headers.get('x-middleware-request-x-dacha-locale'), 'en')
+  assert.equal(res.status, 307)
+  assert.equal(res.headers.get('location'), 'https://dachatv.com/ru/products')
 })
 
-test('/en deep path rewrites, preserving the query, no redirect loop', async () => {
+test('/en deep path redirects to RU and preserves the query', async () => {
   const res = await proxy(req('https://dachatv.com/en/catalog/all?sort=price&page=2'))
-  assert.equal(res.headers.get('location'), null)
-  const rewrite = new URL(res.headers.get('x-middleware-rewrite'))
-  assert.equal(rewrite.pathname, '/catalog/all')
-  assert.equal(rewrite.searchParams.get('sort'), 'price')
-  assert.equal(rewrite.searchParams.get('page'), '2')
+  assert.equal(res.status, 307)
+  const location = new URL(res.headers.get('location'))
+  assert.equal(location.pathname, '/ru/catalog/all')
+  assert.equal(location.searchParams.get('sort'), 'price')
+  assert.equal(location.searchParams.get('page'), '2')
 })
 
 // ── RU still works exactly as before (rewrite, not redirect) ──────────────────

@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { useCart, type CartItem } from '@/lib/cart/CartContext'
 import { useLocale } from '@/lib/i18n/locale-context'
 import { tr } from '@/lib/i18n/pages'
+import { localizedPath } from '@/lib/i18n'
 
 interface BuyNowButtonProps {
   item: Omit<CartItem, 'quantity'>
@@ -22,7 +23,7 @@ export function BuyNowButton({ item, quantity = 1, className, outOfStock }: BuyN
     clearCart()
     addItem({ ...item, quantity })
     closeCart()
-    router.push('/checkout')
+    router.push(localizedPath(locale, '/checkout'))
   }
 
   if (outOfStock) return null

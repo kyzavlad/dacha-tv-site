@@ -58,11 +58,11 @@ test('empty-cart + core actions are localized', () => {
   }
 })
 
-// ── EN is publicly restored (uk + ru + en all served) ────────────────────────
+// ── EN remains supported in code, but is not publicly advertised ─────────────
 
-test('EN is a supported AND public Locale (English restored)', () => {
+test('EN is supported internally but excluded from PUBLIC_LOCALES', () => {
   assert.ok(LOCALES.includes('en'), 'en must remain in LOCALES')
-  assert.ok(PUBLIC_LOCALES.includes('en'), 'en must be public again')
+  assert.ok(!PUBLIC_LOCALES.includes('en'), 'en must not be public before complete translations exist')
 })
 
 test('tr() falls back to Ukrainian for a value that has no ru (never blank)', () => {

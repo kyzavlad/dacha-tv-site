@@ -8,6 +8,7 @@ import type { FlowerProduct } from '@/types'
 import { FlowerInquiryForm } from '@/components/forms/FlowerInquiryForm'
 import { getRequestLocale, localizedPath } from '@/lib/i18n'
 import { manualDict } from '@/lib/i18n/sections/manual'
+import { localizeManualItems } from '@/lib/i18n/manual-translations'
 
 const CATALOG_META: Record<'uk' | 'ru' | 'en', { title: string; description: string; ogDescription: string; ogAlt: string; twitterDescription: string }> = {
   uk: {
@@ -95,7 +96,8 @@ function colorClass(color: string | null): string {
 export default async function FlowersCatalogPage() {
   const locale = await getRequestLocale()
   const t = manualDict(locale)
-  const allProducts = await getAllFlowerProducts().catch(() => [])
+  const rawProducts = await getAllFlowerProducts().catch(() => [])
+  const allProducts = await localizeManualItems('flower_product', rawProducts, locale)
   const available = allProducts.filter((p) => p.status === 'available' || p.status === 'preorder')
 
   const byVariety = VARIETY_ORDER.reduce<Record<string, FlowerProduct[]>>((acc, v) => {
@@ -159,7 +161,7 @@ export default async function FlowersCatalogPage() {
             <p className="text-[10px] font-semibold text-white/25 uppercase tracking-[0.2em] mb-5">{t.catalogFeatured}</p>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
               {featured.map((p) => (
-                <Link key={p.id} href={`/flowers/${p.slug}`}
+                <Link key={p.id} href={localizedPath(locale, `/flowers/${p.slug}`)}
                   className="group flex flex-col gap-2">
                   <div className={`h-1.5 rounded-full ${colorClass(p.color)} transition-opacity group-hover:opacity-80`} />
                   <p className="text-xs text-white/60 group-hover:text-white transition-colors leading-snug line-clamp-2">{p.name}</p>
@@ -208,7 +210,7 @@ export default async function FlowersCatalogPage() {
               {/* Products: alternating dense list */}
               <div className="divide-y divide-gray-50">
                 {products.map((p, i) => (
-                  <Link key={p.id} href={`/flowers/${p.slug}`}
+                  <Link key={p.id} href={localizedPath(locale, `/flowers/${p.slug}`)}
                     className="group grid grid-cols-[auto_1fr_auto] gap-4 md:gap-8 items-center py-4 hover:bg-gray-50 transition-colors px-2 -mx-2 rounded-lg">
                     {/* Color swatch */}
                     <div className="flex items-center gap-3">

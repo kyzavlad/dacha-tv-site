@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { useRouter, usePathname, useSearchParams } from 'next/navigation'
+import { usePathname, useSearchParams } from 'next/navigation'
 import { PUBLIC_LOCALES, LOCALE_LABELS, switchLocaleHref, type Locale } from '@/lib/i18n'
 import { useLocale } from '@/lib/i18n/locale-context'
 import { LOCALE_SHORT, LOCALE_FLAG, ui } from '@/lib/i18n-ui'
@@ -9,9 +9,11 @@ import { LOCALE_SHORT, LOCALE_FLAG, ui } from '@/lib/i18n-ui'
 // One reusable, accessible language dropdown. Preserves the canonical path + the
 // query string, never double-prefixes, and never localizes /admin or /api (the
 // switch helper returns those unchanged). Closes on selection, outside click and
-// Escape. Uses client navigation (router.push) — no hard reload.
+// Escape. Locale prefixes are rewritten to one canonical App Router route, so a
+// client transition can preserve the old root layout/locale. A document
+// navigation is intentional here: it sends a fresh request through proxy.ts and
+// updates the server-authoritative locale immediately, with no manual reload.
 export function LanguageSwitcher({ className = '', align = 'left' }: { className?: string; align?: 'left' | 'right' }) {
-  const router = useRouter()
   const pathname = usePathname() || '/'
   const search = useSearchParams()
   // Active locale is header-authoritative (SSR-correct under the /ru rewrite);
@@ -41,7 +43,7 @@ export function LanguageSwitcher({ className = '', align = 'left' }: { className
     if (loc === active) return
     const query = search?.toString() ?? ''
     const hash = typeof window !== 'undefined' ? window.location.hash : ''
-    router.push(`${switchLocaleHref(loc, pathname, query)}${hash}`)
+    window.location.assign(`${switchLocaleHref(loc, pathname, query)}${hash}`)
   }
 
   return (

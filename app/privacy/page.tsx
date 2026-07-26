@@ -1,12 +1,18 @@
 import type { Metadata } from 'next'
 import { getRequestLocale } from '@/lib/i18n'
 import { pageDict } from '@/lib/i18n/pages'
+import { buildAlternates } from '@/lib/seo'
 
-export const metadata: Metadata = {
-  title: 'Політика конфіденційності',
-  description: 'Політика конфіденційності сайту Дача TV',
-  alternates: { canonical: '/privacy' },
-  robots: { index: false, follow: false },
+const META = {
+  uk: { title: 'Політика конфіденційності', description: 'Політика конфіденційності сайту Дача TV.' },
+  ru: { title: 'Политика конфиденциальности', description: 'Политика конфиденциальности сайта Дача TV.' },
+  en: { title: 'Privacy policy', description: 'Dacha TV website privacy policy.' },
+}
+
+export async function generateMetadata(): Promise<Metadata> {
+  const locale = await getRequestLocale()
+  const { canonical, languages } = buildAlternates(locale, '/privacy')
+  return { ...META[locale], alternates: { canonical, languages }, robots: { index: false, follow: false } }
 }
 
 export default async function PrivacyPage() {

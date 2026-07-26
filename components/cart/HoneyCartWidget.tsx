@@ -4,6 +4,7 @@ import { AddToCartButton } from './AddToCartButton'
 import { BuyNowButton } from './BuyNowButton'
 import { useLocale } from '@/lib/i18n/locale-context'
 import { tr } from '@/lib/i18n/pages'
+import { localizedPath } from '@/lib/i18n'
 
 interface HoneyCartWidgetProps {
   productSlug: string
@@ -29,7 +30,7 @@ export function HoneyCartWidget({ productSlug, productName, price, imageUrl, sta
 
   if (price == null || price <= 0) {
     return (
-      <a href="/contact" className="inline-flex items-center justify-center w-full py-3 px-6 text-base font-semibold rounded-xl border border-honey-300 text-honey-700 hover:bg-honey-50 transition-colors">
+      <a href={localizedPath(locale, '/contact')} className="inline-flex items-center justify-center w-full py-3 px-6 text-base font-semibold rounded-xl border border-honey-300 text-honey-700 hover:bg-honey-50 transition-colors">
         {tr({ uk: 'Уточнити ціну', ru: 'Уточнить цену', en: 'Price on request' }, locale)}
       </a>
     )

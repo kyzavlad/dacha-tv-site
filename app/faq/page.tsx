@@ -3,24 +3,20 @@ import Link from 'next/link'
 import type { FaqItem } from '@/types'
 import { getAllFaqItems } from '@/lib/supabase/queries'
 import { StructuredData } from '@/components/shared/StructuredData'
-import { getRequestLocale } from '@/lib/i18n'
+import { getRequestLocale, localizedPath } from '@/lib/i18n'
 import { pageDict } from '@/lib/i18n/pages'
+import { buildAlternates, buildSocialMetadata } from '@/lib/seo'
 
-export const metadata: Metadata = {
-  title: 'Часті запитання',
-  description:
-    'Відповіді на часті запитання про мед, замовлення, доставку та бджільництво від пасіки Дача TV на Харківщині.',
-  alternates: { canonical: '/faq' },
-  openGraph: {
-    title: 'FAQ',
-    description: 'Часті запитання про мед, замовлення, доставку та бджільництво від пасіки Дача TV.',
-    images: [{ url: '/images/dacha-tv/logo-square.png', width: 1200, height: 1200, alt: 'Дача TV: FAQ' }],
-  },
-  twitter: {
-    card: 'summary_large_image',
-    title: 'FAQ',
-    description: 'Часті запитання про мед, замовлення, доставку та бджільництво від пасіки Дача TV.',
-  },
+const META = {
+  uk: { title: 'Часті запитання', description: 'Відповіді на часті запитання про товари, замовлення, доставку та пасіку Дача TV.' },
+  ru: { title: 'Частые вопросы', description: 'Ответы на частые вопросы о товарах, заказах, доставке и пасеке Дача TV.' },
+  en: { title: 'Frequently asked questions', description: 'Answers about Dacha TV products, orders, delivery, and apiary.' },
+}
+
+export async function generateMetadata(): Promise<Metadata> {
+  const locale = await getRequestLocale()
+  const { canonical, languages } = buildAlternates(locale, '/faq')
+  return buildSocialMetadata({ ...META[locale], bareTitle: META[locale].title, canonical, languages })
 }
 
 type FaqCategory = 'products' | 'ordering' | 'delivery' | 'beekeeping'
@@ -40,11 +36,24 @@ const STATIC_FAQ: FaqItem[] = [
   { id: 's10', question: 'Чи можна уточнити деталі перед замовленням?', answer: 'Так, ми завжди можемо проконсультувати перед оформленням заявки.', category: 'ordering', display_order: 3 },
 ]
 
+const STATIC_FAQ_RU: FaqItem[] = [
+  { id: 'ru1', question: 'Как заказать мёд?', answer: 'Оставьте заявку на сайте или позвоните нам. Мы уточним сорт, упаковку и способ доставки.', category: 'ordering', display_order: 1 },
+  { id: 'ru2', question: 'Какие сорта мёда есть в наличии?', answer: 'Наличие зависит от сезона. Основные сорта: акация, липа, подсолнечник, разнотравье, садовый и лесной мёд.', category: 'products', display_order: 1 },
+  { id: 'ru3', question: 'В какой упаковке доступен мёд?', answer: 'Актуальный объём и вид упаковки указаны в карточке товара и подтверждаются при заказе.', category: 'products', display_order: 2 },
+  { id: 'ru4', question: 'Есть ли доставка по Украине?', answer: 'Да, отправляем заказы по Украине службами доставки.', category: 'delivery', display_order: 1 },
+  { id: 'ru5', question: 'Можно ли забрать заказ самостоятельно?', answer: 'Да, детали самовывоза согласовываются при оформлении.', category: 'delivery', display_order: 2 },
+  { id: 'ru6', question: 'Как быстро вы отвечаете?', answer: 'Обычно отвечаем в течение нескольких часов.', category: 'ordering', display_order: 2 },
+  { id: 'ru7', question: 'Есть ли товары для пчеловодов?', answer: 'Да, кроме мёда у нас есть товары и продукция для пчеловодов.', category: 'beekeeping', display_order: 1 },
+  { id: 'ru8', question: 'Весь ли мёд натуральный?', answer: 'Да, мы продаём натуральный мёд с собственной семейной пасеки.', category: 'products', display_order: 3 },
+  { id: 'ru9', question: 'Почему некоторых сортов временно нет?', answer: 'Мёд — сезонный продукт, поэтому отдельные сорта могут быть недоступны в некоторые периоды.', category: 'products', display_order: 4 },
+  { id: 'ru10', question: 'Можно ли уточнить детали до заказа?', answer: 'Да, мы проконсультируем вас до оформления заказа.', category: 'ordering', display_order: 3 },
+]
+
 export default async function FaqPage() {
   const locale = await getRequestLocale()
   const t = pageDict(locale)
   const dbItems = await getAllFaqItems().catch(() => [])
-  const items = dbItems.length > 0 ? dbItems : STATIC_FAQ
+  const items = locale === 'ru' ? STATIC_FAQ_RU : (dbItems.length > 0 ? dbItems : STATIC_FAQ)
 
   const faqSchema = {
     '@context': 'https://schema.org',
@@ -121,13 +130,13 @@ export default async function FaqPage() {
           <p className="text-bark/70 mb-4">{t.faq.ctaBody}</p>
           <div className="flex flex-wrap justify-center gap-3">
             <Link
-              href="/catalog"
+              href={localizedPath(locale, '/catalog')}
               className="inline-flex items-center gap-2 bg-honey-700 hover:bg-honey-800 text-white font-semibold px-6 py-3 rounded-lg transition-colors min-h-[48px]"
             >
               {t.common.toCatalog}
             </Link>
             <Link
-              href="/contact"
+              href={localizedPath(locale, '/contact')}
               className="inline-flex items-center gap-2 border border-honey-700 text-honey-800 hover:bg-honey-100 font-semibold px-6 py-3 rounded-lg transition-colors min-h-[48px]"
             >
               {t.common.contactUs}

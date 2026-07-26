@@ -5,6 +5,8 @@ import type { CatalogCategory } from '@/types'
 import {
   getLandingCategories,
   searchPublishedCatalogProducts,
+  localizeCatalogCategories,
+  localizeCatalogProducts,
   normalizeSort,
   CATALOG_PAGE_SIZE,
 } from '@/lib/supabase/catalog'
@@ -16,7 +18,7 @@ import { CatalogSortSelect } from '@/components/catalog/CatalogSortSelect'
 import { FaqBlock } from '@/components/shared/FaqBlock'
 import { CATALOG_FAQ } from '@/lib/catalog-faq'
 import { buildAlternates } from '@/lib/seo'
-import { getRequestLocale } from '@/lib/i18n'
+import { getRequestLocale, localizedPath } from '@/lib/i18n'
 import { catalogDict } from '@/lib/i18n/sections/catalog'
 
 const META: Record<'uk' | 'ru' | 'en', { title: string; description: string; ogTitle: string; ogDescription: string; ogAlt: string }> = {
@@ -92,9 +94,13 @@ export default async function CatalogPage({ searchParams }: { searchParams: Prom
   // ── Search results (?q=) ──────────────────────────────────────────────────
   if (query) {
     const page = Math.max(1, Number(pageRaw) || 1)
-    const [{ products }, chipCategories] = await Promise.all([
+    const [{ products: rawProducts }, rawChipCategories] = await Promise.all([
       searchPublishedCatalogProducts(query, page, sort).catch(() => ({ products: [], total: 0 })),
       getLandingCategories(14).catch(() => []),
+    ])
+    const [products, chipCategories] = await Promise.all([
+      localizeCatalogProducts(rawProducts, locale),
+      localizeCatalogCategories(rawChipCategories, locale),
     ])
     const fullPage = products.length >= CATALOG_PAGE_SIZE
     const sortQs = sort === 'featured' ? '' : `&sort=${sort}`
@@ -122,10 +128,10 @@ export default async function CatalogPage({ searchParams }: { searchParams: Prom
               {(page > 1 || fullPage) && (
                 <div className="flex justify-between items-center mt-10">
                   {page > 1 ? (
-                    <Link href={`/catalog?q=${encodeURIComponent(query)}&page=${page - 1}${sortQs}`} className="text-honey-700 font-semibold hover:underline">← {t.prev}</Link>
+                    <Link href={`${localizedPath(locale, '/catalog')}?q=${encodeURIComponent(query)}&page=${page - 1}${sortQs}`} className="text-honey-700 font-semibold hover:underline">← {t.prev}</Link>
                   ) : <span />}
                   {fullPage && (
-                    <Link href={`/catalog?q=${encodeURIComponent(query)}&page=${page + 1}${sortQs}`} className="text-honey-700 font-semibold hover:underline">{t.next} →</Link>
+                    <Link href={`${localizedPath(locale, '/catalog')}?q=${encodeURIComponent(query)}&page=${page + 1}${sortQs}`} className="text-honey-700 font-semibold hover:underline">{t.next} →</Link>
                   )}
                 </div>
               )}
@@ -135,7 +141,7 @@ export default async function CatalogPage({ searchParams }: { searchParams: Prom
               <p className="text-bark font-medium mb-1">{t.nothingFoundFor} «{query}».</p>
               <p className="text-gray-500 text-sm mb-6">
                 {t.searchHintBefore}{' '}
-                <Link href="/catalog/all" className="text-honey-700 hover:underline">{t.allProductsLower}</Link>.
+                <Link href={localizedPath(locale, '/catalog/all')} className="text-honey-700 hover:underline">{t.allProductsLower}</Link>.
               </p>
             </div>
           )}
@@ -146,7 +152,8 @@ export default async function CatalogPage({ searchParams }: { searchParams: Prom
 
   // Bounded, single cheap query — no full-catalog product scan, no per-category
   // counts. This is the fix for the /catalog timeout at 105k products.
-  const categories = await getLandingCategories(LANDING_CATEGORY_LIMIT).catch(() => [])
+  const rawCategories = await getLandingCategories(LANDING_CATEGORY_LIMIT).catch(() => [])
+  const categories = await localizeCatalogCategories(rawCategories, locale)
   // Always offer the full list; append the localized "Усі товари" card at the end.
   const allCard: CatalogCategory = { ...ALL_PRODUCTS_CARD, name_ua: t.allProductsCardTitle, description: t.allProductsCardDesc }
   const cards: CatalogCategory[] = [...categories, allCard]
@@ -178,7 +185,7 @@ export default async function CatalogPage({ searchParams }: { searchParams: Prom
             </p>
           </div>
           <Link
-            href="/catalog/all"
+            href={localizedPath(locale, '/catalog/all')}
             className="flex-shrink-0 inline-flex items-center justify-center gap-2 px-6 py-3 bg-honey-700 hover:bg-honey-800 text-white font-semibold rounded-xl transition-colors"
           >
             {t.allProductsCta}
@@ -204,7 +211,7 @@ export default async function CatalogPage({ searchParams }: { searchParams: Prom
               {t.emptyAllBody}
             </p>
             <Link
-              href="/catalog/all"
+              href={localizedPath(locale, '/catalog/all')}
               className="inline-flex items-center justify-center px-6 py-3 bg-honey-600 hover:bg-honey-700 text-white font-semibold rounded-xl transition-colors"
             >
               {t.emptyAllCta}

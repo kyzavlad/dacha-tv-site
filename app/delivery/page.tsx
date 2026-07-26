@@ -1,23 +1,19 @@
 import type { Metadata } from 'next'
 import { SellerInfo } from '@/components/shared/SellerInfo'
-import { getRequestLocale } from '@/lib/i18n'
+import { getRequestLocale, localizedPath } from '@/lib/i18n'
 import { pageDict } from '@/lib/i18n/pages'
+import { buildAlternates, buildSocialMetadata } from '@/lib/seo'
 
-export const metadata: Metadata = {
-  title: 'Доставка',
-  description:
-    "Доставка замовлень по всій Україні: Нова Пошта, Укрпошта. Мед, натуральні продукти, квіти, товари магазину. Бджолопакети та вулики: самовивіз або за домовленістю.",
-  alternates: { canonical: '/delivery' },
-  openGraph: {
-    title: 'Доставка',
-    description: 'Доставка по всій Україні: Нова Пошта, Укрпошта. Товари магазину, мед, натуральні продукти, квіти.',
-    images: [{ url: '/images/dacha-tv/logo-square.png', width: 1200, height: 1200, alt: 'Дача TV: Доставка' }],
-  },
-  twitter: {
-    card: 'summary_large_image',
-    title: 'Доставка',
-    description: 'Доставка по всій Україні: Нова Пошта, Укрпошта. Товари магазину, мед, натуральні продукти, квіти.',
-  },
+const META = {
+  uk: { title: 'Доставка', description: 'Доставка замовлень по Україні Новою Поштою та іншими службами. Умови оплати, самовивозу й отримання товарів Дача TV.' },
+  ru: { title: 'Доставка', description: 'Доставка заказов по Украине Новой Почтой и другими службами. Условия оплаты, самовывоза и получения товаров Дача TV.' },
+  en: { title: 'Delivery', description: 'Dacha TV order delivery across Ukraine, payment, pickup, and receipt terms.' },
+}
+
+export async function generateMetadata(): Promise<Metadata> {
+  const locale = await getRequestLocale()
+  const { canonical, languages } = buildAlternates(locale, '/delivery')
+  return buildSocialMetadata({ ...META[locale], bareTitle: META[locale].title, canonical, languages })
 }
 
 // The 5th section (index 4) is the payment anchor.
@@ -63,7 +59,7 @@ export default async function DeliveryPage() {
             {t.delivery.questionsBody}
           </p>
           <a
-            href="/contact"
+            href={localizedPath(locale, '/contact')}
             className="inline-flex items-center gap-2 bg-honey-700 hover:bg-honey-800 text-white font-semibold px-6 py-3 rounded-lg transition-colors min-h-[48px]"
           >
             {t.common.contactUs}

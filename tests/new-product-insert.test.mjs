@@ -13,6 +13,7 @@ test('a genuinely new supplier product is built as status=draft', () => {
   }
   const row = buildNewProductRow(sp, null, new Set(), '2026-07-21T00:00:00.000Z')
   assert.equal(row.status, 'draft')
+  assert.equal(row.name, 'Test Product')
   assert.equal(row.is_featured, false)
   assert.equal(row.supplier_sku, 'SKU-1')
   assert.equal(row.name_ua, 'Тестовий товар')

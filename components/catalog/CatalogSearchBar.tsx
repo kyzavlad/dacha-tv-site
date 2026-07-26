@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { SafeImage } from '@/components/shared/SafeImage'
-import { DEFAULT_LOCALE, type Locale } from '@/lib/i18n'
+import { DEFAULT_LOCALE, localizedPath, type Locale } from '@/lib/i18n'
 import { catalogDict } from '@/lib/i18n/sections/catalog'
 
 interface Suggestion {
@@ -45,7 +45,7 @@ export function CatalogSearchBar({ defaultValue = '', locale = DEFAULT_LOCALE }:
       controller.current?.abort()
       controller.current = new AbortController()
       try {
-        const res = await fetch(`/api/catalog/suggest?q=${encodeURIComponent(q)}`, { signal: controller.current.signal })
+        const res = await fetch(`/api/catalog/suggest?q=${encodeURIComponent(q)}&locale=${locale}`, { signal: controller.current.signal })
         const data = (await res.json()) as { suggestions?: Suggestion[] }
         setSuggestions(data.suggestions ?? [])
         setOpen(true)
@@ -71,7 +71,7 @@ export function CatalogSearchBar({ defaultValue = '', locale = DEFAULT_LOCALE }:
 
   function go(s: Suggestion) {
     const cat = s.categorySlug ?? 'all'
-    router.push(`/catalog/${cat}/${s.slug}`)
+    router.push(localizedPath(locale, `/catalog/${cat}/${s.slug}`))
     setOpen(false)
   }
 
@@ -85,7 +85,7 @@ export function CatalogSearchBar({ defaultValue = '', locale = DEFAULT_LOCALE }:
 
   return (
     <div ref={boxRef} className="relative w-full max-w-xl">
-      <form action="/catalog" method="get" role="search" className="flex w-full gap-2">
+      <form action={localizedPath(locale, '/catalog')} method="get" role="search" className="flex w-full gap-2">
         <input
           type="search"
           name="q"
@@ -136,7 +136,7 @@ export function CatalogSearchBar({ defaultValue = '', locale = DEFAULT_LOCALE }:
           ))}
           <li className="border-t border-gray-100">
             <Link
-              href={`/catalog?q=${encodeURIComponent(value.trim())}`}
+              href={`${localizedPath(locale, '/catalog')}?q=${encodeURIComponent(value.trim())}`}
               className="block px-3 py-2 text-center text-xs font-semibold text-honey-700 hover:bg-honey-50"
               onClick={() => setOpen(false)}
             >

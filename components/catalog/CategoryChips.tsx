@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import type { CatalogCategory } from '@/types'
 import { categoryDisplayName } from '@/lib/supabase/catalog'
-import { DEFAULT_LOCALE, type Locale } from '@/lib/i18n'
+import { DEFAULT_LOCALE, localizedPath, type Locale } from '@/lib/i18n'
 import { catalogDict } from '@/lib/i18n/sections/catalog'
 
 // Static, horizontally-scrollable category navigation chips. Pure links — NO
@@ -18,14 +18,14 @@ export function CategoryChips({ categories, label, locale = DEFAULT_LOCALE }: { 
         {categories.map((cat) => (
           <Link
             key={cat.id}
-            href={`/catalog/${cat.slug}`}
+            href={localizedPath(locale, `/catalog/${cat.slug}`)}
             className="flex-shrink-0 rounded-full border border-honey-200 bg-white px-3.5 py-1.5 text-sm text-bark/80 hover:border-honey-400 hover:text-honey-800 transition-colors whitespace-nowrap"
           >
-            {categoryDisplayName(cat.name_ua)}
+            {categoryDisplayName(cat.localized_name ?? cat.name_ua)}
           </Link>
         ))}
         <Link
-          href="/catalog/all"
+          href={localizedPath(locale, '/catalog/all')}
           className="flex-shrink-0 rounded-full border border-honey-300 bg-honey-50 px-3.5 py-1.5 text-sm font-medium text-honey-800 hover:bg-honey-100 transition-colors whitespace-nowrap"
         >
           {t.allProductsCta}

@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import { CTAButton } from '@/components/shared/CTAButton'
-import { getRequestLocale } from '@/lib/i18n'
+import { getRequestLocale, localizedPath } from '@/lib/i18n'
 import { pageDict } from '@/lib/i18n/pages'
 
 export const metadata: Metadata = {
@@ -27,10 +27,10 @@ export default async function NotFound() {
         </p>
 
         <div className="flex flex-col sm:flex-row gap-4 justify-center">
-          <CTAButton href="/" size="lg">
+          <CTAButton href={localizedPath(locale, '/')} size="lg">
             {t.common.backHome}
           </CTAButton>
-          <CTAButton href="/honey" size="lg" variant="outline">
+          <CTAButton href={localizedPath(locale, '/honey')} size="lg" variant="outline">
             {t.notFound.honeyCatalog}
           </CTAButton>
         </div>

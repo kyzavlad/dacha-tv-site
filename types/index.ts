@@ -253,6 +253,11 @@ export interface CatalogCategory {
   supplier_category_id: string | null
   slug: string
   name_ua: string
+  // Server-resolved storefront values. These are populated on localized
+  // catalog pages without overwriting the canonical Ukrainian DB columns.
+  localized_name?: string | null
+  localized_description?: string | null
+  localized_seo_description?: string | null
   description: string | null
   meta_title: string | null
   meta_description: string | null
@@ -291,6 +296,14 @@ export interface CatalogProduct {
   supplier_product_id: string | null
   supplier_sku: string | null
   name_ua: string
+  // Raw Russian supplier-feed name. Older rows may not have it, hence optional.
+  name?: string | null
+  // Server-resolved storefront values from catalog_product_translations (or a
+  // same-language deterministic fallback when a translation row is incomplete).
+  localized_name?: string | null
+  localized_short_description?: string | null
+  localized_description?: string | null
+  localized_seo_description?: string | null
   slug: string
   category_slug: string | null
   short_description: string | null

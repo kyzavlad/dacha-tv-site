@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic'
 
 import { suggestCatalogProducts } from '@/lib/supabase/catalog'
+import { isLocale } from '@/lib/i18n'
 
 // Public typeahead for the storefront search box. Bounded (limit 8), minimal
 // columns, no COUNT — safe per keystroke ONLY because catalog_products has the
@@ -9,11 +10,13 @@ import { suggestCatalogProducts } from '@/lib/supabase/catalog'
 export async function GET(req: Request) {
   const url = new URL(req.url)
   const q = (url.searchParams.get('q') ?? '').trim()
+  const rawLocale = url.searchParams.get('locale')
+  const locale = isLocale(rawLocale) ? rawLocale : 'uk'
   if (q.length < 2) {
     return Response.json({ suggestions: [] }, { headers: { 'Cache-Control': 'no-store' } })
   }
   try {
-    const suggestions = await suggestCatalogProducts(q, 8)
+    const suggestions = await suggestCatalogProducts(q, 8, locale)
     return Response.json(
       { suggestions },
       { headers: { 'Cache-Control': 'public, max-age=30, stale-while-revalidate=120' } },

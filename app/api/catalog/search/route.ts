@@ -7,7 +7,9 @@ import {
   formatCatalogPrice,
   normalizeSort,
   CATALOG_PAGE_SIZE,
+  localizeCatalogProducts,
 } from '@/lib/supabase/catalog'
+import { isLocale } from '@/lib/i18n'
 
 // ─── Public product search (server-side, paginated) ───────────────────────────
 // Full-catalog search that NEVER loads all 105k products: it delegates to
@@ -24,12 +26,15 @@ export async function GET(req: Request) {
   const q = (url.searchParams.get('q') ?? '').trim()
   const page = Math.max(1, Number(url.searchParams.get('page')) || 1)
   const sort = normalizeSort(url.searchParams.get('sort') ?? undefined)
+  const rawLocale = url.searchParams.get('locale')
+  const locale = isLocale(rawLocale) ? rawLocale : 'uk'
 
   if (q.length < 2) {
     return Response.json({ ok: true, q, page, hasMore: false, count: 0, products: [] })
   }
 
-  const { products } = await searchPublishedCatalogProducts(q, page, sort).catch(() => ({ products: [], total: 0 }))
+  const { products: rawProducts } = await searchPublishedCatalogProducts(q, page, sort).catch(() => ({ products: [], total: 0 }))
+  const products = await localizeCatalogProducts(rawProducts, locale)
 
   return Response.json({
     ok: true,
@@ -42,7 +47,7 @@ export async function GET(req: Request) {
     products: products.map((p) => ({
       slug: p.slug,
       categorySlug: p.category_slug ?? 'all',
-      name: displayProductName(p),
+      name: displayProductName(p, locale),
       price: formatCatalogPrice(p),
       image: getCatalogProductImage(p),
       sku: p.supplier_sku ?? null,

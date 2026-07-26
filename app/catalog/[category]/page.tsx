@@ -2,7 +2,16 @@ export const dynamic = 'force-dynamic'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
-import { getCategoryBySlug, getPublishedProductsByCategory, CATALOG_PAGE_SIZE, categoryDisplayName, normalizeSort, getCategoryTranslation } from '@/lib/supabase/catalog'
+import {
+  getCategoryBySlug,
+  getPublishedProductsByCategory,
+  localizeCatalogCategories,
+  localizeCatalogProducts,
+  CATALOG_PAGE_SIZE,
+  categoryDisplayName,
+  normalizeSort,
+  getCategoryTranslation,
+} from '@/lib/supabase/catalog'
 import { CatalogProductCard } from '@/components/catalog/CatalogProductCard'
 import { Breadcrumb } from '@/components/catalog/Breadcrumb'
 import { Pagination } from '@/components/catalog/Pagination'
@@ -77,18 +86,23 @@ const CAT_STRINGS: Record<Locale, {
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { category: slug } = await params
-  const cat = await getCategoryBySlug(slug).catch(() => null)
-  if (!cat) return { title: 'Категорія не знайдена' }
-
-  const displayName = categoryDisplayName(cat.name_ua)
-  // Localized SEO: ru/en pull the translation row (per-field UA fallback); the
-  // default uk locale skips the extra query.
   const locale = await getRequestLocale()
+  const rawCat = await getCategoryBySlug(slug).catch(() => null)
+  if (!rawCat) return { title: locale === 'ru' ? 'Категория не найдена' : 'Категорія не знайдена' }
+  const [cat] = await localizeCatalogCategories([rawCat], locale)
+  const displayName = categoryDisplayName(cat.localized_name ?? cat.name_ua)
   const tx = locale === 'uk' ? null : await getCategoryTranslation(cat.id, locale).catch(() => null)
-  const seo = resolveCategorySeo(locale, { meta_title: cat.seo_title || cat.meta_title, meta_description: cat.seo_description || cat.meta_description, description_ua: cat.description }, tx)
+  const seo = resolveCategorySeo(locale, {
+    meta_title: cat.seo_title || cat.meta_title,
+    meta_description: cat.seo_description || cat.meta_description,
+    description_ua: cat.localized_seo_description ?? cat.description,
+  }, tx)
 
   const bareTitle = stripBrand(seo.meta_title) || displayName
-  const description = seo.meta_description || cat.description || `Каталог товарів категорії «${displayName}». Замовляйте з доставкою по Україні.`
+  const description = seo.meta_description || cat.localized_description || cat.description ||
+    (locale === 'ru'
+      ? `Каталог товаров категории «${displayName}». Заказывайте с доставкой по Украине.`
+      : `Каталог товарів категорії «${displayName}». Замовляйте з доставкою по Україні.`)
   const { canonical, languages } = buildAlternates(locale, `/catalog/${slug}`)
 
   return buildSocialMetadata({
@@ -109,16 +123,20 @@ export default async function CategoryPage({ params, searchParams }: Props) {
   const buyable = buyableStr === '1'
   const withImage = photoStr === '1'
 
-  const [cat, { products, total }] = await Promise.all([
+  const locale = await getRequestLocale()
+  const [rawCat, { products: rawProducts, total }] = await Promise.all([
     getCategoryBySlug(slug).catch(() => null),
     getPublishedProductsByCategory(slug, page, sort, buyable, withImage).catch(() => ({ products: [], total: 0 })),
   ])
 
-  if (!cat) notFound()
+  if (!rawCat) notFound()
+  const [[cat], products] = await Promise.all([
+    localizeCatalogCategories([rawCat], locale),
+    localizeCatalogProducts(rawProducts, locale),
+  ])
 
-  const locale = await getRequestLocale()
   const st = CAT_STRINGS[locale]
-  const displayName = categoryDisplayName(cat.name_ua)
+  const displayName = categoryDisplayName(cat.localized_name ?? cat.name_ua)
   const isScooterCategory = slug === SCOOTER_CATEGORY_SLUG
   const h1Display = isScooterCategory ? SCOOTER_H1[locale] : displayName
   const totalPages = Math.ceil(total / CATALOG_PAGE_SIZE)
@@ -126,8 +144,8 @@ export default async function CategoryPage({ params, searchParams }: Props) {
   const rangeTo = (page - 1) * CATALOG_PAGE_SIZE + products.length
   // Short intro (description) above the grid; longer SEO body (description_ua)
   // below it. Both are DB-driven and only render when present — never spammy.
-  const intro = (cat.description ?? '').trim()
-  const seoBody = (cat.description_ua ?? '').trim()
+  const intro = (cat.localized_description ?? cat.description ?? '').trim()
+  const seoBody = (cat.localized_seo_description ?? cat.description_ua ?? '').trim()
 
   const crumbs = [
     { label: st.home, href: localizedPath(locale, '/') },
@@ -249,9 +267,19 @@ export default async function CategoryPage({ params, searchParams }: Props) {
           </section>
         )}
 
-        {/* FAQ copy is Ukrainian-only static content — show it on uk to avoid
-            mixing languages on ru/en category pages. */}
         {locale === 'uk' && <FaqBlock items={categoryFaq(displayName)} />}
+        {locale === 'ru' && Array.isArray(cat.faq_json) && (
+          <FaqBlock
+            items={cat.faq_json
+              .filter((item): item is { question: string; answer: string } =>
+                Boolean(item) &&
+                typeof item === 'object' &&
+                typeof (item as { question?: unknown }).question === 'string' &&
+                typeof (item as { answer?: unknown }).answer === 'string')
+              .map((item) => ({ question: item.question.trim(), answer: item.answer.trim() }))
+              .filter((item) => item.question && item.answer)}
+          />
+        )}
       </div>
     </div>
   )

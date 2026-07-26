@@ -35,7 +35,8 @@ export function buildNewProductRow(
   nowIso: string,
 ): Record<string, unknown> {
   const sku = sp.supplier_sku
-  const name = (sp.name_ua || sp.name || '') as string
+  const rawRussianName = typeof sp.name === 'string' ? sp.name.trim() : ''
+  const name = (sp.name_ua || rawRussianName || '') as string
 
   const candidateA = autoSlug(name)
   const candidateB = autoSlug(`${name} ${sku}`)
@@ -58,6 +59,9 @@ export function buildNewProductRow(
   return {
     supplier_product_id: sp.id,
     supplier_sku: sku,
+    // Preserve the supplier's Russian source name. RU storefront pages use it
+    // immediately while the richer AI translation/SEO row is still queued.
+    name: rawRussianName || null,
     name_ua: name,
     slug,
     category_slug: categorySlug,

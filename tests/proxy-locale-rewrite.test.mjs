@@ -55,13 +55,14 @@ test('/ru/flowers rewrites internally to /flowers', async () => {
   }
 })
 
-test('/en/* is restored: it rewrites to the canonical path with the internal origin, never redirects', async () => {
+test('/en/* redirects to the equivalent public RU path', async () => {
   const previous = process.env.INTERNAL_APP_ORIGIN
   process.env.INTERNAL_APP_ORIGIN = 'http://127.0.0.1:3030'
   try {
     const res = await proxy(req('https://dachatv.com/en/flowers', { headers: { 'x-forwarded-proto': 'https', host: 'dachatv.com' } }))
-    assert.equal(res.headers.get('location'), null, 'EN must NOT redirect anymore')
-    assert.equal(rewriteTarget(res), 'http://127.0.0.1:3030/flowers', 'EN rewrites to the canonical internal path')
+    assert.equal(res.status, 307)
+    assert.equal(res.headers.get('location'), 'https://dachatv.com/ru/flowers')
+    assert.equal(rewriteTarget(res), null)
   } finally {
     if (previous === undefined) delete process.env.INTERNAL_APP_ORIGIN
     else process.env.INTERNAL_APP_ORIGIN = previous
@@ -80,16 +81,15 @@ test('query strings survive the locale rewrite', async () => {
   }
 })
 
-test('x-dacha-locale is set for both active ru and en locales', async () => {
+test('x-dacha-locale is set for active RU; disabled EN redirects before rendering', async () => {
   const previous = process.env.INTERNAL_APP_ORIGIN
   process.env.INTERNAL_APP_ORIGIN = 'http://127.0.0.1:3030'
   try {
     const ru = await proxy(req('https://dachatv.com/ru/services', { headers: { 'x-forwarded-proto': 'https', host: 'dachatv.com' } }))
     assert.equal(overriddenLocale(ru), 'ru')
-    // EN is restored: it rewrites and sets its own locale header.
     const en = await proxy(req('https://dachatv.com/en/services', { headers: { 'x-forwarded-proto': 'https', host: 'dachatv.com' } }))
-    assert.equal(en.headers.get('location'), null)
-    assert.equal(overriddenLocale(en), 'en')
+    assert.equal(en.headers.get('location'), 'https://dachatv.com/ru/services')
+    assert.equal(overriddenLocale(en), null)
   } finally {
     if (previous === undefined) delete process.env.INTERNAL_APP_ORIGIN
     else process.env.INTERNAL_APP_ORIGIN = previous

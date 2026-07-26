@@ -10,6 +10,7 @@ import { getAllBeekeeperProducts } from '@/lib/supabase/queries'
 import { LAUNCH_PHONE } from '@/lib/launch-defaults'
 import { getRequestLocale } from '@/lib/i18n'
 import { manualDict, type ManualDict } from '@/lib/i18n/sections/manual'
+import { localizeManualItems } from '@/lib/i18n/manual-translations'
 
 const BEEKEEPER_META: Record<'uk' | 'ru' | 'en', { title: string; description: string; ogDescription: string; ogAlt: string; twitterDescription: string }> = {
   uk: {
@@ -79,7 +80,8 @@ export default async function BeekeeperPage() {
     { title: t.beekeeperOfferHivesTitle, note: t.beekeeperOfferHivesNote },
     { title: t.beekeeperOfferConsultTitle, note: t.beekeeperOfferConsultNote },
   ]
-  const products = await getAllBeekeeperProducts().catch(() => [])
+  const rawProducts = await getAllBeekeeperProducts().catch(() => [])
+  const products = await localizeManualItems('beekeeper_product', rawProducts, locale)
 
   const byType: Record<string, BeekeeperProduct[]> = {}
   for (const p of products) {

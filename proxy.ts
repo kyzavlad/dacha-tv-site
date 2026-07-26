@@ -3,11 +3,11 @@ import type { NextRequest } from 'next/server'
 import { buildLocaleRewriteUrl } from '@/lib/locale-rewrite'
 import { ADMIN_SESSION_COOKIE, verifyAdminSessionToken } from '@/lib/admin-session'
 import { verifyCronAuth } from '@/app/api/admin/cron/_auth'
-import { PREFIXED_LOCALES, PUBLIC_PREFIXED_LOCALES } from '@/lib/i18n'
+import { localizedPath, PREFIXED_LOCALES, PUBLIC_PREFIXED_LOCALES } from '@/lib/i18n'
 
 // Every locale prefix the app knows about (ru + en), and the subset PUBLICLY
 // served right now. EN is launch-disabled (PUBLIC_PREFIXED_LOCALES omits it),
-// so /en and /en/* are permanently redirected to the canonical Ukrainian path
+// so /en and /en/* are temporarily redirected to the equivalent Russian path
 // instead of being rewritten. Kept in sync with lib/i18n; re-enabling EN there
 // automatically restores its rewrite here.
 const ALL_LOCALE_PREFIXES = new Set<string>(PREFIXED_LOCALES)
@@ -24,8 +24,9 @@ export default async function proxy(request: NextRequest) {
   if (ALL_LOCALE_PREFIXES.has(firstSeg)) {
     const rest = pathname.slice(firstSeg.length + 1) || '/'
 
-    // Launch-disabled locale (e.g. /en while EN is hidden): TEMPORARILY redirect
-    // to the equivalent canonical Ukrainian path. 307 (temporary) — NOT 308 —
+    // Launch-disabled English: TEMPORARILY redirect to the equivalent Russian
+    // page. We do not serve Russian copy under an /en URL; the URL and document
+    // language must agree. 307 (temporary) — NOT 308 —
     // because EN is only paused for launch and will be restored later; a
     // permanent redirect would be cached by browsers/crawlers and outlive the
     // pause. 307 preserves the method and is not cached as permanent. Query
@@ -35,7 +36,7 @@ export default async function proxy(request: NextRequest) {
     // renders or emits its own hreflang. Browser-facing → public request origin.
     if (!ACTIVE_LOCALE_PREFIXES.has(firstSeg)) {
       const url = request.nextUrl.clone()
-      url.pathname = rest
+      url.pathname = firstSeg === 'en' ? localizedPath('ru', rest) : rest
       return NextResponse.redirect(url, 307)
     }
 

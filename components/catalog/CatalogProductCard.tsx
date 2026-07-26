@@ -92,8 +92,10 @@ export function CatalogProductCard({ product, categorySlug, locale }: CatalogPro
           </p>
         )}
 
-        {product.short_description && (
-          <p className="text-xs text-bark/60 line-clamp-2 mb-3">{product.short_description}</p>
+        {(product.localized_short_description ?? product.short_description) && (
+          <p className="text-xs text-bark/60 line-clamp-2 mb-3">
+            {product.localized_short_description ?? product.short_description}
+          </p>
         )}
 
         <div className="mt-auto">

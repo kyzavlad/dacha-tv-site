@@ -17,12 +17,11 @@ export const PREFIXED_LOCALES = ['ru', 'en'] as const
 //   • the LanguageSwitcher only offers these,
 //   • hreflang/alternate links only advertise these (lib/seo buildAlternates),
 //   • proxy.ts rewrites these prefixes (and redirects any DISABLED-locale prefix
-//     to the canonical UA path).
-// All three locales (uk, ru, en) are now publicly enabled: English is served as
-// real 200 pages under /en. To temporarily hide a locale again, remove it here —
-// proxy.ts then redirects its prefix and no hreflang/switcher advertises it, with
-// no page or dictionary change required.
-export const PUBLIC_LOCALES = ['uk', 'ru', 'en'] as const
+//     to the chosen public fallback path).
+// Launch with the two languages the business can maintain end-to-end. English
+// dictionaries stay in the codebase for a later real translation, but /en must
+// not advertise Russian or Ukrainian copy as English (bad UX + bad hreflang).
+export const PUBLIC_LOCALES = ['uk', 'ru'] as const
 export type PublicLocale = (typeof PUBLIC_LOCALES)[number]
 
 export function isPublicLocale(x: unknown): x is PublicLocale {

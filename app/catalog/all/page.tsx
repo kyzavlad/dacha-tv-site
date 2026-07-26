@@ -1,6 +1,6 @@
 export const dynamic = 'force-dynamic'
 import type { Metadata } from 'next'
-import { getPublishedCatalogProducts, CATALOG_PAGE_SIZE, normalizeSort } from '@/lib/supabase/catalog'
+import { getPublishedCatalogProducts, localizeCatalogProducts, CATALOG_PAGE_SIZE, normalizeSort } from '@/lib/supabase/catalog'
 import { CatalogProductCard } from '@/components/catalog/CatalogProductCard'
 import { Breadcrumb } from '@/components/catalog/Breadcrumb'
 import { Pagination } from '@/components/catalog/Pagination'
@@ -35,10 +35,10 @@ export default async function AllCatalogProductsPage({ searchParams }: Props) {
   const page = Math.max(1, parseInt(pageStr ?? '1', 10) || 1)
   const sort = normalizeSort(sortStr)
 
-  const { products, total } = await getPublishedCatalogProducts(page, sort).catch(() => ({ products: [], total: 0 }))
-  const totalPages = Math.ceil(total / CATALOG_PAGE_SIZE)
-
   const locale = await getRequestLocale()
+  const { products: rawProducts, total } = await getPublishedCatalogProducts(page, sort).catch(() => ({ products: [], total: 0 }))
+  const products = await localizeCatalogProducts(rawProducts, locale)
+  const totalPages = Math.ceil(total / CATALOG_PAGE_SIZE)
   const t = catalogDict(locale)
   const numLocale = locale === 'ru' ? 'ru-RU' : locale === 'en' ? 'en-US' : 'uk-UA'
 

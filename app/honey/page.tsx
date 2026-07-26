@@ -7,6 +7,7 @@ import { CTAButton } from '@/components/shared/CTAButton'
 import { getAllHoneyProducts } from '@/lib/supabase/queries'
 import { getRequestLocale, localizedPath } from '@/lib/i18n'
 import { manualDict } from '@/lib/i18n/sections/manual'
+import { localizeManualItems } from '@/lib/i18n/manual-translations'
 
 const HONEY_META: Record<'uk' | 'ru' | 'en', { title: string; description: string; ogDescription: string; ogAlt: string; twitterDescription: string }> = {
   uk: {
@@ -57,7 +58,8 @@ export async function generateMetadata(): Promise<Metadata> {
 export default async function HoneyPage() {
   const locale = await getRequestLocale()
   const t = manualDict(locale)
-  const products = await getAllHoneyProducts().catch(() => [])
+  const rawProducts = await getAllHoneyProducts().catch(() => [])
+  const products = await localizeManualItems('honey_product', rawProducts, locale)
 
   return (
     <div className="bg-cream min-h-screen">

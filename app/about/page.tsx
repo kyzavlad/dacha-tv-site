@@ -8,22 +8,18 @@ import { ApiaryTrust } from '@/components/shared/ApiaryTrust'
 import { getSiteSettings } from '@/lib/supabase/queries'
 import { getRequestLocale, localizedPath } from '@/lib/i18n'
 import { pageDict } from '@/lib/i18n/pages'
+import { buildAlternates, buildSocialMetadata } from '@/lib/seo'
 
-export const metadata: Metadata = {
-  title: 'Про нас',
-  description:
-    'Сімейна пасіка Дача TV: Коротич, Харківська область. Дізнайтесь нашу історію: як ми починали, що нас відрізняє, і чому ми відкрито показуємо всю нашу роботу на YouTube.',
-  alternates: { canonical: '/about' },
-  openGraph: {
-    title: 'Про нас',
-    description: 'Сімейна пасіка на Харківщині: наша історія, наш підхід, наші бджоли.',
-    images: [{ url: '/images/dacha-tv/logo-square.png', width: 1200, height: 1200, alt: 'Дача TV: Сімейна пасіка' }],
-  },
-  twitter: {
-    card: 'summary_large_image',
-    title: 'Про нас',
-    description: 'Сімейна пасіка на Харківщині: наша історія, наш підхід, наші бджоли.',
-  },
+const META = {
+  uk: { title: 'Про нас', description: 'Сімейна пасіка Дача TV у Коротичі, Харківська область: наша історія, підхід і відкрита робота господарства.' },
+  ru: { title: 'О нас', description: 'Семейная пасека Дача TV в Коротиче, Харьковская область: наша история, подход и открытая работа хозяйства.' },
+  en: { title: 'About us', description: 'Dacha TV family apiary in Korotych, Kharkiv region: our story, approach, and open farm work.' },
+}
+
+export async function generateMetadata(): Promise<Metadata> {
+  const locale = await getRequestLocale()
+  const { canonical, languages } = buildAlternates(locale, '/about')
+  return buildSocialMetadata({ ...META[locale], bareTitle: META[locale].title, canonical, languages })
 }
 
 const ABOUT_IMAGE = '/images/dacha-tv/about-apiary.jpg'

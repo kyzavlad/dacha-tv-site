@@ -18,10 +18,10 @@ function assertTrilingual(label, uk, ru, en) {
   assert.ok(!CYRILLIC.test(en), `${label}: EN text must contain no Cyrillic — got "${en}"`)
 }
 
-// ── EN is publicly enabled ────────────────────────────────────────────────────
+// ── EN copy remains ready in code, but is not public until data is complete ───
 
-test('English is a public locale again', () => {
-  assert.ok(PUBLIC_LOCALES.includes('en'), 'en must be public')
+test('English is hidden from the public language set', () => {
+  assert.ok(!PUBLIC_LOCALES.includes('en'), 'en must stay hidden until catalog data is translated')
   assert.ok(PUBLIC_LOCALES.includes('uk') && PUBLIC_LOCALES.includes('ru'))
 })
 

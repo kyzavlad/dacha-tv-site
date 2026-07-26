@@ -15,9 +15,11 @@ import {
   formatCatalogPrice,
   categoryDisplayName,
   getProductTranslation,
+  localizeCatalogCategories,
+  localizeCatalogProducts,
 } from '@/lib/supabase/catalog'
 import { buildSocialMetadata, buildAlternates, stripBrand } from '@/lib/seo'
-import { getRequestLocale } from '@/lib/i18n'
+import { getRequestLocale, localizedPath } from '@/lib/i18n'
 import { tr } from '@/lib/i18n/pages'
 import { stockStatus, stockLabel } from '@/lib/catalog/stock'
 import { resolveProductSeo } from '@/lib/catalog/localized-seo'
@@ -40,19 +42,23 @@ interface Props {
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { category, product: productSlug } = await params
-  const product = await getPublishedProductBySlug(category, productSlug).catch(() => null)
-  if (!product) return { title: 'Товар не знайдено' }
-
-  // Localized SEO: for ru/en use the translation row (falls back to Ukrainian
-  // per-field when absent). Ukrainian (default) skips the extra query entirely.
   const locale = await getRequestLocale()
+  const rawProduct = await getPublishedProductBySlug(category, productSlug).catch(() => null)
+  if (!rawProduct) return { title: locale === 'ru' ? 'Товар не найден' : 'Товар не знайдено' }
+  const [product] = await localizeCatalogProducts([rawProduct], locale)
   const tx = locale === 'uk' ? null : await getProductTranslation(product.id, locale).catch(() => null)
   const seo = resolveProductSeo(locale, product, tx)
 
-  const bareTitle = stripBrand(seo.meta_title) || displayProductName(product)
+  const productName = displayProductName(product, locale)
+  const bareTitle = stripBrand(seo.meta_title) || product.meta_title || productName
   const priceStr = formatCatalogPrice(product)
-  const priceLine = priceStr ? ` Ціна ${priceStr}.` : ''
-  const description = seo.meta_description || product.short_description || `Купити ${displayProductName(product)} з доставкою по Україні.${priceLine}`
+  const priceLine = priceStr
+    ? (locale === 'ru' ? ` Цена ${priceStr}.` : ` Ціна ${priceStr}.`)
+    : ''
+  const description = seo.meta_description || product.meta_description || product.localized_short_description ||
+    (locale === 'ru'
+      ? `Купить ${productName} с доставкой по Украине.${priceLine}`
+      : `Купити ${productName} з доставкою по Україні.${priceLine}`)
   const { canonical, languages } = buildAlternates(locale, `/catalog/${category}/${productSlug}`)
 
   return buildSocialMetadata({
@@ -61,7 +67,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     canonical,
     languages,
     image: getCatalogProductImage(product),
-    imageAlt: displayProductName(product),
+    imageAlt: productName,
   })
 }
 
@@ -69,24 +75,31 @@ export default async function ProductPage({ params }: Props) {
   const { category: categorySlug, product: productSlug } = await params
   const locale = await getRequestLocale()
 
-  const [cat, productByCat] = await Promise.all([
+  const [rawCat, productByCat] = await Promise.all([
     getCategoryBySlug(categorySlug).catch(() => null),
     getPublishedProductBySlug(categorySlug, productSlug).catch(() => null),
   ])
 
   // Fall back to slug-only lookup (e.g. reached via /catalog/all where the
   // category segment may not match the product's stored category_slug).
-  const product = productByCat ?? (await getPublishedProductBySlugOnly(productSlug).catch(() => null))
+  const rawProduct = productByCat ?? (await getPublishedProductBySlugOnly(productSlug).catch(() => null))
 
-  if (!product) notFound()
+  if (!rawProduct) notFound()
+  const [[product], localizedCategories] = await Promise.all([
+    localizeCatalogProducts([rawProduct], locale),
+    rawCat ? localizeCatalogCategories([rawCat], locale) : Promise.resolve([]),
+  ])
+  const cat = localizedCategories[0] ?? null
+  const productTitle = displayProductName(product, locale)
 
   // Related products from the same category (cheap, single query). Use the
   // product's own stored category_slug so /catalog/all entries still get a rail.
-  const related = await getRelatedCatalogProducts(
+  const rawRelated = await getRelatedCatalogProducts(
     product.category_slug ?? categorySlug,
     product.slug,
     4,
   ).catch(() => [])
+  const related = await localizeCatalogProducts(rawRelated, locale)
 
   // Resolve images from every known field (main_image_url may be null while the
   // URL lives in images[]/raw_data), normalized + deduped, primary first.
@@ -109,9 +122,15 @@ export default async function ProductPage({ params }: Props) {
   const fromPriceNote = buyable
     ? null
     : product.category_slug === 'podarunkovi-nabory'
-      ? 'Це базова ціна «від». Остаточна сума залежить від сорту меду, виду олії, наповнення та подарункової упаковки.'
+      ? tr({
+          uk: 'Це базова ціна «від». Остаточна сума залежить від сорту меду, виду олії, наповнення та подарункової упаковки.',
+          ru: 'Это базовая цена «от». Итоговая сумма зависит от сорта мёда, вида масла, наполнения и подарочной упаковки.',
+        }, locale)
       : product.slug === 'maslo-holodnogo-vidzhymu-na-zamovlennia'
-        ? 'Ціна залежить від виду насіння та обʼєму. Орієнтир — від 500 грн/л.'
+        ? tr({
+            uk: 'Ціна залежить від виду насіння та обʼєму. Орієнтир — від 500 грн/л.',
+            ru: 'Цена зависит от вида семян и объёма. Ориентир — от 500 грн/л.',
+          }, locale)
         : null
   const hasDiscount =
     priceOk && product.compare_price_uah != null && product.price_uah != null && product.compare_price_uah > product.price_uah
@@ -120,8 +139,8 @@ export default async function ProductPage({ params }: Props) {
   const jsonLd = {
     '@context': 'https://schema.org',
     '@type': 'Product',
-    name: displayProductName(product),
-    description: product.short_description ?? product.description ?? undefined,
+    name: productTitle,
+    description: product.localized_short_description ?? product.short_description ?? product.localized_description ?? product.description ?? undefined,
     image: images[0] ?? undefined,
     ...(priceOk
       ? {
@@ -130,17 +149,21 @@ export default async function ProductPage({ params }: Props) {
             priceCurrency: 'UAH',
             price: product.price_uah,
             availability: stockIsOut ? 'https://schema.org/OutOfStock' : 'https://schema.org/InStock',
-            url: `${process.env.NEXT_PUBLIC_SITE_URL ?? 'https://www.dachatv.com'}/catalog/${categorySlug}/${productSlug}`,
+            url: `${process.env.NEXT_PUBLIC_SITE_URL ?? 'https://www.dachatv.com'}${localizedPath(locale, `/catalog/${categorySlug}/${productSlug}`)}`,
           },
         }
       : {}),
   }
 
-  const productTitle = displayProductName(product)
   const crumbs = [
-    { label: 'Головна', href: '/' },
-    { label: 'Каталог', href: '/catalog' },
-    { label: cat ? categoryDisplayName(cat.name_ua) : 'Категорія', href: `/catalog/${categorySlug}` },
+    { label: tr({ uk: 'Головна', ru: 'Главная', en: 'Home' }, locale), href: localizedPath(locale, '/') },
+    { label: tr({ uk: 'Каталог', ru: 'Каталог', en: 'Catalog' }, locale), href: localizedPath(locale, '/catalog') },
+    {
+      label: cat
+        ? categoryDisplayName(cat.localized_name ?? cat.name_ua)
+        : tr({ uk: 'Категорія', ru: 'Категория', en: 'Category' }, locale),
+      href: localizedPath(locale, `/catalog/${categorySlug}`),
+    },
     { label: productTitle },
   ]
 
@@ -169,13 +192,13 @@ export default async function ProductPage({ params }: Props) {
             <div className="relative aspect-square bg-white rounded-2xl overflow-hidden shadow-sm border border-honey-100">
               <SafeImage
                 src={imageEntries[0]?.url ?? images[0] ?? null}
-                alt={imageEntries[0]?.alt || displayProductName(product)}
+                alt={imageEntries[0]?.alt || productTitle}
                 className="absolute inset-0 h-full w-full object-contain p-4"
                 fallback={
                   <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-honey-50 to-forest-50 gap-3">
                     <span className="text-5xl opacity-30">📦</span>
                     <span className="text-forest-700 font-serif font-semibold text-base text-center px-8 leading-snug opacity-60">
-                      {displayProductName(product)}
+                      {productTitle}
                     </span>
                   </div>
                 }
@@ -187,7 +210,7 @@ export default async function ProductPage({ params }: Props) {
                   <div key={entry.url} className="relative w-16 h-16 flex-shrink-0 rounded-xl overflow-hidden bg-white border border-honey-100">
                     <SafeImage
                       src={entry.url}
-                      alt={entry.alt || `${displayProductName(product)} фото ${i + 2}`}
+                      alt={entry.alt || `${productTitle} ${tr({ uk: 'фото', ru: 'фото', en: 'photo' }, locale)} ${i + 2}`}
                       className="absolute inset-0 h-full w-full object-contain p-1"
                       fallback={<div className="absolute inset-0 flex items-center justify-center text-lg opacity-30">📦</div>}
                     />
@@ -201,12 +224,12 @@ export default async function ProductPage({ params }: Props) {
           <div className="flex flex-col">
             {product.is_featured && (
               <span className="inline-block text-xs font-semibold bg-honey-100 text-honey-700 px-2.5 py-1 rounded-full mb-3 w-fit">
-                Хіт продажів
+                {tr({ uk: 'Хіт продажів', ru: 'Хит продаж', en: 'Bestseller' }, locale)}
               </span>
             )}
 
             <h1 className="font-serif text-2xl md:text-3xl font-bold text-bark mb-4 leading-tight">
-              {displayProductName(product)}
+              {productTitle}
             </h1>
 
             <div className="flex items-baseline gap-3 mb-6">
@@ -228,9 +251,9 @@ export default async function ProductPage({ params }: Props) {
               <p className="text-sm text-bark/60 leading-relaxed -mt-3 mb-6">{fromPriceNote}</p>
             )}
 
-            {product.short_description && (
+            {(product.localized_short_description ?? product.short_description) && (
               <p className="text-gray-600 text-base leading-relaxed mb-6">
-                {product.short_description}
+                {product.localized_short_description ?? product.short_description}
               </p>
             )}
 
@@ -255,7 +278,7 @@ export default async function ProductPage({ params }: Props) {
                       id: `catalog-${product.slug}`,
                       productType: 'catalog',
                       productSlug: product.slug,
-                      name: displayProductName(product),
+                      name: productTitle,
                       price: product.price_uah as number,
                       imageUrl: images[0] ?? undefined,
                     }}
@@ -267,7 +290,7 @@ export default async function ProductPage({ params }: Props) {
                       id: `catalog-${product.slug}`,
                       productType: 'catalog',
                       productSlug: product.slug,
-                      name: displayProductName(product),
+                      name: productTitle,
                       price: product.price_uah as number,
                       imageUrl: images[0] ?? undefined,
                     }}
@@ -280,21 +303,21 @@ export default async function ProductPage({ params }: Props) {
                 // fall back to the contact page.
                 (product.lead_type || product.inquiry_only) ? (
                   <ManualLeadForm
-                    productName={displayProductName(product)}
+                    productName={productTitle}
                     productSlug={product.slug}
                     leadType={(product.lead_type as ManualLeadType) ?? 'natural_products'}
                     category={categorySlug}
                     options={product.options}
-                    source={`/catalog/${categorySlug}/${productSlug}`}
+                    source={localizedPath(locale, `/catalog/${categorySlug}/${productSlug}`)}
                   />
                 ) : (
-                  <a href="/contact" className="inline-flex items-center justify-center w-full py-3 px-6 text-base font-semibold rounded-xl border border-honey-300 text-honey-700 hover:bg-honey-50 transition-colors">
-                    Уточнити ціну
+                  <a href={localizedPath(locale, '/contact')} className="inline-flex items-center justify-center w-full py-3 px-6 text-base font-semibold rounded-xl border border-honey-300 text-honey-700 hover:bg-honey-50 transition-colors">
+                    {tr({ uk: 'Уточнити ціну', ru: 'Уточнить цену', en: 'Ask for price' }, locale)}
                   </a>
                 )
               ) : (
                 <div className="bg-gray-100 text-gray-600 rounded-xl px-4 py-3 text-sm font-medium text-center">
-                  Немає в наявності
+                  {tr({ uk: 'Немає в наявності', ru: 'Нет в наличии', en: 'Out of stock' }, locale)}
                 </div>
               )}
             </div>
@@ -349,11 +372,11 @@ export default async function ProductPage({ params }: Props) {
               </div>
             )}
 
-            {product.description && (
+            {(product.localized_description ?? product.description) && (
               <div className="border-t border-gray-100 pt-6">
                 <h2 className="font-semibold text-bark mb-3 text-sm uppercase tracking-wide">{tr({ uk: 'Опис', ru: 'Описание', en: 'Description' }, locale)}</h2>
                 <div className="text-gray-600 text-sm leading-relaxed whitespace-pre-line">
-                  {product.description}
+                  {product.localized_description ?? product.description}
                 </div>
               </div>
             )}
@@ -370,6 +393,7 @@ export default async function ProductPage({ params }: Props) {
                   key={p.id}
                   product={p}
                   categorySlug={p.category_slug ?? categorySlug}
+                  locale={locale}
                 />
               ))}
             </div>

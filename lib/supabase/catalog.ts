@@ -2,6 +2,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { realtimeCompatOptions } from '@/lib/supabase/realtime-transport'
 import type { CatalogCategory, CatalogProduct, CatalogImageMeta } from '@/types'
 import { resolveImageEntries, primaryImageAlt } from '@/lib/catalog/image-metadata'
+import { metalContentBySlug } from '@/lib/catalog/metal-content'
 
 // Singleton anon client — reused across the many getClient() calls per catalog
 // page render instead of allocating one each time (per-request createClient leaks).
@@ -24,9 +25,14 @@ export const CATALOG_PAGE_SIZE = 24
 // ─── Localized SEO readers (public/anon; SELECT-only via RLS) ──────────────────
 // A single translation row for a product/category + locale, used by localized
 // (ru/en) pages. Never queried for the default 'uk' locale. Returns null when the
-// row is absent (→ the resolver falls back to Ukrainian content). Kept lean —
-// only the SEO columns the page renders.
+// row is absent, callers build same-language fallbacks rather than mixing
+// Ukrainian copy into a Russian page.
 export interface CatalogTranslationRow {
+  product_id?: string
+  category_id?: string
+  name?: string | null
+  short_description?: string | null
+  seo_description?: string | null
   meta_title: string | null
   meta_description: string | null
   description: string | null
@@ -41,7 +47,7 @@ export async function getProductTranslation(productId: string, locale: string): 
   if (!client || !productId) return null
   const { data } = await client
     .from('catalog_product_translations')
-    .select('meta_title, meta_description, description, seo_keywords, seo_status')
+    .select('product_id, name, short_description, description, seo_description, meta_title, meta_description, seo_keywords, seo_status')
     .eq('product_id', productId)
     .eq('locale', locale)
     .maybeSingle()
@@ -53,7 +59,7 @@ export async function getCategoryTranslation(categoryId: string, locale: string)
   if (!client || !categoryId) return null
   const { data } = await client
     .from('catalog_category_translations')
-    .select('meta_title, meta_description, description, h1, seo_keywords, faq_json, seo_status')
+    .select('category_id, meta_title, meta_description, description, h1, seo_keywords, faq_json, seo_status')
     .eq('category_id', categoryId)
     .eq('locale', locale)
     .maybeSingle()
@@ -412,10 +418,192 @@ export function isPublicListableProduct(product: NameBearingProduct): boolean {
 // label when there is genuinely no real name (those are filtered out of public
 // lists, but detail pages / cart still need a non-empty string). Never mutates DB.
 export function displayProductName(product: NameBearingProduct, locale?: string): string {
+  const localized = (product as NameBearingProduct & { localized_name?: string | null }).localized_name
+  if (localized && !isGarbageProductName(localized)) return localized.trim()
   const best = bestProductName(product, locale)
   if (best) return best
   const sku = (product.supplier_sku ?? '').trim()
   return sku ? `Товар ${sku}` : 'Товар'
+}
+
+function cleanLocalizedText(value: string | null | undefined): string | null {
+  const text = (value ?? '').replace(/\s+/g, ' ').trim()
+  return text || null
+}
+
+function containsUkrainianSpecificLetters(value: string | null | undefined): boolean {
+  return /[іїєґ]/i.test(value ?? '')
+}
+
+function russianProductFallbackName(product: CatalogProduct): string {
+  const curatedMetal = metalContentBySlug(product.slug)?.ru.name
+  if (curatedMetal) return curatedMetal
+  const curatedManual = MANUAL_PRODUCT_NAMES_RU[product.slug]
+  if (curatedManual) return curatedManual
+  const raw = cleanLocalizedText(product.name)
+  if (raw && !isGarbageProductName(raw)) return raw
+  const ua = cleanLocalizedText(product.name_ua)
+  if (ua && !containsUkrainianSpecificLetters(ua) && !isGarbageProductName(ua)) return ua
+  const sku = cleanLocalizedText(product.supplier_sku)
+  return sku ? `Товар ${sku}` : 'Товар'
+}
+
+const MANUAL_PRODUCT_NAMES_RU: Record<string, string> = {
+  'zhymolost-organichna-svizha': 'Жимолость органическая свежая',
+  'sadzhantsi-zhymolosti': 'Саженцы жимолости',
+  'fermentovanyi-ivan-chai-krupnolystovyi': 'Ферментированный Иван-чай крупнолистовой',
+  'sadzhantsi-ivan-chaiu-kypriiu': 'Саженцы Иван-чая / кипрея',
+  'sortovyi-ozymyi-chasnyk': 'Сортовой озимый чеснок',
+  'medovyi-shokolad': 'Шоколад на мёду',
+  'maslo-holodnogo-vidzhymu-na-zamovlennia': 'Масло холодного отжима под заказ',
+  'harbuzova-oliia': 'Тыквенное масло',
+  'konopliana-oliia': 'Конопляное масло',
+  'ryzhiieva-oliia': 'Рыжиковое масло',
+  'kunzhutna-oliia': 'Кунжутное масло',
+  'oliia-voloskoho-horikha': 'Масло грецкого ореха',
+  'soniashnykova-oliia': 'Подсолнечное масло',
+  'lliana-oliia': 'Льняное масло',
+  'kedrova-oliia': 'Кедровое масло',
+  'podarunkovyi-nabir-med-shokolad': 'Подарочный набор «Мёд + шоколад»',
+  'podarunkovyi-nabir-med-oliia': 'Подарочный набор «Мёд + масло»',
+  'podarunkovyi-nabir-med-shokolad-oliia': 'Подарочный набор «Мёд + шоколад + масло»',
+}
+
+const MANUAL_CATEGORY_NAMES_RU: Record<string, string> = {
+  'naturalni-produkty': 'Натуральные продукты',
+  'zhyvi-olii-holodnogo-vidzhymu': 'Масла холодного отжима',
+  'podarunkovi-nabory': 'Подарочные наборы',
+  'metaloprofil-pokrivlia-komplektuiuchi': 'Металлопрофиль, кровля и комплектующие',
+}
+
+function russianCategoryFallbackName(category: CatalogCategory, supplierName?: string | null): string {
+  const curatedManual = MANUAL_CATEGORY_NAMES_RU[category.slug]
+  if (curatedManual) return curatedManual
+  const raw = cleanLocalizedText(supplierName)
+  if (raw && !isUnusableCategoryName(raw)) return raw
+  const ua = cleanLocalizedText(category.name_ua)
+  if (ua && !containsUkrainianSpecificLetters(ua) && !isUnusableCategoryName(ua)) return ua
+  return 'Товары для дома и хозяйства'
+}
+
+// Resolve an entire page of dynamic catalog content in two bounded batch reads.
+// Missing RU fields receive RU copy, never Ukrainian per-field fallbacks, so a
+// partially completed AI translation queue cannot produce mixed-language cards.
+export async function localizeCatalogProducts(
+  products: CatalogProduct[],
+  locale: string,
+): Promise<CatalogProduct[]> {
+  if (locale === 'uk' || products.length === 0) return products
+  const client = getClient()
+  const ids = products.map((p) => p.id).filter(Boolean)
+  let rows: CatalogTranslationRow[] = []
+  if (client && ids.length > 0) {
+    const { data } = await client
+      .from('catalog_product_translations')
+      .select('product_id, name, short_description, description, seo_description, meta_title, meta_description, seo_keywords, seo_status')
+      .eq('locale', locale)
+      .in('product_id', ids)
+    rows = (data ?? []) as CatalogTranslationRow[]
+  }
+  const byId = new Map(rows.map((row) => [row.product_id, row]))
+
+  return products.map((product) => {
+    const tx = byId.get(product.id)
+    if (locale !== 'ru') return product
+    const curatedMetal = metalContentBySlug(product.slug)?.ru
+    const name = cleanLocalizedText(tx?.name) ?? russianProductFallbackName(product)
+    const genericShort = `Закажите ${name} с доставкой по Украине. Наличие и стоимость подтверждает менеджер.`
+    const shortDescription =
+      cleanLocalizedText(tx?.short_description) ??
+      cleanLocalizedText(curatedMetal?.short_description) ??
+      genericShort
+    const description =
+      cleanLocalizedText(tx?.description) ??
+      cleanLocalizedText(tx?.seo_description) ??
+      cleanLocalizedText(curatedMetal?.description) ??
+      genericShort
+    return {
+      ...product,
+      localized_name: name,
+      localized_short_description: shortDescription,
+      localized_description: description,
+      localized_seo_description:
+        cleanLocalizedText(tx?.seo_description) ??
+        cleanLocalizedText(curatedMetal?.seo_description) ??
+        description,
+      short_description: shortDescription,
+      description,
+      meta_title:
+        cleanLocalizedText(tx?.meta_title) ??
+        cleanLocalizedText(curatedMetal?.meta_title) ??
+        `${name} — купить в Украине`,
+      meta_description:
+        cleanLocalizedText(tx?.meta_description) ??
+        cleanLocalizedText(curatedMetal?.meta_description) ??
+        `${name}: цена, наличие и заказ с доставкой по Украине. Дача TV.`,
+      seo_keywords: cleanLocalizedText(tx?.seo_keywords) ?? cleanLocalizedText(curatedMetal?.seo_keywords),
+    }
+  })
+}
+
+// Category translations use h1 as their localized public name. When an RU row
+// is not ready yet, the original supplier category name is read in one batch;
+// only then do we use a deterministic Russian fallback.
+export async function localizeCatalogCategories(
+  categories: CatalogCategory[],
+  locale: string,
+): Promise<CatalogCategory[]> {
+  if (locale === 'uk' || categories.length === 0) return categories
+  const client = getClient()
+  const ids = categories.map((c) => c.id).filter((id) => id && id !== '__all__')
+  const supplierIds = categories
+    .map((c) => c.supplier_category_id)
+    .filter((id): id is string => Boolean(id))
+  let txRows: CatalogTranslationRow[] = []
+  let supplierRows: { id: string; name: string | null }[] = []
+  if (client) {
+    const [txResult, supplierResult] = await Promise.all([
+      ids.length
+        ? client
+            .from('catalog_category_translations')
+            .select('category_id, meta_title, meta_description, description, h1, seo_keywords, faq_json, seo_status')
+            .eq('locale', locale)
+            .in('category_id', ids)
+        : Promise.resolve({ data: [] }),
+      supplierIds.length
+        ? client.from('supplier_categories').select('id, name').in('id', supplierIds)
+        : Promise.resolve({ data: [] }),
+    ])
+    txRows = (txResult.data ?? []) as CatalogTranslationRow[]
+    supplierRows = (supplierResult.data ?? []) as { id: string; name: string | null }[]
+  }
+  const txById = new Map(txRows.map((row) => [row.category_id, row]))
+  const supplierById = new Map(supplierRows.map((row) => [row.id, row.name]))
+
+  return categories.map((category) => {
+    if (locale !== 'ru' || category.id === '__all__') return category
+    const tx = txById.get(category.id)
+    const name =
+      cleanLocalizedText(tx?.h1) ??
+      russianCategoryFallbackName(category, category.supplier_category_id
+        ? supplierById.get(category.supplier_category_id)
+        : null)
+    const generic = `Товары категории «${name}» в наличии — доставка Новой Почтой по всей Украине.`
+    const description = cleanLocalizedText(tx?.description) ?? generic
+    return {
+      ...category,
+      localized_name: name,
+      localized_description: description,
+      localized_seo_description: description,
+      description,
+      description_ua: description,
+      h1: name,
+      meta_title: cleanLocalizedText(tx?.meta_title) ?? `${name} — купить в Украине`,
+      meta_description: cleanLocalizedText(tx?.meta_description) ?? generic,
+      seo_keywords: cleanLocalizedText(tx?.seo_keywords),
+      faq_json: tx?.faq_json ?? null,
+    }
+  })
 }
 
 export async function getPublishedCategories(): Promise<CatalogCategory[]> {
@@ -462,7 +650,7 @@ export async function getLandingCategories(limit = 80): Promise<CatalogCategory[
     // guaranteed inside the bounded fetch window before the JS pin runs.
     // Supplier categories default to sort_order 100 and display_order 0, so
     // ordering by display_order alone would push the manual card past the limit.
-    .select('id, slug, name_ua, image_url, description, display_order, sort_order, source, is_published')
+    .select('id, supplier_category_id, slug, name_ua, image_url, description, display_order, sort_order, source, is_published')
     .eq('is_published', true)
     .order('sort_order', { ascending: true })
     .order('display_order', { ascending: true })
@@ -1099,7 +1287,7 @@ export interface CatalogSuggestion {
 // Lightweight typeahead for the search box. Bounded (limit), no count, minimal
 // columns — safe per keystroke ONLY with the pg_trgm indexes in place. A short
 // query is rejected to avoid matching a huge slice of the catalog.
-export async function suggestCatalogProducts(q: string, limit = 8): Promise<CatalogSuggestion[]> {
+export async function suggestCatalogProducts(q: string, limit = 8, locale = 'uk'): Promise<CatalogSuggestion[]> {
   const client = getClient()
   const term = q.trim()
   if (!client || term.length < 2) return []
@@ -1172,11 +1360,12 @@ export async function suggestCatalogProducts(q: string, limit = 8): Promise<Cata
   }
   const ranked = rankByRelevanceThenAds(entries)
   debugLogRanking('catalog-suggest', term, ranked)
-  const rows = ranked.slice(0, limit).map((e) => e.product)
+  const rawRows = ranked.slice(0, limit).map((e) => e.product)
+  const rows = await localizeCatalogProducts(rawRows, locale)
   return rows.map((p) => ({
     slug: p.slug,
     categorySlug: p.category_slug ?? null,
-    name: displayProductName(p),
+    name: displayProductName(p, locale),
     image: getCatalogProductImage(p),
     price: formatCatalogPrice(p),
     sku: p.supplier_sku ?? null,

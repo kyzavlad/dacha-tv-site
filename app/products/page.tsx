@@ -4,9 +4,10 @@ import { buildAlternates } from '@/lib/seo'
 import { CTAButton } from '@/components/shared/CTAButton'
 import { ProductsCatalog } from '@/components/products/ProductsCatalog'
 import { getAllHoneyProducts, getAllApiaryProducts } from '@/lib/supabase/queries'
-import { getNaturalProducts } from '@/lib/supabase/catalog'
+import { getNaturalProducts, localizeCatalogProducts } from '@/lib/supabase/catalog'
 import { getRequestLocale, localizedPath } from '@/lib/i18n'
 import { manualDict } from '@/lib/i18n/sections/manual'
+import { localizeManualItems } from '@/lib/i18n/manual-translations'
 
 const PRODUCTS_META: Record<'uk' | 'ru' | 'en', { title: string; description: string; ogDescription: string }> = {
   uk: {
@@ -70,10 +71,15 @@ const ORDERABLE_STATUS = new Set(['available', 'preorder'])
 export default async function ProductsPage() {
   const locale = await getRequestLocale()
   const t = manualDict(locale)
-  const [honeyAll, apiaryAll, naturalAll] = await Promise.all([
+  const [rawHoney, rawApiary, rawNatural] = await Promise.all([
     getAllHoneyProducts().catch(() => []),
     getAllApiaryProducts().catch(() => []),
     getNaturalProducts().catch(() => []),
+  ])
+  const [honeyAll, apiaryAll, naturalAll] = await Promise.all([
+    localizeManualItems('honey_product', rawHoney, locale),
+    localizeManualItems('apiary_product', rawApiary, locale),
+    localizeCatalogProducts(rawNatural, locale),
   ])
 
   // Honey: currently orderable rows only.

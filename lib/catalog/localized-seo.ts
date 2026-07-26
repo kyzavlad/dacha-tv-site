@@ -1,9 +1,10 @@
 // ─── Localized SEO resolution ─────────────────────────────────────────────────
 // Resolves the SEO fields to render for a given locale:
 //   • 'uk'      → the existing Ukrainian columns on catalog_products/categories.
-//   • 'ru'/'en' → the matching row in catalog_product/category_translations,
-//                 falling back per-field to the Ukrainian value when the
-//                 translation is missing or blank.
+//   • 'ru'/'en' → the matching row in catalog_product/category_translations.
+//                 Missing localized fields stay null so the page can generate a
+//                 same-language fallback instead of mixing Ukrainian copy into
+//                 a Russian/English document.
 // `localized` is TRUE only when a translation row actually contributed content —
 // so a page that merely falls back to Ukrainian is never mislabelled as localized.
 
@@ -55,30 +56,29 @@ function uaResolved(ua: UaSeoSource): ResolvedSeo {
   }
 }
 
-// Per-field: prefer the translation value, else fall back to Ukrainian.
-function localizedResolve(ua: UaSeoSource, tx: TranslationSource): ResolvedSeo {
+function localizedResolve(tx: TranslationSource): ResolvedSeo {
   const faqTx = Array.isArray(tx.faq_json) && tx.faq_json.length > 0 ? tx.faq_json : null
   const contributed =
     !!nz(tx.meta_title) || !!nz(tx.meta_description) || !!nz(tx.description) ||
     !!nz(tx.h1) || !!nz(tx.seo_keywords) || !!faqTx
   return {
-    meta_title: nz(tx.meta_title) ?? nz(ua.meta_title),
-    meta_description: nz(tx.meta_description) ?? nz(ua.meta_description),
-    description: nz(tx.description) ?? nz(ua.description_ua),
-    h1: nz(tx.h1) ?? nz(ua.h1),
-    seo_keywords: nz(tx.seo_keywords) ?? nz(ua.seo_keywords),
-    faq_json: faqTx ?? ua.faq_json ?? null,
+    meta_title: nz(tx.meta_title),
+    meta_description: nz(tx.meta_description),
+    description: nz(tx.description),
+    h1: nz(tx.h1),
+    seo_keywords: nz(tx.seo_keywords),
+    faq_json: faqTx,
     // Localized only when the translation row actually contributed content.
     localized: contributed,
   }
 }
 
 export function resolveProductSeo(locale: Locale, ua: UaSeoSource, tx?: TranslationSource | null): ResolvedSeo {
-  if (locale === 'uk' || !tx) return uaResolved(ua)
-  return localizedResolve(ua, tx)
+  if (locale === 'uk') return uaResolved(ua)
+  return localizedResolve(tx ?? {})
 }
 
 export function resolveCategorySeo(locale: Locale, ua: UaSeoSource, tx?: TranslationSource | null): ResolvedSeo {
-  if (locale === 'uk' || !tx) return uaResolved(ua)
-  return localizedResolve(ua, tx)
+  if (locale === 'uk') return uaResolved(ua)
+  return localizedResolve(tx ?? {})
 }

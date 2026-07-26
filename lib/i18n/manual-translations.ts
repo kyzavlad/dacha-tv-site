@@ -3,7 +3,8 @@
 // records keep their Ukrainian columns; this is additive enrichment with an
 // intentional Ukrainian fallback. `resolveManualField` is PURE (unit-testable).
 
-import { createClient } from '@supabase/supabase-js'
+import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import { realtimeCompatOptions } from '@/lib/supabase/realtime-transport'
 import type { Locale } from '@/lib/i18n'
 
 export type ManualEntityType =
@@ -38,11 +39,54 @@ export function resolveManualField(
   return t || base
 }
 
+let _manualAnon: SupabaseClient | null = null
+let _manualAnonKey = ''
 function anonClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
   if (!url || !key) return null
-  return createClient(url, key)
+  const cacheKey = `${url} ${key}`
+  if (_manualAnon && _manualAnonKey === cacheKey) return _manualAnon
+  _manualAnon = createClient(url, key, { ...realtimeCompatOptions() })
+  _manualAnonKey = cacheKey
+  return _manualAnon
+}
+
+// Localize a bounded list of hand-managed entities for cards/listings. Detail
+// pages use the same rows field-by-field; this keeps list and detail language in
+// sync and avoids the old "localized heading, Ukrainian product cards" state.
+export async function localizeManualItems<T extends {
+  id: string
+  name: string
+  short_description?: string | null
+  description?: string | null
+  full_description?: string | null
+  image_alt?: string | null
+}>(
+  entityType: ManualEntityType,
+  items: T[],
+  locale: Locale,
+): Promise<T[]> {
+  if (locale === 'uk' || items.length === 0) return items
+  const translations = await getManualTranslations(entityType, items.map((item) => item.id), locale)
+  return items.map((item) => {
+    const tx = translations.get(item.id)
+    if (!tx) return item
+    const name = resolveManualField(item.name, tx, 'name', locale)
+    const shortDescription = resolveManualField(item.short_description, tx, 'short_description', locale)
+    const description = resolveManualField(item.description ?? item.full_description, tx, 'description', locale)
+    const imageAlt = resolveManualField(item.image_alt ?? item.name, tx, 'image_alt', locale)
+    return {
+      ...item,
+      name,
+      short_description: shortDescription || null,
+      description: description || null,
+      ...(Object.prototype.hasOwnProperty.call(item, 'full_description')
+        ? { full_description: description || item.full_description || null }
+        : {}),
+      image_alt: imageAlt || name,
+    }
+  })
 }
 
 // Batch-load translations for a set of entities of one type + locale. Returns a
