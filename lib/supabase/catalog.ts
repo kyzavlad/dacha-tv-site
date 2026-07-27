@@ -841,7 +841,11 @@ export async function getLandingCategories(limit = 80): Promise<CatalogCategory[
     // guaranteed inside the bounded fetch window before the JS pin runs.
     // Supplier categories default to sort_order 100 and display_order 0, so
     // ordering by display_order alone would push the manual card past the limit.
-    .select('id, supplier_category_id, slug, name_ua, image_url, description, display_order, sort_order, source, is_published')
+    // h1 is REQUIRED: it is the verified Ukrainian source for most resolvable
+    // categories. Without it the resolver receives h1=undefined here while the
+    // diagnostic (which does select h1) reports the same row as usable — so a
+    // valid category silently disappears from the UA landing grid.
+    .select('id, supplier_category_id, slug, name_ua, h1, image_url, description, display_order, sort_order, source, is_published')
     .eq('is_published', true)
     .order('sort_order', { ascending: true })
     .order('display_order', { ascending: true })
@@ -856,7 +860,10 @@ export async function getLandingCategories(limit = 80): Promise<CatalogCategory[
   // profile category, so it is explicitly kept.
   const usable = rows.filter(
     (c) =>
-      !isUnusableCategoryName(c.name_ua) &&
+      // h1 counts too: a row can carry a code-like name_ua and a real h1, and
+      // the resolver prefers h1. Dropping on name_ua alone would discard it
+      // before the resolver ever sees the usable name.
+      !(isUnusableCategoryName(c.name_ua) && isUnusableCategoryName(c.h1)) &&
       !(c.source === 'manual' && c.slug !== METAL_CATEGORY_SLUG),
   )
   usable.sort((a, b) => {

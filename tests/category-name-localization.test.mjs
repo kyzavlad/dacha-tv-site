@@ -14,6 +14,7 @@ import {
   CURATED_UK_CATEGORY_NAMES,
   REVIEWED_UK_CATEGORY_NAMES,
   isVerifiedUkrainianName,
+  ADDITIONAL_CURATED_UK_CATEGORY_NAMES,
 } from '../lib/catalog/uk-category-name.ts'
 import { isUkrainianText, containsLikelyRussianWords } from '../lib/catalog/russian-text.ts'
 
@@ -418,4 +419,176 @@ test('public listings filter out categories with no resolved name', () => {
     const src = readFileSync(new URL(`../${f}`, import.meta.url), 'utf8')
     assert.match(src, /hasResolvedCategoryName/, `${f} must exclude unresolved categories`)
   }
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// V4 — the 73 published categories that were still failing closed in
+// production, plus the getLandingCategories() h1 defect. Production evidence
+// and the reviewed mappings live in tests/fixtures/category-localization-v4.json.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const V4 = JSON.parse(
+  readFileSync(new URL('./fixtures/category-localization-v4.json', import.meta.url), 'utf8'),
+)
+
+test('the reviewed v4 table holds exactly 72 mappings', () => {
+  const entries = Object.entries(ADDITIONAL_CURATED_UK_CATEGORY_NAMES)
+  assert.equal(entries.length, 72)
+  assert.equal(V4.mapping_count, 72)
+  // Keys are stored lowercased and normalized so lookup is exact.
+  for (const [key] of entries) {
+    assert.equal(key, key.replace(/\s+/g, ' ').trim().toLowerCase(), `key must be normalized: ${key}`)
+  }
+  // Merged into the authoritative table, without clobbering the original 49.
+  for (const [key, uk] of entries) assert.equal(CURATED_UK_CATEGORY_NAMES[key], uk)
+  assert.ok(Object.keys(CURATED_UK_CATEGORY_NAMES).length >= 121, 'base 49 + reviewed 72')
+})
+
+test('every reviewed v4 mapping key resolves exactly to its Ukrainian value', () => {
+  for (const [key, uk] of Object.entries(ADDITIONAL_CURATED_UK_CATEGORY_NAMES)) {
+    assert.equal(curatedUkCategoryName(key), uk)
+    // The source name may arrive from any column, in any casing.
+    for (const field of ['name_ua', 'h1', 'uk_translation', 'supplier_name_ua', 'supplier_name', 'ru_translation']) {
+      const r = resolveUkCategoryName({ [field]: key })
+      assert.equal(r.name, uk, `${field}=«${key}» → «${uk}»`)
+      assert.equal(r.source, 'curated')
+      assert.equal(r.needsReview, false)
+    }
+  }
+})
+
+test('all 73 affected production rows resolve, none needs review', () => {
+  assert.equal(V4.affected_categories.length, 73)
+  const resolvedNames = []
+  for (const row of V4.affected_categories) {
+    // The production shape: a Russian supplier name and a slug, nothing else.
+    const r = resolveUkCategoryName({ slug: row.slug, supplier_name: row.source_name })
+    assert.equal(r.name, row.ukrainian_name, `${row.slug} → «${row.ukrainian_name}»`)
+    assert.equal(r.source, 'curated', `${row.slug} must resolve from the reviewed table`)
+    assert.equal(r.needsReview, false, `${row.slug} must not need review`)
+    assert.equal(r.suggestedName, null, `${row.slug} must not carry a heuristic suggestion`)
+    resolvedNames.push(r.name)
+  }
+  assert.equal(resolvedNames.filter((n) => !n).length, 0)
+})
+
+test('zero affected rows fall back to a heuristic suggestion', () => {
+  const needing = V4.affected_categories.filter(
+    (row) => resolveUkCategoryName({ slug: row.slug, supplier_name: row.source_name }).needsReview,
+  )
+  assert.deepEqual(needing, [], 'every affected row must be covered by a reviewed mapping')
+})
+
+test('no reviewed Ukrainian target contains ы/э/ъ/ё', () => {
+  for (const uk of Object.values(ADDITIONAL_CURATED_UK_CATEGORY_NAMES)) {
+    assert.equal(hasRussianOnlyLetters(uk), false, `Russian-only letter in target: ${uk}`)
+    assert.equal(isVerifiedUkrainianName(uk), true, `target must be renderable: ${uk}`)
+  }
+})
+
+test('the two «Велосипеды» rows both resolve; uniqueness is NOT required', () => {
+  const bikes = V4.affected_categories.filter((r) => r.source_name === 'Велосипеды')
+  assert.equal(bikes.length, 2, 'two separate supplier category rows share this source')
+  assert.notEqual(bikes[0].slug, bikes[1].slug)
+  for (const row of bikes) {
+    const r = resolveUkCategoryName({ slug: row.slug, supplier_name: row.source_name })
+    assert.equal(r.name, 'Велосипеди')
+    assert.equal(r.source, 'curated')
+  }
+  // Duplicate resolved names are a legitimate source-taxonomy artefact, not the
+  // removed shared-fallback bug.
+  assert.equal(V4.expected_after_patch.known_duplicate_name_groups.includes('Велосипеди'), true)
+})
+
+test('production counters expected after the patch are internally consistent', () => {
+  const e = V4.expected_after_patch
+  assert.equal(e.total_published_categories, 367)
+  assert.equal(e.usable_uk_names, 367)
+  assert.equal(e.categories_requiring_review, 0)
+  assert.equal(e.unresolved_categories, 0)
+  assert.equal(e.unique_uk_name_count, 360)
+  // 367 names collapsing to 360 unique values means 7 duplicate groups of two.
+  assert.equal(e.known_duplicate_name_groups.length, 7)
+  assert.equal(e.total_published_categories - e.unique_uk_name_count, e.known_duplicate_name_groups.length)
+})
+
+// ── getLandingCategories must select h1 ──────────────────────────────────────
+
+test('getLandingCategories SELECT includes h1', () => {
+  const src = readFileSync(new URL('../lib/supabase/catalog.ts', import.meta.url), 'utf8')
+  const fn = src.slice(src.indexOf('export async function getLandingCategories'))
+  const select = fn.slice(fn.indexOf('.select('), fn.indexOf('.eq('))
+  assert.match(select, /\bh1\b/, 'h1 is the verified Ukrainian source for most categories')
+  // Still narrow — the card/resolver fields only, never a bare select('*').
+  assert.doesNotMatch(select, /select\('\*'\)/)
+  for (const col of ['id', 'slug', 'name_ua', 'image_url', 'source', 'is_published']) {
+    assert.ok(select.includes(col), `card field must stay selected: ${col}`)
+  }
+})
+
+test('the landing keeps a row whose name_ua is code-like but whose h1 is real', () => {
+  const src = readFileSync(new URL('../lib/supabase/catalog.ts', import.meta.url), 'utf8')
+  const fn = src.slice(src.indexOf('export async function getLandingCategories'))
+  const filter = fn.slice(fn.indexOf('const usable'), fn.indexOf('usable.sort'))
+  assert.match(filter, /isUnusableCategoryName\(c\.name_ua\) && isUnusableCategoryName\(c\.h1\)/,
+    'a row is only dropped when BOTH name sources are unusable')
+})
+
+test('UA landing resolves a category whose name_ua is Russian but h1 is verified Ukrainian', () => {
+  const r = resolveUkCategoryName({ h1: 'Мийки високого тиску', name_ua: 'Мойки высокого давления' })
+  assert.equal(r.name, 'Мийки високого тиску')
+  assert.equal(r.source, 'stored_uk')
+  assert.equal(r.needsReview, false)
+})
+
+test('UA landing resolves via a curated RU source when h1 is absent or unverified', () => {
+  for (const h1 of [null, undefined, '', 'cat-4471', 'Мойки высокого давления']) {
+    const r = resolveUkCategoryName({ h1, name_ua: 'Мойки высокого давления' })
+    assert.equal(r.name, 'Мийки високого тиску', `h1=${JSON.stringify(h1)}`)
+    assert.equal(r.source, 'curated')
+  }
+  // And from the supplier name when both stored columns are code-like.
+  const r = resolveUkCategoryName({ h1: 'cat-4471', name_ua: '38853', supplier_name: 'Скутеры' })
+  assert.equal(r.name, 'Скутери')
+  assert.equal(r.source, 'curated')
+})
+
+test('a v4 suggestion never reaches localized_name, H1, metadata or breadcrumb', () => {
+  // Every affected row resolves, so no suggestion exists for them at all.
+  for (const row of V4.affected_categories) {
+    assert.equal(resolveUkCategoryName({ supplier_name: row.source_name }).suggestedName, null)
+  }
+  // And an uncovered Russian name still yields name=null, suggestion-only.
+  const r = resolveUkCategoryName({ supplier_name: 'Гидроцилиндры промышленные' })
+  assert.equal(r.name, null)
+  assert.ok(r.suggestedName)
+  // The public surfaces read `localized_name`, which is fed by `name` only.
+  const catalog = readFileSync(new URL('../lib/supabase/catalog.ts', import.meta.url), 'utf8')
+  assert.doesNotMatch(catalog, /localized_name:\s*[\w.]*suggested/i)
+  assert.doesNotMatch(catalog, /suggestedName/, 'the storefront module never reads the suggestion')
+})
+
+test('backfill still refuses to persist a heuristic suggestion for uncovered rows', () => {
+  const plan = planCategoryNameBackfill({
+    id: '1', slug: 'unknown', name_ua: 'cat-9', supplier_name: 'Гидроцилиндры промышленные',
+  })
+  assert.equal(plan.skip, 'needs_review')
+  assert.equal(plan.payload, null)
+  assert.ok(plan.suggestedName, 'reported for review only')
+})
+
+test('a reviewed target already stored in h1 needs no database write', () => {
+  // 44 of the 73 rows already store the reviewed Ukrainian value in h1; those
+  // become valid without an UPDATE, which is why the first dry-run proposes 29.
+  const plan = planCategoryNameBackfill({
+    id: '1', slug: 'shlem-1782704775954', h1: 'Шоломи', name_ua: 'Шоломи', supplier_name: 'Шлемы',
+  })
+  assert.equal(plan.payload, null)
+  assert.equal(plan.skip, 'already_valid')
+  // Whereas a row whose name_ua is still the Russian source IS proposed.
+  const write = planCategoryNameBackfill({
+    id: '2', slug: 'shlem-x', name_ua: 'Шлемы', supplier_name: 'Шлемы',
+  })
+  assert.deepEqual(write.payload, { name_ua: 'Шоломи' })
+  assert.equal(write.skip, null)
 })

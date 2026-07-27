@@ -1,0 +1,391 @@
+{
+  "note": "Production evidence for the v4 category localization fix. Affected rows are the 73 published categories that were failing closed; 72 unique source names because «Велосипеды» is used by two supplier category rows.",
+  "production_commit_before_patch": "caea3c44d4087e8393cf49abb86625d2b5422e02",
+  "mapping_count": 72,
+  "affected_category_count": 73,
+  "expected_after_patch": {
+    "total_published_categories": 367,
+    "usable_uk_names": 367,
+    "categories_requiring_review": 0,
+    "unresolved_categories": 0,
+    "unique_uk_name_count": 360,
+    "known_duplicate_name_groups": [
+      "Автоаксесуари",
+      "Бензинові генератори",
+      "Набори інструментів",
+      "Шліфувальні машини",
+      "Відбійні молотки",
+      "Цепні пили",
+      "Велосипеди"
+    ],
+    "expected_first_backfill_updates": 29,
+    "expected_second_backfill_updates": 0
+  },
+  "affected_categories": [
+    {
+      "slug": "akb-1782704739008",
+      "source_name": "Аккумуляторы 12V",
+      "ukrainian_name": "Акумулятори 12V"
+    },
+    {
+      "slug": "b-tovaya-khymyya-1782704740314",
+      "source_name": "Пасти для рук",
+      "ukrainian_name": "Пасти для очищення рук"
+    },
+    {
+      "slug": "benzokosa-1782704739765",
+      "source_name": "Бензокосы",
+      "ukrainian_name": "Бензокоси"
+    },
+    {
+      "slug": "benzopyl-1782704739870",
+      "source_name": "Бензопилы Goodluck и другие",
+      "ukrainian_name": "Бензопили Goodluck та інших брендів"
+    },
+    {
+      "slug": "beysbolky-y-bandan-1782704739653",
+      "source_name": "Бейсболки и банданы",
+      "ukrainian_name": "Бейсболки та бандани"
+    },
+    {
+      "slug": "bmx-1782704738246",
+      "source_name": "BMX велосипеды и аксессуары",
+      "ukrainian_name": "BMX-велосипеди та аксесуари"
+    },
+    {
+      "slug": "chystky-1782704775519",
+      "source_name": "Средства для чистки и ухода",
+      "ukrainian_name": "Засоби для чищення та догляду"
+    },
+    {
+      "slug": "dlya-bolharky-1782704743811",
+      "source_name": "Запчасти для болгарок",
+      "ukrainian_name": "Запчастини для болгарок"
+    },
+    {
+      "slug": "dlya-dyskovoy-pyl-1782704744240",
+      "source_name": "Запчасти для дисковых пил",
+      "ukrainian_name": "Запчастини для дискових пил"
+    },
+    {
+      "slug": "dlya-lobzyka-1782704744346",
+      "source_name": "Запчасти для лобзиков",
+      "ukrainian_name": "Запчастини для лобзиків"
+    },
+    {
+      "slug": "dlya-motopomp-1782704744562",
+      "source_name": "Запчасти для мотопомп",
+      "ukrainian_name": "Запчастини для мотопомп"
+    },
+    {
+      "slug": "dlya-rotorn-kh-kosylok-motobloka-1782704744879",
+      "source_name": "Запчасти для роторных косилок мотоблока",
+      "ukrainian_name": "Запчастини для роторних косарок мотоблока"
+    },
+    {
+      "slug": "dlya-shurupoverta-1782704745090",
+      "source_name": "Запчасти для шуруповертов",
+      "ukrainian_name": "Запчастини для шуруповертів"
+    },
+    {
+      "slug": "dlya-velosypeda-1782704744025",
+      "source_name": "Запчасти для велосипеда",
+      "ukrainian_name": "Запчастини для велосипедів"
+    },
+    {
+      "slug": "f-tbayky-1782704774987",
+      "source_name": "Фэтбайки",
+      "ukrainian_name": "Фетбайки"
+    },
+    {
+      "slug": "frez-1782704774878",
+      "source_name": "Фрезы по дереву",
+      "ukrainian_name": "Фрези для обробки дерева"
+    },
+    {
+      "slug": "frezer-1782704774773",
+      "source_name": "Фрезеры и наборы фрез",
+      "ukrainian_name": "Фрезери та набори фрез"
+    },
+    {
+      "slug": "hyrobord-lektroskuter-lektrosamokat-1782704742517",
+      "source_name": "Гироборды и электросамокаты",
+      "ukrainian_name": "Гіроборди, електроскутери та електросамокати"
+    },
+    {
+      "slug": "khomut-1782704775092",
+      "source_name": "Хомуты",
+      "ukrainian_name": "Хомути"
+    },
+    {
+      "slug": "kondensator-1782704751495",
+      "source_name": "Конденсаторы",
+      "ukrainian_name": "Конденсатори"
+    },
+    {
+      "slug": "kraskopult-1782704751822",
+      "source_name": "Краскопульты",
+      "ukrainian_name": "Фарбопульти"
+    },
+    {
+      "slug": "lektrokosa-1782704777373",
+      "source_name": "Электрокосы и триммеры",
+      "ukrainian_name": "Електрокоси та тримери"
+    },
+    {
+      "slug": "lektrooborudovanye-1782704777654",
+      "source_name": "Электрооборудование для авто",
+      "ukrainian_name": "Електрообладнання для автомобілів"
+    },
+    {
+      "slug": "lektropyl-1782704777869",
+      "source_name": "Электропилы",
+      "ukrainian_name": "Електропили"
+    },
+    {
+      "slug": "lektrorubanky-1782704777973",
+      "source_name": "Электрорубанки",
+      "ukrainian_name": "Електрорубанки"
+    },
+    {
+      "slug": "lestnyts-y-stremyanky-1782704752904",
+      "source_name": "Алюминиевые лестницы и стремянки",
+      "ukrainian_name": "Алюмінієві драбини та стрем’янки"
+    },
+    {
+      "slug": "lobzyky-1782704753122",
+      "source_name": "Электролобзики",
+      "ukrainian_name": "Електролобзики"
+    },
+    {
+      "slug": "metalloobrabat-vayushchee-oborudovanye-1782704754367",
+      "source_name": "Металлообрабатывающее оборудование",
+      "ukrainian_name": "Металообробне обладнання"
+    },
+    {
+      "slug": "moped-1782704754843",
+      "source_name": "Мопеды",
+      "ukrainian_name": "Мопеди"
+    },
+    {
+      "slug": "moto-1782704755055",
+      "source_name": "Мото товары",
+      "ukrainian_name": "Товари для мототехніки"
+    },
+    {
+      "slug": "motoblok-1782704755160",
+      "source_name": "Мотоблоки",
+      "ukrainian_name": "Мотоблоки"
+    },
+    {
+      "slug": "motokos-1782704755372",
+      "source_name": "Мотокосы бензиновые",
+      "ukrainian_name": "Бензинові мотокоси"
+    },
+    {
+      "slug": "mototsykl-1782704755904",
+      "source_name": "Мотоциклы",
+      "ukrainian_name": "Мотоцикли"
+    },
+    {
+      "slug": "multymetr-y-prynadlezhnosty-1782704756225",
+      "source_name": "Мультиметры и тестеры",
+      "ukrainian_name": "Мультиметри та тестери"
+    },
+    {
+      "slug": "multyynstrument-multytul-1782704756121",
+      "source_name": "Мультитулы INTERTOOL",
+      "ukrainian_name": "Мультитули INTERTOOL"
+    },
+    {
+      "slug": "na-atv-1782704756334",
+      "source_name": "Шины для квадроциклов (ATV)",
+      "ukrainian_name": "Шини для квадроциклів (ATV)"
+    },
+    {
+      "slug": "na-benzopyl-1782704756437",
+      "source_name": "Запчасти для бензопил",
+      "ukrainian_name": "Запчастини для бензопил"
+    },
+    {
+      "slug": "na-detskye-kolyasky-1782704756981",
+      "source_name": "Шины для детских колясок",
+      "ukrainian_name": "Шини для дитячих колясок"
+    },
+    {
+      "slug": "na-lektropyl-1782704759185",
+      "source_name": "Запчасти для электропил",
+      "ukrainian_name": "Запчастини для електропил"
+    },
+    {
+      "slug": "na-motokos-1782704757995",
+      "source_name": "Запчасти для мотокос",
+      "ukrainian_name": "Запчастини для мотокос"
+    },
+    {
+      "slug": "na-tachky-1782704759073",
+      "source_name": "Шины для тачек",
+      "ukrainian_name": "Шини для тачок"
+    },
+    {
+      "slug": "nasos-kompressor-1782704760062",
+      "source_name": "Насосы и компрессоры",
+      "ukrainian_name": "Насоси та компресори"
+    },
+    {
+      "slug": "oborudovanye-svarochnoe-1782704760708",
+      "source_name": "Сварочное оборудование",
+      "ukrainian_name": "Зварювальне обладнання"
+    },
+    {
+      "slug": "obuv-1782704760827",
+      "source_name": "Мотоботинки PROBIKER",
+      "ukrainian_name": "Мотоботи PROBIKER"
+    },
+    {
+      "slug": "ochky-1782704761984",
+      "source_name": "Очки для мото и спорта",
+      "ukrainian_name": "Мотоокуляри та спортивні окуляри"
+    },
+    {
+      "slug": "ochystytely-v-sokoho-davlenyya-1782704761870",
+      "source_name": "Мойки высокого давления",
+      "ukrainian_name": "Мийки високого тиску"
+    },
+    {
+      "slug": "payalnyky-1782704762308",
+      "source_name": "Паяльники",
+      "ukrainian_name": "Паяльники"
+    },
+    {
+      "slug": "perforator-sds-plus-sds-max-1782704762863",
+      "source_name": "Перфораторы SDS-Plus и SDS-Max с разными режимами работы",
+      "ukrainian_name": "Перфоратори SDS-Plus та SDS-Max"
+    },
+    {
+      "slug": "podshlemnyky-1782704764589",
+      "source_name": "Подшлемники для мотошлемов",
+      "ukrainian_name": "Підшоломники для мотошоломів"
+    },
+    {
+      "slug": "pryazhky-1782704766268",
+      "source_name": "Пряжки",
+      "ukrainian_name": "Пряжки"
+    },
+    {
+      "slug": "prynadlezhnosty-k-lestnytsam-1782704765606",
+      "source_name": "Аксессуары для лестниц",
+      "ukrainian_name": "Аксесуари для драбин"
+    },
+    {
+      "slug": "prysposoblenyya-1782704765823",
+      "source_name": "Приспособления для авто",
+      "ukrainian_name": "Пристосування для ремонту авто"
+    },
+    {
+      "slug": "remkomplekt-1782704767409",
+      "source_name": "Ремкомплекты для шин и камер",
+      "ukrainian_name": "Ремкомплекти для шин і камер"
+    },
+    {
+      "slug": "rezyna-dysky-kolesa-1782704767182",
+      "source_name": "Резина, диски и колеса",
+      "ukrainian_name": "Шини, диски та колеса"
+    },
+    {
+      "slug": "s-emnyky-y-obzhymky-1782704771698",
+      "source_name": "Съемники и обжимки",
+      "ukrainian_name": "Знімачі та обтискачі"
+    },
+    {
+      "slug": "salfetky-y-hubky-1782704768380",
+      "source_name": "Салфетки и губки",
+      "ukrainian_name": "Серветки та губки"
+    },
+    {
+      "slug": "shlanhy-v-sokoho-davlenyya-1782704775738",
+      "source_name": "Шланги высокого давления",
+      "ukrainian_name": "Шланги високого тиску"
+    },
+    {
+      "slug": "shlem-1782704775954",
+      "source_name": "Шлемы",
+      "ukrainian_name": "Шоломи"
+    },
+    {
+      "slug": "shurupovert-1782704776500",
+      "source_name": "Шуруповерты",
+      "ukrainian_name": "Шуруповерти"
+    },
+    {
+      "slug": "skeyterskye-1782704769152",
+      "source_name": "Шлемы для скейтбординга",
+      "ukrainian_name": "Шоломи для скейтбордингу"
+    },
+    {
+      "slug": "skotch-1782704769517",
+      "source_name": "Скотч",
+      "ukrainian_name": "Клейка стрічка"
+    },
+    {
+      "slug": "skotch-upakovochn-y-1782704769631",
+      "source_name": "Упаковочный скотч",
+      "ukrainian_name": "Пакувальний скотч"
+    },
+    {
+      "slug": "skuter-1782704769737",
+      "source_name": "Скутеры",
+      "ukrainian_name": "Скутери"
+    },
+    {
+      "slug": "smazky-1782704769848",
+      "source_name": "Смазки и масла",
+      "ukrainian_name": "Мастила та оливи"
+    },
+    {
+      "slug": "sredstva-yndyvydualnoy-zashchyt-1782704770065",
+      "source_name": "Средства индивидуальной защиты",
+      "ukrainian_name": "Засоби індивідуального захисту"
+    },
+    {
+      "slug": "transformer-1782704772882",
+      "source_name": "Шлемы-трансформеры",
+      "ukrainian_name": "Шоломи-трансформери"
+    },
+    {
+      "slug": "trymmer-dlya-trav-1782704772992",
+      "source_name": "Триммеры для травы",
+      "ukrainian_name": "Тримери для трави"
+    },
+    {
+      "slug": "velo-1782704740423",
+      "source_name": "Велосипеды",
+      "ukrainian_name": "Велосипеди"
+    },
+    {
+      "slug": "velosyped-transformer-1782704740855",
+      "source_name": "Велосипеды-трансформеры",
+      "ukrainian_name": "Велосипеди-трансформери"
+    },
+    {
+      "slug": "velosypeda-1782704740527",
+      "source_name": "Велосипеды",
+      "ukrainian_name": "Велосипеди"
+    },
+    {
+      "slug": "vorotky-montyrovky-1782704741301",
+      "source_name": "Воротки и монтировки",
+      "ukrainian_name": "Воротки та монтажні лопатки"
+    },
+    {
+      "slug": "vozdukhoduvky-1782704741180",
+      "source_name": "Воздуходувки",
+      "ukrainian_name": "Повітродувки"
+    },
+    {
+      "slug": "zapchasty-1782704746616",
+      "source_name": "Запчасти",
+      "ukrainian_name": "Запчастини"
+    }
+  ]
+}
