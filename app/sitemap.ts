@@ -2,6 +2,8 @@ import type { MetadataRoute } from 'next'
 import { getAllHoneySlugs, getAllFlowerSlugs, getAllApiaryProductSlugs, getAllBeekeeperSlugs, getAllServiceSlugs } from '@/lib/supabase/queries'
 import {
   getPublishedCategories,
+  localizeCatalogCategories,
+  hasResolvedCategoryName,
   getPublishedCatalogSlugsPage,
   getPublishedCatalogProductCount,
   SITEMAP_PRODUCTS_PER_CHUNK,
@@ -85,7 +87,11 @@ export default async function sitemap(props: { id: Promise<string> }): Promise<M
       ...map(apiarySlugs, '/products', 0.75),
       ...map(beekeeperSlugs, '/beekeeper', 0.75),
       ...map(serviceSlugs, '/services', 0.75),
-      ...catalogCategories.map((cat) => entry(`/catalog/${cat.slug}`, 0.8)),
+      // Only categories with a real resolvable Ukrainian name are public, so
+      // only those belong in the sitemap.
+      ...(await localizeCatalogCategories(catalogCategories, DEFAULT_LOCALE))
+        .filter(hasResolvedCategoryName)
+        .map((cat) => entry(`/catalog/${cat.slug}`, 0.8)),
     ]
   }
 

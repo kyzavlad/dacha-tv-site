@@ -6,9 +6,9 @@ import {
   getCategoryBySlug,
   getPublishedProductsByCategory,
   localizeCatalogCategories,
+  hasResolvedCategoryName,
   localizeCatalogProducts,
   CATALOG_PAGE_SIZE,
-  categoryDisplayName,
   normalizeSort,
   getCategoryTranslation,
 } from '@/lib/supabase/catalog'
@@ -90,7 +90,12 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const rawCat = await getCategoryBySlug(slug).catch(() => null)
   if (!rawCat) return { title: locale === 'ru' ? 'Категория не найдена' : 'Категорія не знайдена' }
   const [cat] = await localizeCatalogCategories([rawCat], locale)
-  const displayName = categoryDisplayName(cat.localized_name ?? cat.name_ua)
+  // A category with no resolvable real name is excluded from public output —
+  // never advertised under the shared generic title.
+  if (!hasResolvedCategoryName(cat)) {
+    return { title: locale === 'ru' ? 'Категория не найдена' : 'Категорія не знайдена' }
+  }
+  const displayName = (cat.localized_name ?? '').trim()
   const tx = locale === 'uk' ? null : await getCategoryTranslation(cat.id, locale).catch(() => null)
   const seo = resolveCategorySeo(locale, {
     meta_title: cat.seo_title || cat.meta_title,
@@ -136,7 +141,9 @@ export default async function CategoryPage({ params, searchParams }: Props) {
   ])
 
   const st = CAT_STRINGS[locale]
-  const displayName = categoryDisplayName(cat.localized_name ?? cat.name_ua)
+  // Excluded from public output when no real name resolves (see diagnostics).
+  if (!hasResolvedCategoryName(cat)) notFound()
+  const displayName = (cat.localized_name ?? '').trim()
   const isScooterCategory = slug === SCOOTER_CATEGORY_SLUG
   const h1Display = isScooterCategory ? SCOOTER_H1[locale] : displayName
   const totalPages = Math.ceil(total / CATALOG_PAGE_SIZE)

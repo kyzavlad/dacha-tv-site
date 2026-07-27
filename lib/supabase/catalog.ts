@@ -1,5 +1,11 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { realtimeCompatOptions } from '@/lib/supabase/realtime-transport'
+import { containsRussianOnlyLetters, containsLikelyRussianWords } from '@/lib/catalog/russian-text'
+import {
+  resolveUkCategoryName,
+  isGenericCategoryName,
+  type UkCategoryNameSources,
+} from '@/lib/catalog/uk-category-name'
 import type { CatalogCategory, CatalogProduct, CatalogImageMeta } from '@/types'
 import { parseImageMetadata, resolveImageEntries, primaryImageAlt } from '@/lib/catalog/image-metadata'
 import { metalContentBySlug } from '@/lib/catalog/metal-content'
@@ -435,41 +441,6 @@ function containsUkrainianSpecificLetters(value: string | null | undefined): boo
   return /[іїєґ]/i.test(value ?? '')
 }
 
-function containsRussianOnlyLetters(value: string | null | undefined): boolean {
-  return /[ыэъё]/i.test(value ?? '')
-}
-
-// Russian supplier text does not always contain ы/э/ъ/ё. Names such as
-// "Сетка абразивная" use only Cyrillic letters shared with Ukrainian and used to
-// slip through the alphabet-only guard. Detect unambiguous Russian forms and
-// storefront vocabulary before accepting a value as Ukrainian. Neutral brand,
-// SKU and shared-language words remain valid.
-const RUSSIAN_STOREFRONT_WORDS = new Set([
-  'сетка',
-  'лента',
-  'шкурка',
-  'наждачная',
-  'точильный',
-  'двухсторонний',
-  'шлифовальная',
-  'закажите',
-  'купить',
-  'цена',
-  'наличие',
-  'стоимость',
-  'украине',
-  'описание',
-  'подробнее',
-])
-
-function containsLikelyRussianWords(value: string | null | undefined): boolean {
-  const tokens = (value ?? '').toLowerCase().match(/[а-яё]+/g) ?? []
-  return tokens.some((token) =>
-    RUSSIAN_STOREFRONT_WORDS.has(token) ||
-    (token.length >= 4 && /(?:ая|яя|ое|ее|ую|юю)$/.test(token)),
-  )
-}
-
 function cleanUkrainianText(value: string | null | undefined): string | null {
   const text = cleanLocalizedText(value)
   return text && !containsRussianOnlyLetters(text) && !containsLikelyRussianWords(text) ? text : null
@@ -653,6 +624,81 @@ export async function localizeCatalogProducts(
   })
 }
 
+// Batch-load the additional Ukrainian name sources for a set of categories.
+// Reads ONLY columns proven to be in production use: catalog_category_translations
+// (h1/meta_title, uk + ru) and supplier_categories (name, name_ua).
+// catalog_categories.name is deliberately NOT read — it is not part of the
+// verified production schema (no other code path selects it).
+export async function fetchUkCategoryNameSources(
+  categories: Pick<CatalogCategory, 'id' | 'supplier_category_id'>[],
+  // Protected diagnostics/backfill MUST pass getAdminClient() so RLS cannot
+  // silently hide supplier/translation rows and make a category look unusable.
+  // Public rendering keeps using the anon singleton.
+  suppliedClient?: ReturnType<typeof getClient>,
+): Promise<Map<string, Partial<UkCategoryNameSources>>> {
+  const out = new Map<string, Partial<UkCategoryNameSources>>()
+  const client = suppliedClient ?? getClient()
+  const ids = categories.map((c) => c.id).filter((id) => id && id !== '__all__')
+  const supplierIds = categories
+    .map((c) => c.supplier_category_id)
+    .filter((id): id is string => Boolean(id))
+  if (!client || ids.length === 0) return out
+
+  const [txResult, supplierByIdResult, supplierBySupplierIdResult] = await Promise.all([
+    client
+      .from('catalog_category_translations')
+      .select('category_id, locale, h1, meta_title')
+      .in('locale', ['uk', 'ru'])
+      .in('category_id', ids),
+    supplierIds.length
+      ? client.from('supplier_categories').select('id, name, name_ua').in('id', supplierIds)
+      : Promise.resolve({ data: [] }),
+    // catalog_categories.supplier_category_id matches supplier_categories.supplier_id
+    // on most rows; query both keys so neither linkage is missed.
+    supplierIds.length
+      ? client.from('supplier_categories').select('supplier_id, name, name_ua').in('supplier_id', supplierIds)
+      : Promise.resolve({ data: [] }),
+  ])
+
+  const txRows = (txResult.data ?? []) as Array<{ category_id: string; locale: string; h1: string | null; meta_title: string | null }>
+  const ukTx = new Map<string, string>()
+  const ruTx = new Map<string, string>()
+  for (const r of txRows) {
+    const v = (r.h1 ?? r.meta_title ?? '').trim()
+    if (!v) continue
+    if (r.locale === 'uk') ukTx.set(r.category_id, v)
+    else if (r.locale === 'ru') ruTx.set(r.category_id, v)
+  }
+
+  const supplierByKey = new Map<string, { name: string | null; name_ua: string | null }>()
+  for (const r of ((supplierByIdResult.data ?? []) as Array<{ id: string; name: string | null; name_ua: string | null }>)) {
+    supplierByKey.set(r.id, { name: r.name, name_ua: r.name_ua })
+  }
+  for (const r of ((supplierBySupplierIdResult.data ?? []) as Array<{ supplier_id: string; name: string | null; name_ua: string | null }>)) {
+    if (!supplierByKey.has(r.supplier_id)) supplierByKey.set(r.supplier_id, { name: r.name, name_ua: r.name_ua })
+  }
+
+  for (const c of categories) {
+    const sup = c.supplier_category_id ? supplierByKey.get(c.supplier_category_id) : undefined
+    out.set(c.id, {
+      uk_translation: ukTx.get(c.id) ?? null,
+      ru_translation: ruTx.get(c.id) ?? null,
+      supplier_name_ua: sup?.name_ua ?? null,
+      supplier_name: sup?.name ?? null,
+    })
+  }
+  return out
+}
+
+// True when a localized category may be shown publicly. A category whose name
+// could not be resolved from any real source gets an empty localized_name and is
+// excluded from the landing grid, chips and the sitemap.
+export function hasResolvedCategoryName(category: CatalogCategory): boolean {
+  if (category.id === '__all__') return true
+  const name = (category.localized_name ?? '').trim()
+  return Boolean(name) && !isGenericCategoryName(name)
+}
+
 // Category translations use h1 as their localized public name. When an RU row
 // is not ready yet, the original supplier category name is read in one batch;
 // only then do we use a deterministic Russian fallback.
@@ -662,18 +708,34 @@ export async function localizeCatalogCategories(
 ): Promise<CatalogCategory[]> {
   if (categories.length === 0) return categories
   if (locale === 'uk') {
+    // The generic literal is GONE. When h1/name_ua are missing or rejected as
+    // Russian we now resolve the REAL name from the other proven sources
+    // (reviewed uk translation → ru translation → supplier_categories) through
+    // the curated dictionary; only then, as an emergency display fallback, the
+    // flagged heuristic. A category that still resolves to nothing gets an EMPTY
+    // localized_name and is filtered out of public listings by
+    // `hasResolvedCategoryName` — never shown under a shared title.
+    const sources = await fetchUkCategoryNameSources(categories)
     return categories.map((category) => {
       if (category.id === '__all__') return category
-      const name =
-        cleanUkrainianText(category.h1) ??
-        cleanUkrainianText(category.name_ua) ??
-        'Товари для дому та господарства'
+      const resolved = resolveUkCategoryName({
+        h1: category.h1,
+        name_ua: category.name_ua,
+        ...(sources.get(category.id) ?? {}),
+        slug: category.slug,
+      })
+      const name = resolved.name
+      if (!name) {
+        // No usable source name in ANY column → excluded from public output.
+        return { ...category, localized_name: '', localized_category_name_source: resolved.source }
+      }
       const generic = `Товари категорії «${name}» у наявності — доставка Новою Поштою по всій Україні.`
       const description = cleanUkrainianText(category.description) ?? generic
       const seoDescription = cleanUkrainianText(category.description_ua) ?? description
       return {
         ...category,
         localized_name: name,
+        localized_category_name_source: resolved.source,
         localized_description: description,
         localized_seo_description: seoDescription,
         meta_title: cleanUkrainianText(category.meta_title) ?? `${name} — купити в Україні`,

@@ -256,6 +256,9 @@ export interface CatalogCategory {
   // Server-resolved storefront values. These are populated on localized
   // catalog pages without overwriting the canonical Ukrainian DB columns.
   localized_name?: string | null
+  // Which source produced localized_name (stored_uk | reviewed_uk | curated |
+  // heuristic | none). Diagnostics only — heuristic values need human review.
+  localized_category_name_source?: string
   localized_description?: string | null
   localized_seo_description?: string | null
   description: string | null

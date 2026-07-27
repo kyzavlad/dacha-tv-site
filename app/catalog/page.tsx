@@ -4,6 +4,7 @@ import Link from 'next/link'
 import type { CatalogCategory } from '@/types'
 import {
   getLandingCategories,
+  hasResolvedCategoryName,
   searchPublishedCatalogProducts,
   localizeCatalogCategories,
   localizeCatalogProducts,
@@ -100,7 +101,7 @@ export default async function CatalogPage({ searchParams }: { searchParams: Prom
     ])
     const [products, chipCategories] = await Promise.all([
       localizeCatalogProducts(rawProducts, locale),
-      localizeCatalogCategories(rawChipCategories, locale),
+      localizeCatalogCategories(rawChipCategories, locale).then((c) => c.filter(hasResolvedCategoryName)),
     ])
     const fullPage = products.length >= CATALOG_PAGE_SIZE
     const sortQs = sort === 'featured' ? '' : `&sort=${sort}`
@@ -153,7 +154,10 @@ export default async function CatalogPage({ searchParams }: { searchParams: Prom
   // Bounded, single cheap query — no full-catalog product scan, no per-category
   // counts. This is the fix for the /catalog timeout at 105k products.
   const rawCategories = await getLandingCategories(LANDING_CATEGORY_LIMIT).catch(() => [])
-  const categories = await localizeCatalogCategories(rawCategories, locale)
+  // Categories whose name could not be resolved from ANY real source are
+  // excluded from the public grid (and listed by /api/admin/diag/categories)
+  // instead of being rendered under a shared generic title.
+  const categories = (await localizeCatalogCategories(rawCategories, locale)).filter(hasResolvedCategoryName)
   // Always offer the full list; append the localized "Усі товари" card at the end.
   const allCard: CatalogCategory = { ...ALL_PRODUCTS_CARD, name_ua: t.allProductsCardTitle, description: t.allProductsCardDesc }
   const cards: CatalogCategory[] = [...categories, allCard]
