@@ -1,5 +1,4 @@
 import type { Metadata } from 'next'
-import { Inter, Lora } from 'next/font/google'
 import './globals.css'
 import { headers } from 'next/headers'
 import { Header } from '@/components/layout/Header'
@@ -12,18 +11,6 @@ import { AttributionCapture } from '@/components/analytics/AttributionCapture'
 import { SiteChrome } from '@/components/layout/SiteChrome'
 import { isLocale, DEFAULT_LOCALE } from '@/lib/i18n'
 import { LocaleProvider } from '@/lib/i18n/locale-context'
-
-const inter = Inter({
-  variable: '--font-inter',
-  subsets: ['latin', 'cyrillic'],
-  display: 'swap',
-})
-
-const lora = Lora({
-  variable: '--font-lora',
-  subsets: ['latin', 'cyrillic'],
-  display: 'swap',
-})
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || 'https://www.dachatv.com'),
@@ -55,7 +42,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const initialIsAdmin = h.get('x-dacha-section') === 'admin'
 
   return (
-    <html lang={lang} className={`${inter.variable} ${lora.variable} h-full antialiased overflow-x-hidden`}>
+    <html lang={lang} className="h-full antialiased overflow-x-hidden">
       <head>
         <Analytics />
       </head>

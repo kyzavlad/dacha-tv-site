@@ -13,7 +13,7 @@ import { revalidateSupplierStock, type RevalRow } from '@/lib/cart/stock-revalid
 import { sendOrderNotifications, formatNotifyLog } from '@/lib/notify/order-notify'
 import { getRequestLocale } from '@/lib/i18n'
 import { pageDict } from '@/lib/i18n/pages'
-import { cookies } from 'next/headers'
+import { cookies } from '@/lib/runtime/request-cookies'
 
 // Localized checkout revalidation messages (uk/ru/en).
 function checkoutMessages(locale: Awaited<ReturnType<typeof getRequestLocale>>) {
@@ -176,9 +176,11 @@ export async function submitProductOrder(
     `[checkout-submit ${trace}] validated — payment=${d.methodPayment} warehouse=${d.warehouseId} total=${totalUah} phone=${d.phone}${isTestOrder ? ` TEST-ORDER(blocked from supplier; marker="${testMarker}")` : ''}`,
   )
 
-  // ── Step 2: primary notification — fires before ANY DB or supplier logic ─────
-  // This is the only notification that must survive a PGRST205 Supabase failure
-  // or a Personal.cab rejection: it depends only on the validated form data.
+  // ── Step 2: build the primary notification (NOT sent yet) ───────────────────
+  // It is dispatched only AFTER stock revalidation passes and the order row is
+  // persisted, so the payload always carries a real order id. Sending it here
+  // meant every abandoned or rejected checkout emitted a "new order" alert with
+  // order_id=null.
   const PAYMENT_LABELS: Record<string, string> = {
     cashondelivery: 'Накладний платіж',
     prepayment: 'Передоплата',
@@ -200,47 +202,58 @@ export async function submitProductOrder(
   let attributionLine = ''
   try { attributionLine = attributionNotificationLine((await cookies()).get(ATTRIBUTION_COOKIE)?.value) } catch { /* ignore */ }
 
-  const primaryNotifyText = [
-    isTestOrder ? '🧪 ТЕСТОВЕ/СЛУЖБОВЕ ЗАМОВЛЕННЯ — постачальнику НЕ надсилалось' : '🛒 НОВЕ ЗАМОВЛЕННЯ З САЙТУ',
-    '',
-    `Ім'я: ${customerName}`,
-    `Телефон: ${d.phone}`,
-    `Оплата: ${paymentLabel}`,
-    warehouseLabel,
-    '',
-    itemLines,
-    '',
-    `Сума: ${totalUah} ₴`,
-    d.comment ? `Коментар: ${d.comment}` : null,
-    d.source ? `Сторінка: ${d.source}` : null,
-    attributionLine ? `📊 ${attributionLine}` : null,
-  ].filter(Boolean).join('\n')
+  // Dispatch the primary "order created" alert for a PERSISTED order. Called
+  // exactly once, and only once the order row (or, on the PGRST205 fallback
+  // path, the inquiry row) exists — so `order_id` is never null and a failed
+  // checkout never produces a false notification.
+  //   event_id = product_order_created:<persisted order id>  (n8n dedupe key)
+  // The payload `type` stays `product_order_received` because the live n8n
+  // workflow routes on it; only the timing, id and event key change here.
+  async function sendPrimaryOrderNotification(
+    persistedOrderId: string,
+    extraLines: (string | null)[] = [],
+  ): Promise<void> {
+    const message = [
+      isTestOrder ? '🧪 ТЕСТОВЕ/СЛУЖБОВЕ ЗАМОВЛЕННЯ — постачальнику НЕ надсилалось' : '🛒 НОВЕ ЗАМОВЛЕННЯ З САЙТУ',
+      `Замовлення #${persistedOrderId.slice(0, 8).toUpperCase()}`,
+      ...extraLines,
+      '',
+      `Ім'я: ${customerName}`,
+      `Телефон: ${d.phone}`,
+      `Оплата: ${paymentLabel}`,
+      warehouseLabel,
+      '',
+      itemLines,
+      '',
+      `Сума: ${totalUah} ₴`,
+      d.comment ? `Коментар: ${d.comment}` : null,
+      d.source ? `Сторінка: ${d.source}` : null,
+      attributionLine ? `📊 ${attributionLine}` : null,
+    ].filter(Boolean).join('\n')
 
-  // Deterministic event id for THIS checkout attempt — the primary alert fires
-  // before the DB insert (no order id yet), so it is keyed on the trace. n8n can
-  // dedupe on event_id if the same attempt is ever retried.
-  const primaryEventId = `product_order_received:${trace}`
-  console.info(`[checkout-submit ${trace}] primary order notification queued`)
-  await notifyProductOrder({
-    trace,
-    eventId: primaryEventId,
-    message: primaryNotifyText,
-    payload: {
-      type: 'product_order_received',
-      order_id: null,
-      supplier_order_id: null,
-      name: customerName,
-      phone: d.phone,
-      product: productSummary,
-      items_text: itemLines,
-      total: totalUah,
-      payment_method: d.methodPayment,
-      warehouse: d.warehouseName ?? d.warehouseId,
-      warehouse_id: d.warehouseId,
-      comment: d.comment ?? null,
-      page_url: d.source ?? null,
-    },
-  })
+    console.info(`[checkout-submit ${trace}] primary order notification queued — order ${persistedOrderId}`)
+    await notifyProductOrder({
+      trace,
+      eventId: `product_order_created:${persistedOrderId}`,
+      message,
+      payload: {
+        type: 'product_order_received',
+        order_id: persistedOrderId,
+        supplier_order_id: null,
+        is_test_order: isTestOrder,
+        name: customerName,
+        phone: d.phone,
+        product: productSummary,
+        items_text: itemLines,
+        total: totalUah,
+        payment_method: d.methodPayment,
+        warehouse: d.warehouseName ?? d.warehouseId,
+        warehouse_id: d.warehouseId,
+        comment: d.comment ?? null,
+        page_url: d.source ?? null,
+      },
+    })
+  }
 
   try {
     // getAdminClient() throws when Supabase env vars are missing. Keep it inside
@@ -442,62 +455,6 @@ export async function submitProductOrder(
         )
       }
 
-      // ── Fallback B: second notification — supplier status WARNING only ───
-      // Sent ONLY when the supplier outcome needs attention. Successful sends
-      // (sent/test_sent) produce just the primary product_order_received above.
-      if (SUPPLIER_ATTENTION_STATUSES.has(fbSupplierStatus)) {
-        const fbSupplierLine = supplierNotifyLine(fbSupplierMode, fbSupplierStatus, fbSupplierOrderId)
-        const fbSupplierError = fbSupplierResponse ? JSON.stringify(fbSupplierResponse) : null
-
-        const fbSupplierStatusText = [
-          '⚠️ Замовлення потребує уваги',
-          `Замовлення ${fallbackId}`,
-          fbSupplierLine ?? `Статус постачальника: ${fbSupplierStatus}`,
-          fbSupplierError ? `Відповідь постачальника: ${fbSupplierError}` : null,
-          mixedNote,
-          '⚠ Збережено як заявку (таблиця orders відсутня)',
-          '',
-          `Ім'я: ${customerName}`,
-          `Телефон: ${d.phone}`,
-          `Оплата: ${paymentLabel}`,
-          warehouseLabel,
-          '',
-          itemLines,
-          '',
-          `Сума: ${totalUah} ₴`,
-          d.comment ? `Коментар: ${d.comment}` : null,
-          d.source ? `Сторінка: ${d.source}` : null,
-          attributionLine ? `📊 ${attributionLine}` : null,
-        ].filter(Boolean).join('\n')
-
-        await notifyProductOrder({
-          trace,
-          eventId: `product_order_supplier_status:${fallbackId}:${fbSupplierStatus}`,
-          message: fbSupplierStatusText,
-          payload: {
-            type: 'product_order_supplier_status',
-            order_id: fallbackId,
-            name: customerName,
-            phone: d.phone,
-            product: productSummary,
-            items_text: itemLines,
-            total: totalUah,
-            payment_method: d.methodPayment,
-            warehouse: d.warehouseName ?? d.warehouseId,
-            warehouse_id: d.warehouseId,
-            page_url: d.source ?? null,
-            comment: d.comment ?? null,
-            supplier_mode: fbSupplierMode,
-            supplier_status: fbSupplierStatus,
-            supplier_order_id: fbSupplierOrderId ?? null,
-            supplier_confirmed: fbSupplierStatus === 'sent' || fbSupplierStatus === 'test_sent',
-            supplier_error: fbSupplierError,
-          },
-        })
-      } else {
-        console.info(`[checkout-submit ${trace}] supplier status ok (${fbSupplierStatus}) — no warning notification`)
-      }
-
       // ── Fallback C: save to `inquiries` ──────────────────────────────────
       // `type` must satisfy the existing CHECK constraint — use 'general'.
       // Full order details go into `message` (human-readable) and `notes` (JSON).
@@ -554,11 +511,85 @@ export async function submitProductOrder(
         console.info(`[checkout-submit ${trace}] inquiry fallback saved`)
       }
 
+      // ── Fallback: primary notification for the PERSISTED inquiry ─────────
+      // The orders table is missing, but the customer's order IS saved (as an
+      // inquiry) and the action returns success — so the admin alert must fire,
+      // keyed on the fallback id rather than a null order id. If even the
+      // inquiry insert failed, that is called out in the message: this alert is
+      // then the only record of the order.
+      await sendPrimaryOrderNotification(fallbackId, [
+        inquiryError
+          ? '❗ Замовлення НЕ збережено в базі (таблиця orders відсутня, запис заявки теж не вдався) — обробити вручну.'
+          : '⚠ Збережено як заявку (таблиця orders відсутня)',
+      ])
+
+      // ── Fallback B: second notification — supplier status WARNING only ───
+      // Sent ONLY when the supplier outcome needs attention. Successful sends
+      // (sent/test_sent) produce just the primary product_order_received above.
+      if (SUPPLIER_ATTENTION_STATUSES.has(fbSupplierStatus)) {
+        const fbSupplierLine = supplierNotifyLine(fbSupplierMode, fbSupplierStatus, fbSupplierOrderId)
+        const fbSupplierError = fbSupplierResponse ? JSON.stringify(fbSupplierResponse) : null
+
+        const fbSupplierStatusText = [
+          '⚠️ Замовлення потребує уваги',
+          `Замовлення ${fallbackId}`,
+          fbSupplierLine ?? `Статус постачальника: ${fbSupplierStatus}`,
+          fbSupplierError ? `Відповідь постачальника: ${fbSupplierError}` : null,
+          mixedNote,
+          '⚠ Збережено як заявку (таблиця orders відсутня)',
+          '',
+          `Ім'я: ${customerName}`,
+          `Телефон: ${d.phone}`,
+          `Оплата: ${paymentLabel}`,
+          warehouseLabel,
+          '',
+          itemLines,
+          '',
+          `Сума: ${totalUah} ₴`,
+          d.comment ? `Коментар: ${d.comment}` : null,
+          d.source ? `Сторінка: ${d.source}` : null,
+          attributionLine ? `📊 ${attributionLine}` : null,
+        ].filter(Boolean).join('\n')
+
+        await notifyProductOrder({
+          trace,
+          eventId: `product_order_supplier_status:${fallbackId}:${fbSupplierStatus}`,
+          message: fbSupplierStatusText,
+          payload: {
+            type: 'product_order_supplier_status',
+            order_id: fallbackId,
+            name: customerName,
+            phone: d.phone,
+            product: productSummary,
+            items_text: itemLines,
+            total: totalUah,
+            payment_method: d.methodPayment,
+            warehouse: d.warehouseName ?? d.warehouseId,
+            warehouse_id: d.warehouseId,
+            page_url: d.source ?? null,
+            comment: d.comment ?? null,
+            supplier_mode: fbSupplierMode,
+            supplier_status: fbSupplierStatus,
+            supplier_order_id: fbSupplierOrderId ?? null,
+            supplier_confirmed: fbSupplierStatus === 'sent' || fbSupplierStatus === 'test_sent',
+            supplier_error: fbSupplierError,
+          },
+        })
+      } else {
+        console.info(`[checkout-submit ${trace}] supplier status ok (${fbSupplierStatus}) — no warning notification`)
+      }
+
       return { success: true, orderId: fallbackId, isTestOrder }
     }
 
     const orderId = order.id as string
     console.info(`[checkout-submit ${trace}] order created — id=${orderId}`)
+
+    // ── Step 4b: primary notification ─────────────────────────────────────────
+    // Cart resolved, stock revalidated, order row persisted → this is now a real
+    // order and the alert carries its id. Still ahead of supplier forwarding, so
+    // the admin learns about the order even if Personal.cab later fails.
+    await sendPrimaryOrderNotification(orderId)
 
     // ── Step 5: insert order items (non-fatal: order is already saved) ────────
     const { error: itemsError } = await client.from('order_items').insert(
