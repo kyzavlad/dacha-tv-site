@@ -21,6 +21,11 @@ import { summarizeApply } from '../lib/catalog/seo-batch-report.ts'
 // These tests pin the corrected behavior without a live Postgres.
 // ─────────────────────────────────────────────────────────────────────────────
 
+// catalog_products.id is a uuid column, so product fixtures must carry real
+// canonical UUIDs — a non-UUID id is rejected before it can reach the database
+// (see tests/ru-seo-candidate-queue.test.mjs for that guard).
+const pid = (n) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`
+
 // Reusable valid RU content (all-Cyrillic, no Ukrainian letters, sane lengths).
 const VALID_TITLE = 'Тормозные колодки AMG для мотоцикла'
 const VALID_DESC_META = 'Тормозные колодки для мотоцикла: надёжная остановка и долгий ресурс. Доставка по Украине, оплата после подтверждения заказа.'
@@ -159,7 +164,7 @@ function fakeClient(seed = {}) {
 // ── Requirement 4 & 6: 100 products, 95 fully valid → updated=95 ──────────────
 
 test('100 input products with 95 fully valid results report updated=95', async () => {
-  const products = Array.from({ length: 100 }, (_, i) => ({ id: `p${i}`, supplier_sku: `SKU${i}` }))
+  const products = Array.from({ length: 100 }, (_, i) => ({ id: pid(i), supplier_sku: `SKU${i}` }))
   const items = products.map((p, i) => ({
     id: p.id,
     meta_title: i < 95 ? VALID_TITLE : 'Bosch 6202-ZZ',  // last 5 have an invalid title
@@ -179,7 +184,7 @@ test('100 input products with 95 fully valid results report updated=95', async (
   // No partial content was written for the invalid ones — their translation rows
   // carry NO meta_title/meta_description/description keys, only a rotation marker.
   for (let i = 95; i < 100; i++) {
-    const tx = client._translations.get(`p${i}`)
+    const tx = client._translations.get(pid(i))
     assert.ok(tx, 'a rotation marker row exists')
     assert.equal(tx.meta_title, undefined, 'no partial title content written')
     assert.equal(tx.description, undefined, 'no partial description content written')
@@ -192,9 +197,9 @@ test('100 input products with 95 fully valid results report updated=95', async (
 
 test('an invalid product preserves existing valid fields, rotates, and stays eligible', async () => {
   const oldAt = '2026-01-01T00:00:00.000Z'
-  const products = [{ id: 'px', supplier_sku: 'SKUX' }]
+  const products = [{ id: pid(901), supplier_sku: 'SKUX' }]
   const translations = [{
-    product_id: 'px', locale: 'ru',
+    product_id: pid(901), locale: 'ru',
     meta_title: 'Старый валидный заголовок для мотоцикла', // existing VALID title (preserve!)
     meta_description: VALID_DESC_META,
     description: VALID_DESCRIPTION,
@@ -204,13 +209,13 @@ test('an invalid product preserves existing valid fields, rotates, and stays eli
 
   // n8n re-sends an INVALID new title for this product.
   const r = await applyRuProductAiBatch(
-    [{ id: 'px', meta_title: 'CRF 250 New VV', meta_description: VALID_DESC_META, description: VALID_DESCRIPTION }],
+    [{ id: pid(901), meta_title: 'CRF 250 New VV', meta_description: VALID_DESC_META, description: VALID_DESCRIPTION }],
     { client },
   )
   assert.equal(r.invalid, 1)
   assert.equal(r.updated, 0)
 
-  const tx = client._translations.get('px')
+  const tx = client._translations.get(pid(901))
   // Existing valid content preserved — NOT overwritten by the invalid payload.
   assert.equal(tx.meta_title, 'Старый валидный заголовок для мотоцикла')
   // Rotation: seo_generated_at advanced past the old value → sorts to the back
@@ -222,11 +227,11 @@ test('an invalid product preserves existing valid fields, rotates, and stays eli
 })
 
 test('manual-locked RU rows are never written and are skipped', async () => {
-  const products = [{ id: 'pl', supplier_sku: 'SKUL' }]
-  const translations = [{ product_id: 'pl', locale: 'ru', meta_title: null, meta_description: null, description: null, seo_keywords: null, seo_status: 'missing', seo_manual_lock: true, seo_generated_at: null }]
+  const products = [{ id: pid(902), supplier_sku: 'SKUL' }]
+  const translations = [{ product_id: pid(902), locale: 'ru', meta_title: null, meta_description: null, description: null, seo_keywords: null, seo_status: 'missing', seo_manual_lock: true, seo_generated_at: null }]
   const client = fakeClient({ products, translations })
   const r = await applyRuProductAiBatch(
-    [{ id: 'pl', meta_title: VALID_TITLE, meta_description: VALID_DESC_META, description: VALID_DESCRIPTION }],
+    [{ id: pid(902), meta_title: VALID_TITLE, meta_description: VALID_DESC_META, description: VALID_DESCRIPTION }],
     { client },
   )
   assert.equal(r.skipped, 1)

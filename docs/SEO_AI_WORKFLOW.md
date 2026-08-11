@@ -230,6 +230,30 @@ Storage (migration `20260701_seo_translations.sql`, additive/idempotent):
 NOT consider Ukrainian AI/manual status. Category candidates carry
 `products_count` + `sample_products` and are ranked by `products_count` DESC.
 
+**RU PRODUCT candidate selection is queue-driven (database dependency).**
+`GET /api/admin/seo/ru/product-ai-candidates` reads its eligible set from
+`public.get_ru_product_seo_candidate_ids(p_limit integer)`, which serves the
+trigger-maintained table `public.ru_product_seo_queue` (priority 0 = no RU row,
+1 = partial, 2 = incomplete AI regeneration; oldest attempt first inside a
+tier). Both objects live in the production Supabase project and are **required**
+— the endpoint reports the RPC error rather than falling back to a scan.
+
+The route asks for a bounded pool (`3 × limit`, max 400), hydrates only those
+ids with `catalog_products.id in (…)`, and re-validates every row in the app
+(still `published`, still publicly listable, RU row still incomplete, not
+manual-locked) before returning it. It never paginates `catalog_products` —
+the previous blind page scan walked 70k–80k rows near completion and hit the
+statement timeout. Diagnostics reflect this: `pages: 1`, `scanned` = queue pool
+size, `scan_capped: false`, `complete_skipped` normally `0`.
+
+**`id` must be the canonical UUID.** `catalog_products.id`,
+`catalog_categories.id` and `catalog_product_translations.product_id` are `uuid`
+columns. An item whose `id` is a supplier/sheet/row number (`"49"`, `"242"`) is
+never cast and never matched against `supplier_sku` — it is excluded from the
+uuid lookup and reported as skipped (`… не является UUID каталога`), so one bad
+value can no longer fail the whole 300-item resolution chunk with
+`invalid input syntax for type uuid`. Use `sku` for supplier codes.
+
 **Apply** (both POST routes): body `{ "items": [ … ], "dryRun": false }`, `?dry=1`
 also forces dry run (max 500 items). Product item:
 `{ "sku"|"id", "meta_title"?, "meta_description"?, "description"?, "keywords"? }`.

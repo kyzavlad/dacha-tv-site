@@ -46,6 +46,26 @@ const isBlank = (s: unknown) => !collapse(s)
 const clamp = (n: number, lo: number, hi: number) => Math.min(Math.max(n, lo), hi)
 const up = (s: unknown) => String(s ?? '').trim().toUpperCase()
 
+// ─── Canonical id guard ───────────────────────────────────────────────────────
+// catalog_products.id / catalog_categories.id (and therefore
+// catalog_product_translations.product_id) are UUID columns. n8n reshape steps
+// can attach a NON-canonical `id` — a supplier/sheet/row number such as "49" or
+// "242" — and PostgREST forwards the whole `in.(…)` list to Postgres, which then
+// rejects the ENTIRE chunk with `invalid input syntax for type uuid: "49"`. That
+// single bad value used to make every product in the same 300-item chunk fail to
+// resolve (silently, because the query error was discarded).
+//
+// A numeric id is NEVER cast, coerced, or matched against supplier_sku here —
+// doing so could bind AI copy to an unrelated product. Non-UUID ids are simply
+// excluded from UUID-column queries; such an item then resolves only through its
+// own `sku` field, or is reported as skipped with an explicit reason.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+export function isCanonicalUuid(v: unknown): boolean {
+  return typeof v === 'string' && UUID_RE.test(v.trim())
+}
+// Item ids arrive from JSON and may be numbers, not strings.
+const idText = (v: unknown) => (v == null ? '' : String(v).trim())
+
 // Bounded-concurrency map, order-preserving.
 async function mapPool<T, R>(items: T[], concurrency: number, fn: (item: T, i: number) => Promise<R>): Promise<R[]> {
   const results = new Array<R>(items.length)
@@ -266,7 +286,7 @@ export interface RuProductCandidate {
 }
 
 const RU_PRODUCT_SRC_COLS =
-  'id, slug, supplier_sku, name_ua, name, category_slug, price_uah, price_prefix, unit_label, main_image_url, images, meta_title, meta_description, description_ua'
+  'id, status, slug, supplier_sku, name_ua, name, category_slug, price_uah, price_prefix, unit_label, main_image_url, images, meta_title, meta_description, description_ua'
 
 export interface RuCandidateDiagnostics {
   requested_limit: number
@@ -281,114 +301,144 @@ export interface RuCandidateDiagnostics {
   complete_skipped: number
   reached_end: boolean
   scan_capped: boolean
+  // RPC-queue selection (see getRuProductAiCandidates).
+  pool_limit: number       // bounded p_limit handed to the SQL queue
+  unmatched_skipped: number // queued ids with no live/listable catalog_products row
 }
 
-export async function getRuProductAiCandidates(limit = 100): Promise<{ ok: boolean; count: number; limit: number; candidates: RuProductCandidate[]; message: string; diagnostics: RuCandidateDiagnostics }> {
+// ─── Queue-backed candidate selection ────────────────────────────────────────
+// The RU eligibility set is maintained in SQL (public.ru_product_seo_queue, kept
+// in sync by triggers on catalog_products / catalog_product_translations) and is
+// read through public.get_ru_product_seo_candidate_ids(p_limit) — which returns
+// already-prioritized product ids in ~9 ms for 100 rows.
+//
+// Row shape returned by the RPC.
+export interface RuQueueRow {
+  product_id: string
+  priority: number
+  seo_generated_at: string | null
+  seo_status: string | null
+}
+
+// The queue pool is deliberately larger than the requested page so the
+// defensive re-validation below (unlistable source rows, manual locks, rows that
+// became complete between two queue syncs) can drop candidates without
+// under-filling the page — while still staying a small, bounded query.
+const RU_QUEUE_POOL_FACTOR = 3
+const RU_QUEUE_POOL_MAX = 400
+
+export async function getRuProductAiCandidates(
+  limit = 100,
+  opts: { client?: ReturnType<typeof getAdminClient> } = {},
+): Promise<{ ok: boolean; count: number; limit: number; candidates: RuProductCandidate[]; message: string; diagnostics: RuCandidateDiagnostics }> {
   // Requirement 1: `limit` is the requested result size, capped at a safe max 100.
   const requested = clamp(Math.floor(limit) || 100, 1, 100)
-  const client = getAdminClient()
-  const PAGE = 1000
+  const client = opts.client ?? getAdminClient()
+  const boundedPoolLimit = clamp(requested * RU_QUEUE_POOL_FACTOR, requested, RU_QUEUE_POOL_MAX)
 
-  // ROOT-CAUSE FIX.
-  // RU eligibility ("RU translation incomplete") lives in a SEPARATE table
-  // (catalog_product_translations), so — unlike the UA endpoint, which filters
-  // UA fields inline in the products query — it can only be checked per row in JS.
-  // The previous implementation compounded that with two over-restrictions:
-  //   (1) it required image + price>0 + category on the SOURCE product, which
-  //       excludes most of the ~85k RU backlog (many need RU SEO but lack a price
-  //       or image); and
-  //   (2) it capped the blind scan at 20 pages and stopped as soon as `fresh`
-  //       (never-attempted) filled, so a window full of already-complete rows
-  //       returned only 4–16.
-  // Now: eligibility matches the spec (published + safely matchable real name;
-  // NOT image/price/category), and the scan continues until `requested` unique
-  // candidates are collected or the eligible set is genuinely exhausted.
-  const MAX_PAGES = 200 // safety ceiling (~200k rows); the loop early-stops when filled
-
+  // ROOT-CAUSE FIX (application side).
+  // The previous implementation blind-scanned catalog_products in 1000-row pages
+  // (up to 200 pages) and probed catalog_product_translations for every page,
+  // skipping already-complete RU rows in JS. Near completion virtually every
+  // scanned row was already complete, so a single request walked 70k–80k products
+  // and hit the Supabase/nginx statement timeout.
+  //
+  // The eligible set now comes from the SQL queue in ONE bounded RPC call; the
+  // application only hydrates the returned ids. Everything below the RPC is
+  // defensive verification of that queue (source row still public-listable, RU
+  // row still incomplete, not manual-locked) — never a second scan, and never a
+  // fallback to paginating the catalog.
   const fresh: { p: CatalogProduct; needs: string[] }[] = []
   const partial: { p: CatalogProduct; tx: ProductTx; needs: string[] }[] = []
   const invalid: { p: CatalogProduct; tx: ProductTx; needs: string[] }[] = []
   const seenIds = new Set<string>()
   const seenSkus = new Set<string>()
-  let from = 0
   let scanned = 0
   let pages = 0
   let lockedSkipped = 0
   let completeSkipped = 0
   let duplicateSkipped = 0
+  let unmatchedSkipped = 0
   let reachedEnd = false
+  let picked: { p: CatalogProduct; tx?: ProductTx; needs: string[] }[] = []
 
-  const collected = () => fresh.length + partial.length + invalid.length
+  const fail = (msg: string) => ({
+    ok: false, count: 0, limit: requested, candidates: [] as RuProductCandidate[], message: msg,
+    diagnostics: {
+      requested_limit: requested, returned: 0, scanned, pages,
+      missing_translation_found: fresh.length, partial_found: partial.length, invalid_found: invalid.length,
+      locked_skipped: lockedSkipped, duplicate_skipped: duplicateSkipped, complete_skipped: completeSkipped,
+      reached_end: reachedEnd, scan_capped: false,
+      pool_limit: boundedPoolLimit, unmatched_skipped: unmatchedSkipped,
+    },
+  })
 
   try {
-    while (collected() < requested && pages < MAX_PAGES) {
+    const { data: queueData, error: queueError } = await client
+      .rpc('get_ru_product_seo_candidate_ids', { p_limit: boundedPoolLimit })
+    if (queueError) throw new Error(queueError.message)
+
+    // Queue order IS the priority order (missing RU row → partial non-AI →
+    // incomplete AI regeneration, oldest attempt first inside each tier). It is
+    // preserved end-to-end: id order here, hydration by lookup map below.
+    const queue = ((queueData ?? []) as RuQueueRow[]).filter((r) => r && typeof r.product_id === 'string' && r.product_id !== '')
+    pages = queue.length > 0 ? 1 : 0
+    scanned = queue.length
+    reachedEnd = queue.length < boundedPoolLimit
+
+    const orderedIds: string[] = []
+    const queuedSeen = new Set<string>()
+    for (const r of queue) {
+      if (queuedSeen.has(r.product_id)) { duplicateSkipped++; continue }
+      queuedSeen.add(r.product_id)
+      orderedIds.push(r.product_id)
+    }
+
+    // Hydrate ONLY the queued ids — canonical catalog_products UUIDs, no scan.
+    const products = new Map<string, CatalogProduct>()
+    for (let i = 0; i < orderedIds.length; i += 300) {
       const { data, error } = await client
         .from('catalog_products')
         .select(RU_PRODUCT_SRC_COLS)
-        // Matchable, live source products only. Eligibility beyond this is the RU
-        // translation state (checked below) — NOT image/price/category, which are
-        // not part of the eligibility contract and hid most of the RU backlog.
-        .eq('status', 'published')
-        .not('name_ua', 'is', null)
-        .order('id', { ascending: true })
-        .range(from, from + PAGE - 1)
+        .in('id', orderedIds.slice(i, i + 300))
       if (error) throw new Error(error.message)
+      for (const row of (data ?? []) as unknown as CatalogProduct[]) products.set(row.id, row)
+    }
 
-      const rows = (data ?? []) as unknown as CatalogProduct[]
-      pages++
-      scanned += rows.length
-      // isPublicListableProduct enforces a real, safe name → "cannot be matched
-      // safely to a source product" (requirement 5) is the only extra exclusion.
-      const listable = rows.filter(isPublicListableProduct)
-      const txMap = await fetchRuProductTx(client, listable.map((p) => p.id))
+    // Defensive final validation of the queue (requirement 6): the RU translation
+    // state is re-read and re-checked with the SAME validators the apply path
+    // uses, so a stale queue row can never produce a bogus candidate.
+    const txMap = await fetchRuProductTx(client, orderedIds)
 
-      for (const p of listable) {
-        const tx = txMap.get(p.id)
-        if (tx?.seo_manual_lock === true) { lockedSkipped++; continue }   // exclude locked
-        const needs = productRuNeeds(tx)
-        if (needs.length === 0) { completeSkipped++; continue }           // exclude fully complete
-        // Deduplicate by stable product id + SKU (requirement 8).
-        const skuKey = up(p.supplier_sku)
-        if (seenIds.has(p.id) || (skuKey && seenSkus.has(skuKey))) { duplicateSkipped++; continue }
-        seenIds.add(p.id)
-        if (skuKey) seenSkus.add(skuKey)
-        // Bucket by priority: (a) missing row, (b) incomplete non-AI, (c) incomplete AI.
-        if (!tx) fresh.push({ p, needs })
-        else if (tx.seo_status === 'ai') invalid.push({ p, tx, needs })
-        else partial.push({ p, tx, needs })
-        if (collected() >= requested) break
-      }
-      if (rows.length < PAGE) { reachedEnd = true; break }
-      from += PAGE
+    for (const id of orderedIds) {
+      const p = products.get(id)
+      // No live source row, not published, or no real/safe name → cannot be
+      // matched safely. Re-checked here (not trusted from the queue) so the
+      // endpoint can never hand n8n a draft/archived or unnameable product.
+      if (!p || p.status !== 'published' || !isPublicListableProduct(p)) { unmatchedSkipped++; continue }
+      const tx = txMap.get(id)
+      if (tx?.seo_manual_lock === true) { lockedSkipped++; continue }   // exclude locked
+      const needs = productRuNeeds(tx)
+      if (needs.length === 0) { completeSkipped++; continue }           // exclude fully complete
+      // Deduplicate by stable product id + SKU (requirement 8).
+      const skuKey = up(p.supplier_sku)
+      if (seenIds.has(p.id) || (skuKey && seenSkus.has(skuKey))) { duplicateSkipped++; continue }
+      seenIds.add(p.id)
+      if (skuKey) seenSkus.add(skuKey)
+      // Bucket counts for diagnostics only — ORDER stays the SQL queue order.
+      if (!tx) fresh.push({ p, needs })
+      else if (tx.seo_status === 'ai') invalid.push({ p, tx, needs })
+      else partial.push({ p, tx, needs })
+      picked.push({ p, tx, needs })
+      if (picked.length >= requested) break
     }
   } catch (e) {
-    return {
-      ok: false, count: 0, limit: requested, candidates: [],
-      message: e instanceof Error ? e.message : String(e),
-      diagnostics: {
-        requested_limit: requested, returned: 0, scanned, pages,
-        missing_translation_found: fresh.length, partial_found: partial.length, invalid_found: invalid.length,
-        locked_skipped: lockedSkipped, duplicate_skipped: duplicateSkipped, complete_skipped: completeSkipped,
-        reached_end: reachedEnd, scan_capped: pages >= MAX_PAGES,
-      },
-    }
+    return fail(e instanceof Error ? e.message : String(e))
   }
 
-  // Merge in priority order a → b → c. Within b and c, oldest attempt first so
-  // repeated pulls rotate through the backlog and never starve a wedged row
-  // (requirement 7); id is a stable tiebreaker.
-  const byOldest = (a: { p: CatalogProduct; tx: ProductTx }, b: { p: CatalogProduct; tx: ProductTx }) =>
-    (a.tx.seo_generated_at ?? '').localeCompare(b.tx.seo_generated_at ?? '') || a.p.id.localeCompare(b.p.id)
-  partial.sort(byOldest)
-  invalid.sort(byOldest)
-  const ordered: { p: CatalogProduct; tx?: ProductTx; needs: string[] }[] = [
-    ...fresh.map(({ p, needs }) => ({ p, needs })),
-    ...partial.map(({ p, tx, needs }) => ({ p, tx, needs })),
-    ...invalid.map(({ p, tx, needs }) => ({ p, tx, needs })),
-  ]
-  const picked = ordered.slice(0, requested)
-
-  const scanCapped = pages >= MAX_PAGES && !reachedEnd && picked.length < requested
+  picked = picked.slice(0, requested)
+  // The RPC selection is never "capped" — the queue is bounded by design.
+  const scanCapped = false
 
   // Resolve category display names (only for picked; category may be null now).
   const catSlugs = [...new Set(picked.map((x) => x.p.category_slug).filter(Boolean))] as string[]
@@ -438,6 +488,8 @@ export async function getRuProductAiCandidates(limit = 100): Promise<{ ok: boole
     complete_skipped: completeSkipped,
     reached_end: reachedEnd,
     scan_capped: scanCapped,
+    pool_limit: boundedPoolLimit,
+    unmatched_skipped: unmatchedSkipped,
   }
 
   // Message + under-fill guard (requirement 11): only when we returned fewer than
@@ -445,20 +497,18 @@ export async function getRuProductAiCandidates(limit = 100): Promise<{ ok: boole
   let message: string
   if (candidates.length === 0) {
     message = reachedEnd
-      ? 'Нет товаров, которым нужен RU SEO (все сопоставимые товары уже заполнены или заблокированы).'
-      : `0 кандидатов после сканирования ${scanned} товаров.`
+      ? 'Нет товаров, которым нужен RU SEO (очередь пуста или все её товары уже заполнены/заблокированы).'
+      : `0 кандидатов из очереди (${scanned} записей).`
   } else {
     message = `Найдено ${candidates.length} кандидатов: ${fresh.length} без RU-строки, ${partial.length} частичных, ${invalid.length} невалидных AI.`
   }
   if (candidates.length < requested) {
     let backlog = 0
-    try { backlog = (await localizedProductCoverage(RU_LOCALE)).backlog } catch { /* best-effort */ }
+    try { backlog = (await localizedProductCoverage(RU_LOCALE, client)).backlog } catch { /* best-effort */ }
     if (backlog >= requested) {
-      const why = scanCapped
-        ? `окно сканирования (${MAX_PAGES}×${PAGE}) исчерпано до сбора ${requested}; подходящие товары разрежены или глубоко в каталоге`
-        : reachedEnd
-          ? `сопоставимых незаблокированных товаров с неполным RU меньше ${requested} — пропущено: заблокировано ${lockedSkipped}, полностью заполнено ${completeSkipped}; часть RU-бэклога (${backlog}) — товары без корректного имени или не в статусе published`
-          : 'сканирование остановлено до заполнения'
+      const why = reachedEnd
+        ? `очередь ru_product_seo_queue отдала ${scanned} записей (< pool ${boundedPoolLimit}) — пропущено: без сопоставимого товара ${unmatchedSkipped}, заблокировано ${lockedSkipped}, уже заполнено ${completeSkipped}; остаток RU-бэклога (${backlog}) — товары без корректного имени или не в статусе published`
+        : `из ${scanned} записей очереди отсеяно: без сопоставимого товара ${unmatchedSkipped}, заблокировано ${lockedSkipped}, уже заполнено ${completeSkipped}, дубликатов ${duplicateSkipped}`
       message += ` ⚠ RU-бэклог ≈ ${backlog} ≥ ${requested}, но возвращено ${candidates.length}: ${why}.`
     }
   }
@@ -715,28 +765,47 @@ export async function applyRuProductAiBatch(
 
   const client = opts.client ?? getAdminClient()
   const bump = (rs: string[]) => { for (const r of rs) result.errorGroups[r] = (result.errorGroups[r] ?? 0) + 1 }
-  // Resolve products by id or SKU (Ukrainian source table).
-  const ids = [...new Set(items.map((i) => (i.id ?? '').trim()).filter(Boolean))]
-  const skus = [...new Set(items.map((i) => (i.sku ?? '').trim()).filter(Boolean))]
+  // Resolve products by id or SKU (Ukrainian source table). ONLY canonical UUIDs
+  // ever reach the uuid `id` column — see isCanonicalUuid.
+  const rawIds = [...new Set(items.map((i) => idText(i.id)).filter(Boolean))]
+  const ids = rawIds.filter(isCanonicalUuid)
+  const skus = [...new Set(items.map((i) => idText(i.sku)).filter(Boolean))]
   const byId = new Map<string, string>() // id -> id
   const bySku = new Map<string, string>() // UPPER(sku) -> product id
   for (let i = 0; i < ids.length; i += 300) {
-    const { data } = await client.from('catalog_products').select('id').in('id', ids.slice(i, i + 300))
+    const { data, error } = await client.from('catalog_products').select('id').in('id', ids.slice(i, i + 300))
+    if (error) throw new Error(`resolve by id: ${error.message}`)
     for (const p of (data ?? []) as { id: string }[]) byId.set(p.id, p.id)
   }
   for (let i = 0; i < skus.length; i += 300) {
-    const { data } = await client.from('catalog_products').select('id, supplier_sku').in('supplier_sku', skus.slice(i, i + 300))
+    const { data, error } = await client.from('catalog_products').select('id, supplier_sku').in('supplier_sku', skus.slice(i, i + 300))
+    if (error) throw new Error(`resolve by sku: ${error.message}`)
     for (const p of (data ?? []) as { id: string; supplier_sku: string | null }[]) if (p.supplier_sku) bySku.set(up(p.supplier_sku), p.id)
   }
 
-  const resolvedIds = [...new Set(items.map((it) => (it.id && byId.get(it.id.trim())) || (it.sku && bySku.get(up(it.sku))) || '').filter(Boolean))] as string[]
+  const resolve = (it: AiRuProductItem): string | null => {
+    const id = idText(it.id)
+    const sku = idText(it.sku)
+    return (isCanonicalUuid(id) ? byId.get(id) ?? null : null) ?? (sku ? bySku.get(up(sku)) ?? null : null)
+  }
+  // Only canonical catalog_products.id values are ever used as
+  // catalog_product_translations.product_id.
+  const resolvedIds = [...new Set(items.map((it) => resolve(it) ?? '').filter(Boolean))]
   const existing = await fetchRuProductTx(client, resolvedIds)
   const now = new Date().toISOString()
 
   for (const item of items) {
-    const key = (item.id ?? item.sku ?? '(?)').toString()
-    const productId = (item.id && byId.get(item.id.trim())) || (item.sku && bySku.get(up(item.sku))) || null
-    if (!productId) { result.skipped++; result.results.push({ key, status: 'skipped', fields: [], reasons: ['товар не найден (id/sku)'] }); continue }
+    const key = (idText(item.id) || idText(item.sku) || '(?)')
+    const productId = resolve(item)
+    if (!productId) {
+      const badId = idText(item.id) && !isCanonicalUuid(item.id)
+      result.skipped++
+      result.results.push({
+        key, status: 'skipped', fields: [],
+        reasons: [badId ? `товар не найден: id "${idText(item.id)}" не является UUID каталога (ожидается catalog_products.id)` : 'товар не найден (id/sku)'],
+      })
+      continue
+    }
 
     const cur = existing.get(productId)
     if (cur?.seo_manual_lock === true) { result.skipped++; result.results.push({ key, status: 'skipped', fields: [], reasons: ['RU SEO заблокировано (manual_lock)'] }); continue }
@@ -802,27 +871,45 @@ export async function applyRuCategoryAiBatch(items: AiRuCategoryItem[], opts: { 
   if (items.length === 0) { result.message = 'Пустой список items.'; return result }
 
   const client = getAdminClient()
-  const ids = [...new Set(items.map((i) => (i.id ?? '').trim()).filter(Boolean))]
-  const slugs = [...new Set(items.map((i) => (i.slug ?? '').trim()).filter(Boolean))]
+  // Same canonical-id guard as the product path: catalog_categories.id is a uuid
+  // column, so a non-UUID id (e.g. a sheet row number) must never reach it.
+  const rawIds = [...new Set(items.map((i) => idText(i.id)).filter(Boolean))]
+  const ids = rawIds.filter(isCanonicalUuid)
+  const slugs = [...new Set(items.map((i) => idText(i.slug)).filter(Boolean))]
   const byId = new Map<string, string>()
   const bySlug = new Map<string, string>()
   for (let i = 0; i < ids.length; i += 300) {
-    const { data } = await client.from('catalog_categories').select('id').in('id', ids.slice(i, i + 300))
+    const { data, error } = await client.from('catalog_categories').select('id').in('id', ids.slice(i, i + 300))
+    if (error) throw new Error(`resolve by id: ${error.message}`)
     for (const c of (data ?? []) as { id: string }[]) byId.set(c.id, c.id)
   }
   for (let i = 0; i < slugs.length; i += 300) {
-    const { data } = await client.from('catalog_categories').select('id, slug').in('slug', slugs.slice(i, i + 300))
+    const { data, error } = await client.from('catalog_categories').select('id, slug').in('slug', slugs.slice(i, i + 300))
+    if (error) throw new Error(`resolve by slug: ${error.message}`)
     for (const c of (data ?? []) as { id: string; slug: string | null }[]) if (c.slug) bySlug.set(up(c.slug), c.id)
   }
 
-  const resolvedIds = [...new Set(items.map((it) => (it.id && byId.get(it.id.trim())) || (it.slug && bySlug.get(up(it.slug))) || '').filter(Boolean))] as string[]
+  const resolve = (it: AiRuCategoryItem): string | null => {
+    const id = idText(it.id)
+    const slug = idText(it.slug)
+    return (isCanonicalUuid(id) ? byId.get(id) ?? null : null) ?? (slug ? bySlug.get(up(slug)) ?? null : null)
+  }
+  const resolvedIds = [...new Set(items.map((it) => resolve(it) ?? '').filter(Boolean))]
   const existing = await fetchRuCategoryTx(client, resolvedIds)
   const now = new Date().toISOString()
 
   for (const item of items) {
-    const key = (item.id ?? item.slug ?? '(?)').toString()
-    const categoryId = (item.id && byId.get(item.id.trim())) || (item.slug && bySlug.get(up(item.slug))) || null
-    if (!categoryId) { result.skipped++; result.results.push({ key, status: 'skipped', fields: [], reasons: ['категория не найдена (id/slug)'] }); continue }
+    const key = (idText(item.id) || idText(item.slug) || '(?)')
+    const categoryId = resolve(item)
+    if (!categoryId) {
+      const badId = idText(item.id) && !isCanonicalUuid(item.id)
+      result.skipped++
+      result.results.push({
+        key, status: 'skipped', fields: [],
+        reasons: [badId ? `категория не найдена: id "${idText(item.id)}" не является UUID каталога (ожидается catalog_categories.id)` : 'категория не найдена (id/slug)'],
+      })
+      continue
+    }
 
     const cur = existing.get(categoryId)
     if (cur?.seo_manual_lock === true) { result.skipped++; result.results.push({ key, status: 'skipped', fields: [], reasons: ['RU SEO заблокировано (manual_lock)'] }); continue }
@@ -878,8 +965,8 @@ async function count(build: () => PromiseLike<{ count: number | null; error: unk
   try { const { count } = await build(); return count ?? 0 } catch { return 0 }
 }
 
-export async function localizedProductCoverage(locale: string = RU_LOCALE) {
-  const client = getAdminClient()
+export async function localizedProductCoverage(locale: string = RU_LOCALE, injected?: ReturnType<typeof getAdminClient>) {
+  const client = injected ?? getAdminClient()
   const P = () => client.from('catalog_products').select('id', { count: 'exact', head: true }).eq('status', 'published')
   const T = () => client.from('catalog_product_translations').select('id', { count: 'exact', head: true }).eq('locale', locale)
   const [total, ruRows, ruMetaTitle, ruMetaDesc, ruDesc, ruAi, ruLocked] = await Promise.all([
