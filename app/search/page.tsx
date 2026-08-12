@@ -28,6 +28,9 @@ const STRINGS: Record<Locale, {
   pageOf: (page: number, total: number) => string
   buyableFilter: string
   photoFilter: string
+  browseCatalog: string
+  popularTitle: string
+  popular: string[]
 }> = {
   uk: {
     title: 'Пошук товарів',
@@ -42,6 +45,9 @@ const STRINGS: Record<Locale, {
     pageOf: (page, total) => `Сторінка ${page} з ${total}`,
     buyableFilter: 'Тільки з ціною',
     photoFilter: 'Тільки з фото',
+    browseCatalog: 'Перейти до каталогу',
+    popularTitle: 'Популярні запити',
+    popular: ['карбюратор', 'ремінь варіатора', 'варіатор', 'амортизатор', 'глушник', 'замок запалювання'],
   },
   ru: {
     title: 'Поиск товаров',
@@ -56,6 +62,9 @@ const STRINGS: Record<Locale, {
     pageOf: (page, total) => `Страница ${page} из ${total}`,
     buyableFilter: 'Только с ценой',
     photoFilter: 'Только с фото',
+    browseCatalog: 'Перейти в каталог',
+    popularTitle: 'Популярные запросы',
+    popular: ['карбюратор', 'ремень вариатора', 'вариатор', 'амортизатор', 'глушитель', 'замок зажигания'],
   },
   en: {
     title: 'Product search',
@@ -70,6 +79,9 @@ const STRINGS: Record<Locale, {
     pageOf: (page, total) => `Page ${page} of ${total}`,
     buyableFilter: 'With price only',
     photoFilter: 'With photo only',
+    browseCatalog: 'Browse the catalog',
+    popularTitle: 'Popular searches',
+    popular: ['carburetor', 'variator belt', 'variator', 'shock absorber', 'muffler', 'ignition lock'],
   },
 }
 
@@ -176,12 +188,36 @@ export default async function SearchPage({ searchParams }: Props) {
             {/* If the buyable filter produced 0 results, let the user turn it off. */}
             {(buyable || withImage) && <div className="mb-4">{filterChips}</div>}
             <p className="text-bark font-medium mb-4">{t.empty}</p>
-            <Link
-              href={contactHref}
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-honey-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-honey-800 transition-colors"
-            >
-              {t.contact}
-            </Link>
+            {/* Recovery paths BEFORE the contact dead-end: a zero-result search is
+                still a shopper with intent, so give them somewhere to go. */}
+            <div className="mb-6">
+              <p className="text-xs font-semibold uppercase tracking-wide text-bark/50 mb-2">{t.popularTitle}</p>
+              <div className="flex flex-wrap gap-2">
+                {t.popular.map((term) => (
+                  <Link
+                    key={term}
+                    href={`${searchBase}?q=${encodeURIComponent(term)}&buyable=1`}
+                    className="inline-flex items-center rounded-full border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-700 hover:border-honey-300 hover:text-honey-700 transition-colors"
+                  >
+                    {term}
+                  </Link>
+                ))}
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-3">
+              <Link
+                href={localizedPath(locale, '/catalog')}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-honey-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-honey-800 transition-colors"
+              >
+                {t.browseCatalog}
+              </Link>
+              <Link
+                href={contactHref}
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-honey-300 px-5 py-2.5 text-sm font-semibold text-honey-700 hover:bg-honey-50 transition-colors"
+              >
+                {t.contact}
+              </Link>
+            </div>
           </div>
         )}
       </div>

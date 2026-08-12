@@ -27,7 +27,18 @@ type CartAction =
   | { type: 'SET_OPEN'; open: boolean }
   | { type: 'HYDRATE'; items: CartItem[] }
 
-function cartReducer(state: CartState, action: CartAction): CartState {
+// Exported so the money path (quantity → line totals → cart total → checkout
+// total → order total) can be regression-tested without a browser. The checkout
+// page reads `totalPrice` from this same context, so cart and checkout can never
+// disagree on price by construction.
+export function cartTotals(items: CartItem[]): { totalItems: number; totalPrice: number } {
+  return {
+    totalItems: items.reduce((s, i) => s + i.quantity, 0),
+    totalPrice: items.reduce((s, i) => s + i.price * i.quantity, 0),
+  }
+}
+
+export function cartReducer(state: CartState, action: CartAction): CartState {
   switch (action.type) {
     case 'HYDRATE':
       return { ...state, items: action.items }
@@ -146,8 +157,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const openCart = useCallback(() => dispatch({ type: 'SET_OPEN', open: true }), [])
   const closeCart = useCallback(() => dispatch({ type: 'SET_OPEN', open: false }), [])
 
-  const totalItems = state.items.reduce((s, i) => s + i.quantity, 0)
-  const totalPrice = state.items.reduce((s, i) => s + i.price * i.quantity, 0)
+  const { totalItems, totalPrice } = cartTotals(state.items)
 
   return (
     <CartContext.Provider value={{ items: state.items, isOpen: state.isOpen, hydrated, totalItems, totalPrice, addItem, removeItem, updateQty, clearCart, openCart, closeCart }}>

@@ -1,5 +1,6 @@
 import { getAdminClient } from '@/lib/supabase/admin'
 import { autoSlug } from '@/lib/catalog/csv-utils'
+import { partitionPublishCandidates, PUBLISH_GUARD_COLS, type PublishCandidate } from '@/lib/catalog/storefront-quality'
 import { buildSupplierUpdatePayload, planGuardedWrites, type CatalogUpdatePayload, type ExistingCatalogOwnership } from '@/lib/catalog/field-ownership'
 import { isValidHumanCategoryName, deterministicCategoryIntro } from '@/lib/catalog/category-fallback'
 import { AUTOMATION_MAX_PUBLISHED, NEW_PRODUCT_INSERT_BATCH_CAP } from '@/lib/catalog/automation-config'
@@ -165,6 +166,8 @@ export interface PublishResult {
   ok: boolean
   updated: number
   message: string
+  // Drafts held back by the storefront publish guard (unusable public name).
+  blockedUnusable?: number
 }
 
 export interface ManualPublishResult {
@@ -175,6 +178,8 @@ export interface ManualPublishResult {
   wouldPublish: number        // drafts that would be published this run (after limit)
   published: number           // rows actually flipped to published (0 on dry run)
   skipped: number             // drafts left unpublished because of the limit
+  blockedUnusable?: number    // drafts held back by the storefront publish guard
+  blockedSamples?: Array<{ sku: string; name: string; reason: string }>
   errors: number
   samples: Array<{ sku: string; name: string }>
   message: string
@@ -1306,27 +1311,59 @@ export async function repairCategoryNamesFromProducts(): Promise<RepairCategoryN
   }
 }
 
-// Step 8: Publish all draft catalog products
-export async function publishAllCatalogProducts(): Promise<PublishResult> {
-  const client = getAdminClient()
-  const { data: ids, error: fetchErr } = await client
-    .from('catalog_products')
-    .select('id')
-    .eq('status', 'draft')
-  if (fetchErr) return { ok: false, updated: 0, message: fetchErr.message }
-  if (!ids || ids.length === 0) return { ok: true, updated: 0, message: 'Всі товари вже опубліковані' }
+// Publish batch size for the daily cron path. Matches the effective size the
+// unranged query had before (PostgREST's 1000-row default); repeated runs drain
+// the draft queue.
+const PUBLISH_BATCH_CAP = 1000
 
-  const idList = ids.map((r) => r.id)
+// Step 8: Publish draft catalog products (bounded batch, storefront-guarded)
+export async function publishAllCatalogProducts(
+  opts: { client?: AdminClient } = {},
+): Promise<PublishResult> {
+  const client = opts.client ?? getAdminClient()
+  // Load the guard columns, not just ids: a draft whose name is unusable on the
+  // public storefront must stay draft instead of becoming an indexable dead page
+  // (see lib/catalog/storefront-quality.ts). Only status='draft' rows are ever
+  // selected, so archived rows can never be revived by this path.
+  //
+  // The range is explicit at PUBLISH_BATCH_CAP rather than implicit: the previous
+  // `.select('id')` had no range, so PostgREST silently capped it at its 1000-row
+  // default and the daily cron only ever published the oldest 1000 drafts per run.
+  // Keeping the same effective batch size makes that behaviour intentional and
+  // visible instead of accidental — repeated runs drain the queue, and nobody
+  // gets 50k unreviewed products published in one go by a bug fix.
+  const { data, error: fetchErr } = await client
+    .from('catalog_products')
+    .select(PUBLISH_GUARD_COLS)
+    .eq('status', 'draft')
+    .order('created_at', { ascending: true })
+    .range(0, PUBLISH_BATCH_CAP - 1)
+  if (fetchErr) return { ok: false, updated: 0, message: fetchErr.message }
+  const rows = (data ?? []) as unknown as PublishCandidate[]
+  if (rows.length === 0) return { ok: true, updated: 0, message: 'Всі товари вже опубліковані' }
+
+  const { publishable, blocked, blockedSamples } = partitionPublishCandidates(rows)
+  if (blocked.length > 0) {
+    console.warn(
+      `[publish-guard] ${blocked.length} draft товарів залишено непублічними (непридатна назва): ` +
+      blockedSamples.map((s) => `${s.sku || '(no sku)'}="${s.name}"`).join(', '),
+    )
+  }
+
+  const idList = publishable.map((r) => r.id)
   let updated = 0
   const CHUNK = 500
   for (let i = 0; i < idList.length; i += CHUNK) {
+    const slice = idList.slice(i, i + CHUNK)
     const { error } = await client
       .from('catalog_products')
       .update({ status: 'published' })
-      .in('id', idList.slice(i, i + CHUNK))
-    if (!error) updated += Math.min(CHUNK, idList.length - i)
+      .in('id', slice)
+      .eq('status', 'draft') // never re-touch a row that left draft mid-run
+    if (!error) updated += slice.length
   }
-  return { ok: true, updated, message: `Опубліковано ${updated} товарів` }
+  const blockedNote = blocked.length > 0 ? `, ${blocked.length} заблоковано (непридатна назва)` : ''
+  return { ok: true, updated, blockedUnusable: blocked.length, message: `Опубліковано ${updated} товарів${blockedNote}` }
 }
 
 // Manual, controlled publish: flip up to `limit` draft catalog_products to
@@ -1344,12 +1381,12 @@ export async function publishAllCatalogProducts(): Promise<PublishResult> {
 //
 // SAFETY: touches ONLY status (+ updated_at). Never price, image, category, SEO.
 export async function publishDraftProducts(
-  opts: { dryRun?: boolean; limit?: number; quality?: boolean } = {},
+  opts: { dryRun?: boolean; limit?: number; quality?: boolean; client?: AdminClient } = {},
 ): Promise<ManualPublishResult> {
   const dryRun = opts.dryRun === true
   const quality = opts.quality === true
   const limit = opts.limit && opts.limit > 0 ? opts.limit : 100000
-  const client = getAdminClient()
+  const client = opts.client ?? getAdminClient()
 
   const { count: draftTotal } = await client
     .from('catalog_products')
@@ -1360,7 +1397,7 @@ export async function publishDraftProducts(
   // Standard mode: all draft rows (original behaviour, unchanged).
   const buildQuery = (from: number, to: number) => {
     const q = client.from('catalog_products')
-      .select('id, supplier_sku, name_ua')
+      .select(PUBLISH_GUARD_COLS)
       .eq('status', 'draft')
       .order('created_at', { ascending: true })
       .range(from, to)
@@ -1374,7 +1411,12 @@ export async function publishDraftProducts(
   }
 
   // Load candidate rows (paginated past the 1000-row cap), oldest first, then cap.
-  const candidateRows = await selectAllRows<{ id: string; supplier_sku: string | null; name_ua: string | null }>(buildQuery)
+  const loadedRows = await selectAllRows<PublishCandidate>(buildQuery)
+
+  // Storefront publish guard: rows the public catalog would refuse to list are
+  // held back as draft before the limit is applied, so the limit is spent on
+  // publishable products only. Manual rows are exempt.
+  const { publishable: candidateRows, blocked, blockedSamples } = partitionPublishCandidates(loadedRows)
 
   const eligibleQuality = quality ? candidateRows.length : undefined
   const candidates = candidateRows.slice(0, limit)
@@ -1388,6 +1430,8 @@ export async function publishDraftProducts(
     ? ` (якість: зображення + meta_title + meta_description; eligible: ${eligibleQuality ?? 0})`
     : ''
 
+  const blockedNote = blocked.length > 0 ? `, ${blocked.length} заблоковано guard-ом (непридатна публічна назва)` : ''
+
   if (dryRun) {
     return {
       ok: true, applied: false,
@@ -1395,7 +1439,9 @@ export async function publishDraftProducts(
       ...(quality ? { eligibleQuality: eligibleQuality ?? 0 } : {}),
       wouldPublish: candidates.length,
       published: 0, skipped, errors: 0, samples,
-      message: `DRY RUN — буде опубліковано ${candidates.length} з ${draftTotal ?? 0} draft-товарів${qualityNote}${skipped > 0 ? ` (${skipped} понад ліміт залишаться draft)` : ''}.`,
+      blockedUnusable: blocked.length,
+      ...(blocked.length > 0 ? { blockedSamples } : {}),
+      message: `DRY RUN — буде опубліковано ${candidates.length} з ${draftTotal ?? 0} draft-товарів${qualityNote}${skipped > 0 ? ` (${skipped} понад ліміт залишаться draft)` : ''}${blockedNote}.`,
     }
   }
 
@@ -1419,7 +1465,9 @@ export async function publishDraftProducts(
     ...(quality ? { eligibleQuality: eligibleQuality ?? 0 } : {}),
     wouldPublish: candidates.length,
     published, skipped, errors, samples,
-    message: `Опубліковано ${published} товарів${qualityNote}${skipped > 0 ? `, ${skipped} залишилось draft (ліміт)` : ''}${errors > 0 ? `, помилок: ${errors}` : ''}.`,
+    blockedUnusable: blocked.length,
+    ...(blocked.length > 0 ? { blockedSamples } : {}),
+    message: `Опубліковано ${published} товарів${qualityNote}${skipped > 0 ? `, ${skipped} залишилось draft (ліміт)` : ''}${blockedNote}${errors > 0 ? `, помилок: ${errors}` : ''}.`,
   }
 }
 

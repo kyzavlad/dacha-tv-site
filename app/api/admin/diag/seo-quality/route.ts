@@ -2,6 +2,9 @@ export const dynamic = 'force-dynamic'
 
 import { verifyCronAuth, cronUnauthorized } from '../../cron/_auth'
 import { getAdminClient } from '@/lib/supabase/admin'
+import {
+  UA_BACKLOG_COLS, summarizeUaBacklog, classifyUaSeoRow, missingUaFields, type UaSeoRow,
+} from '@/lib/catalog/seo-backlog'
 
 // ─── READ-ONLY SEO quality / queue diagnostic ─────────────────────────────────
 // Reports catalog SEO coverage and the size of the AI backlog WITHOUT mutating
@@ -70,6 +73,49 @@ export async function GET(req: Request) {
       .not('name_ua', 'is', null),
   )
 
+  // ── Actionable UA backlog (classified, not just counted) ────────────────────
+  // Load ONLY the published rows that are actually incomplete — one bounded,
+  // indexed filter — and classify each with the shared definition. At the current
+  // catalog state this set is tiny (tens of rows), so the classification is exact;
+  // it is capped so the endpoint stays bounded even if that ever changes.
+  const CLASSIFY_CAP = 2000
+  const actionable = {
+    incomplete_rows_classified: 0,
+    classified_sample_capped: false,
+    actionable_supplier: 0,
+    manual_exception: 0,
+    manual_locked: 0,
+    malformed_public: 0,
+    actionable: 0,
+    samples: [] as Array<{ sku: string; name: string; missing: string[]; klass: string }>,
+    note: 'actionable = published supplier rows the UA AI pipeline can still fill. Manual products, human-locked rows and rows with an unusable public name are exceptions, not backlog.',
+  }
+  try {
+    const { data } = await client
+      .from('catalog_products')
+      .select(UA_BACKLOG_COLS)
+      .eq('status', 'published')
+      .or('meta_title.is.null,meta_title.eq.,meta_description.is.null,meta_description.eq.,description_ua.is.null,description_ua.eq.')
+      .limit(CLASSIFY_CAP)
+    const rows = (data ?? []) as UaSeoRow[]
+    actionable.incomplete_rows_classified = rows.length
+    actionable.classified_sample_capped = rows.length >= CLASSIFY_CAP
+    const summary = summarizeUaBacklog(rows)
+    actionable.actionable_supplier = summary.actionable_supplier
+    actionable.manual_exception = summary.manual_exception
+    actionable.manual_locked = summary.manual_locked
+    actionable.malformed_public = summary.malformed
+    actionable.actionable = summary.actionable
+    for (const row of rows.slice(0, 25)) {
+      actionable.samples.push({
+        sku: String(row.supplier_sku ?? ''),
+        name: String(row.name_ua ?? row.name ?? ''),
+        missing: missingUaFields(row),
+        klass: classifyUaSeoRow(row),
+      })
+    }
+  } catch { /* non-fatal — the coverage counts above still stand */ }
+
   // Top categories needing SEO — SAMPLED (bounded scan) so the diagnostic never
   // scans 100k rows. Tally category_slug of published products missing a long
   // description over the first `sampleSize` rows, report the top 15.
@@ -125,6 +171,12 @@ export async function GET(req: Request) {
       eligible_products: aiBacklog,
       note: 'Published, non-locked, non-sheet/manual products with image+price+category+name that still need a long description or a meta field. Source pool for /api/admin/seo/ai-candidates.',
     },
+    // The ONLY number that represents real remaining UA SEO work. Manual Dacha TV
+    // products, human-locked rows and rows with an unusable public name are
+    // reported separately instead of being counted as broken supplier SEO — see
+    // lib/catalog/seo-backlog.ts. `incomplete_rows_classified` is exact when
+    // `classified_sample_capped` is false.
+    actionable_backlog: actionable,
     top_categories_needing_seo: {
       sampled_rows: sampledRows,
       note: 'Approximate — tallied from a bounded sample of products missing a long description.',

@@ -28,6 +28,7 @@ import { SafeImage } from '@/components/shared/SafeImage'
 import { CatalogProductCard } from '@/components/catalog/CatalogProductCard'
 import { AddToCartButton } from '@/components/cart/AddToCartButton'
 import { BuyNowButton } from '@/components/cart/BuyNowButton'
+import { StickyBuyBar } from '@/components/catalog/StickyBuyBar'
 import { TrackViewItem } from '@/components/analytics/TrackEvent'
 import { TrackedPhoneLink } from '@/components/shared/TrackedPhoneLink'
 import { ProductOptions } from '@/components/catalog/ProductOptions'
@@ -246,8 +247,8 @@ export default async function ProductPage({ params }: Props) {
               </div>
             )}
 
-            {/* CTA */}
-            <div className="space-y-3 mb-6">
+            {/* CTA — id anchors the mobile sticky buy bar's visibility observer. */}
+            <div id="product-primary-cta" className="space-y-3 mb-6">
               {buyable ? (
                 <>
                   <AddToCartButton
@@ -359,6 +360,23 @@ export default async function ProductPage({ params }: Props) {
             )}
           </div>
         </div>
+
+        {/* Mobile sticky purchase bar — appears only after the primary CTA above
+            has scrolled out of view. Desktop keeps the CTA beside the image. */}
+        {buyable && !stockIsOut && (
+          <StickyBuyBar
+            anchorId="product-primary-cta"
+            priceLabel={priceLabel}
+            item={{
+              id: `catalog-${product.slug}`,
+              productType: 'catalog',
+              productSlug: product.slug,
+              name: displayProductName(product),
+              price: product.price_uah as number,
+              imageUrl: images[0] ?? undefined,
+            }}
+          />
+        )}
 
         {/* Related / similar products from the same category */}
         {related.length > 0 && (

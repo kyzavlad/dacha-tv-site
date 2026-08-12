@@ -2,6 +2,12 @@ export const dynamic = 'force-dynamic'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { getAdminClient } from '@/lib/supabase/admin'
+import { countSearchSupply } from '@/lib/supabase/catalog'
+import {
+  assessAdReadiness, rankClusters, AD_BLOCKER_LABELS,
+  AD_READY_MIN_IN_STOCK, AD_READY_MIN_BUYABLE,
+  type RankedCluster,
+} from '@/lib/catalog/ad-readiness'
 
 export const metadata: Metadata = { title: 'Адмін: Пошукові запити', robots: 'noindex, nofollow' }
 
@@ -10,6 +16,9 @@ export const metadata: Metadata = { title: 'Адмін: Пошукові зап�
 // from this single time-windowed, capped query.
 const MAX_ROWS = 5000
 const DAY = 24 * 60 * 60 * 1000
+// How many top clusters get live inventory counts. Bounded on purpose: each one
+// costs 3 HEAD count queries, run in parallel, and this is an admin page.
+const AD_CLUSTER_LIMIT = 8
 
 // Wall-clock read kept out of the component body (Date.now() is flagged as impure
 // inside a render function; a plain helper is fine and this page is dynamic).
@@ -85,6 +94,26 @@ export default async function SearchInsightsPage() {
 
   const avg = (a: Agg) => (a.count30 > 0 ? Math.round((a.sumResults30 / a.count30) * 10) / 10 : 0)
 
+  // ── Paid-search readiness for the top demand clusters ──────────────────────
+  // Live inventory behind each query: matched / in stock / with a real price.
+  // Read-only HEAD counts, bounded to AD_CLUSTER_LIMIT clusters, in parallel.
+  let clusters: RankedCluster[] = []
+  if (!tableMissing && !loadError) {
+    const candidates = [...aggs].sort((a, b) => b.count30 - a.count30).slice(0, AD_CLUSTER_LIMIT)
+    try {
+      const client = getAdminClient()
+      clusters = rankClusters(
+        await Promise.all(
+          candidates.map(async (a) => {
+            const supply = await countSearchSupply(a.query, client)
+            const demand = { searches30: a.count30, searches7: a.count7 }
+            return { query: a.query, demand, supply, readiness: assessAdReadiness(a.query, demand, supply) }
+          }),
+        ),
+      )
+    } catch { /* inventory counts are best-effort — never break the page */ }
+  }
+
   return (
     <div className="px-4 sm:px-6 py-8 max-w-4xl">
       <div className="flex items-center gap-3 mb-1">
@@ -115,6 +144,53 @@ export default async function SearchInsightsPage() {
             <Stat label="Пошуків (7 днів)" value={totalSearches7.toLocaleString('uk-UA')} />
             <Stat label="Унікальних запитів" value={aggs.length.toLocaleString('uk-UA')} />
           </div>
+
+          {/* Paid-search readiness */}
+          <Section
+            title="Готовність до реклами (Google Ads)"
+            hint={`Реальний попит + жива наявність + справжня ціна. Кластер готовий, коли ≥ ${AD_READY_MIN_IN_STOCK} в наявності та ≥ ${AD_READY_MIN_BUYABLE} з ціною.`}
+          >
+            {clusters.length === 0 ? <Empty /> : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-xs text-gray-400 border-b border-gray-100">
+                      <th className="py-2 pr-3 font-medium">Кластер</th>
+                      <th className="py-2 px-3 font-medium text-right">Пошуків 30 дн</th>
+                      <th className="py-2 px-3 font-medium text-right">Товарів</th>
+                      <th className="py-2 px-3 font-medium text-right">В наявності</th>
+                      <th className="py-2 px-3 font-medium text-right">З ціною</th>
+                      <th className="py-2 px-3 font-medium">Статус</th>
+                      <th className="py-2 pl-3 font-medium">Посадкова</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {clusters.map((c) => (
+                      <tr key={c.query} className="hover:bg-gray-50/60">
+                        <td className="py-2 pr-3 text-gray-900 truncate max-w-[200px]">{c.query}</td>
+                        <td className="py-2 px-3 text-right tabular-nums">{c.demand.searches30}</td>
+                        <td className="py-2 px-3 text-right tabular-nums text-gray-500">{c.supply.matched.toLocaleString('uk-UA')}</td>
+                        <td className="py-2 px-3 text-right tabular-nums">{c.supply.inStock.toLocaleString('uk-UA')}</td>
+                        <td className="py-2 px-3 text-right tabular-nums">{c.supply.buyable.toLocaleString('uk-UA')}</td>
+                        <td className="py-2 px-3">
+                          {c.readiness.ready ? (
+                            <span className="inline-flex items-center rounded-full bg-green-50 text-green-700 border border-green-100 px-2 py-0.5 text-xs font-medium">готовий</span>
+                          ) : (
+                            <span className="text-xs text-amber-700">
+                              {c.readiness.blockers.map((b) => AD_BLOCKER_LABELS[b]).join(', ')}
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-2 pl-3">
+                          <Link href={c.readiness.landingPath} className="text-xs text-honey-700 hover:underline">/search?q=…&amp;buyable=1 ↗</Link>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Section>
 
           {/* What to promote */}
           <Section title="Що просувати цього тижня" hint="Реальний попит + є товари в результатах — гарні кандидати для реклами/SEO.">
