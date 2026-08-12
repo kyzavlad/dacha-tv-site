@@ -1246,3 +1246,47 @@ export async function getPublishedCategorySlugCounts(): Promise<{
 
   return { bySlug, nullCount, total }
 }
+
+// ─── Search-demand supply counts (admin / growth readiness) ──────────────────
+// How much SELLABLE inventory backs one internal-search cluster. Uses the SAME
+// token-AND ilike matching + storefront scope as the public search above, so the
+// number an operator sees is the number a shopper can actually reach. Three HEAD
+// count queries (no rows returned), run in parallel:
+//   matched  — published, in-scope products the query matches
+//   inStock  — of those, is_in_stock = true
+//   buyable  — of those, a real non-suspicious price (what an ad click needs)
+// Read-only. Returns zeros on any error — this must never break an admin page.
+export interface SearchSupplyCounts { matched: number; inStock: number; buyable: number }
+
+export async function countSearchSupply(
+  term: string,
+  client?: NonNullable<ReturnType<typeof getClient>>,
+): Promise<SearchSupplyCounts> {
+  const empty: SearchSupplyCounts = { matched: 0, inStock: 0, buyable: 0 }
+  const db = client ?? getClient()
+  const tokens = searchTokens(term.trim())
+  if (!db || tokens.length === 0) return empty
+
+  const base = () => {
+    let q = db
+      .from('catalog_products')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'published')
+      .or(STOREFRONT_SCOPE_OR)
+    for (const tok of tokens) {
+      const t = sanitizeIlike(tok)
+      q = q.or(`name_ua.ilike.%${t}%,name.ilike.%${t}%,supplier_sku.ilike.%${t}%,category_slug.ilike.%${t}%`)
+    }
+    return q
+  }
+  const run = async (build: () => PromiseLike<{ count: number | null; error: unknown }>): Promise<number> => {
+    try { const { count, error } = await build(); return error ? 0 : count ?? 0 } catch { return 0 }
+  }
+
+  const [matched, inStock, buyable] = await Promise.all([
+    run(() => base()),
+    run(() => base().eq('is_in_stock', true)),
+    run(() => base().gte('price_uah', MIN_VALID_PRICE_UAH).not('is_price_suspicious', 'is', true)),
+  ])
+  return { matched, inStock, buyable }
+}
