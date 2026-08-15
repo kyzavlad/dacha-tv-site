@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import { SellerInfo } from '@/components/shared/SellerInfo'
-import { getRequestLocale } from '@/lib/i18n'
+import { getRequestLocale, localizedPath } from '@/lib/i18n'
 import { pageDict } from '@/lib/i18n/pages'
 import { buildAlternates, buildSocialMetadata } from '@/lib/seo'
 
@@ -61,7 +61,7 @@ export default async function DeliveryPage() {
             {t.delivery.questionsBody}
           </p>
           <a
-            href="/contact"
+            href={localizedPath(locale, '/contact')}
             className="inline-flex items-center gap-2 bg-honey-700 hover:bg-honey-800 text-white font-semibold px-6 py-3 rounded-lg transition-colors min-h-[48px]"
           >
             {t.common.contactUs}
