@@ -2,6 +2,8 @@ import Image from 'next/image'
 import Link from 'next/link'
 import type { BeekeeperProduct } from '@/types'
 import { getRequestLocale, localizedPath } from '@/lib/i18n'
+import { getManualTranslations, resolveManualField } from '@/lib/i18n/manual-translations'
+import { localizeBeekeeperSeasonNote } from '@/lib/i18n/manual-attributes'
 import { tr } from '@/lib/i18n/pages'
 
 interface BeekeeperCardProps {
@@ -21,7 +23,15 @@ function resolveImage(product: BeekeeperProduct): { url: string; alt: string } |
 
 export async function BeekeeperCard({ product }: BeekeeperCardProps) {
   const locale = await getRequestLocale()
+  const translation = locale === 'uk'
+    ? null
+    : (await getManualTranslations('beekeeper_product', [product.id], locale)).get(product.id) ?? null
+  const name = resolveManualField(product.name, translation, 'name', locale) || product.name
+  const description = locale === 'uk'
+    ? (product.description ?? '').trim()
+    : resolveManualField(null, translation, 'description', locale)
   const img = resolveImage(product)
+  const imageAlt = translation?.image_alt?.trim() || (locale === 'uk' ? img?.alt : '') || name
   const isUnavailable = product.status !== 'available' && product.status !== 'preorder'
 
   return (
@@ -30,7 +40,7 @@ export async function BeekeeperCard({ product }: BeekeeperCardProps) {
         {img ? (
           <Image
             src={img.url}
-            alt={img.alt}
+            alt={imageAlt}
             fill
             className={`object-cover group-hover:scale-105 transition-transform duration-500${isUnavailable ? ' opacity-60' : ''}`}
             sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
@@ -40,7 +50,7 @@ export async function BeekeeperCard({ product }: BeekeeperCardProps) {
         ) : (
           <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-forest-50 to-forest-200">
             <span className="text-forest-600 font-serif font-bold text-xl text-center px-4">
-              {product.name}
+              {name}
             </span>
           </div>
         )}
@@ -48,7 +58,7 @@ export async function BeekeeperCard({ product }: BeekeeperCardProps) {
         {product.is_featured && (
           <div className="absolute top-3 left-3">
             <span className="bg-honey-600 text-white text-xs font-semibold px-2.5 py-1 rounded-full">
-              {tr({ uk: 'Популярне', ru: 'Популярный' }, locale)}
+              {tr({ uk: 'Популярне', ru: 'Популярный', en: 'Popular' }, locale)}
             </span>
           </div>
         )}
@@ -56,8 +66,8 @@ export async function BeekeeperCard({ product }: BeekeeperCardProps) {
           <div className="absolute top-3 right-3">
             <span className="bg-gray-800/80 text-white text-xs font-medium px-2.5 py-1 rounded-full">
               {product.status === 'preorder'
-                ? tr({ uk: 'Передзамовлення', ru: 'Предзаказ' }, locale)
-                : tr({ uk: 'Немає', ru: 'Нет' }, locale)}
+                ? tr({ uk: 'Передзамовлення', ru: 'Предзаказ', en: 'Pre-order' }, locale)
+                : tr({ uk: 'Немає', ru: 'Нет', en: 'Unavailable' }, locale)}
             </span>
           </div>
         )}
@@ -65,7 +75,7 @@ export async function BeekeeperCard({ product }: BeekeeperCardProps) {
 
       <div className="p-5 flex flex-col flex-1">
         <h3 className="font-serif text-lg font-bold text-bark mb-2 leading-snug">
-          {product.name}
+          {name}
         </h3>
 
         {product.season_note && (
@@ -73,7 +83,7 @@ export async function BeekeeperCard({ product }: BeekeeperCardProps) {
             <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
               <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
             </svg>
-            {product.season_note}
+            {localizeBeekeeperSeasonNote(product.season_note, locale)}
           </p>
         )}
 
@@ -87,16 +97,16 @@ export async function BeekeeperCard({ product }: BeekeeperCardProps) {
           </div>
         )}
 
-        {product.description && (
+        {description && (
           <p className="text-bark/60 text-sm leading-relaxed line-clamp-2 flex-1">
-            {product.description}
+            {description}
           </p>
         )}
 
         {(product.price_uah != null || product.price_note) && (
           <div className="mt-3 flex items-baseline gap-2">
             {product.price_uah != null && (
-              <span className="text-sm font-semibold text-bark">{product.price_uah} грн</span>
+              <span className="text-sm font-semibold text-bark">{product.price_uah} {locale === 'en' ? 'UAH' : 'грн'}</span>
             )}
             {product.price_note && (
               <span className="text-xs text-bark/50">{product.price_note}</span>
@@ -108,7 +118,7 @@ export async function BeekeeperCard({ product }: BeekeeperCardProps) {
           href={localizedPath(locale, `/beekeeper/${product.slug}`)}
           className="mt-4 inline-flex items-center justify-center w-full px-4 py-2.5 bg-forest-700 text-white font-semibold text-sm rounded-lg hover:bg-forest-800 transition-colors min-h-[44px]"
         >
-          {tr({ uk: 'Детальніше', ru: 'Подробнее' }, locale)}
+          {tr({ uk: 'Детальніше', ru: 'Подробнее', en: 'Details' }, locale)}
         </Link>
       </div>
     </article>
