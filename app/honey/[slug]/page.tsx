@@ -24,6 +24,18 @@ interface Props {
   params: Promise<{ slug: string }>
 }
 
+type HoneyLocale = 'uk' | 'ru' | 'en'
+
+function honeyFallbackDescription(locale: HoneyLocale, name: string): string {
+  if (locale === 'ru') {
+    return `Натуральный мёд «${name}» от семейной пасеки в Харьковской области. Заказывайте напрямую у пасечника без посредников.`
+  }
+  if (locale === 'en') {
+    return `Natural honey “${name}” from a family apiary in the Kharkiv region. Order directly from the beekeeper.`
+  }
+  return `Натуральний мед «${name}» від сімейної пасіки на Харківщині. Замовляйте напряму від пасічника без посередників.`
+}
+
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params
   const locale = await getRequestLocale()
@@ -34,33 +46,39 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
   const tr = locale === 'uk' ? null : (await getManualTranslations('honey_product', [product.id], locale)).get(product.id)
   const name = resolveManualField(product.name, tr, 'name', locale)
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? ''
+  const seoTitle = resolveManualField(null, tr, 'seo_title', locale) || name
   const media = product.media ?? []
   const primaryImg = media.find((m) => m.media_type === 'image' && m.is_primary)
     ?? media.find((m) => m.media_type === 'image')
   const ogImageUrl = primaryImg?.url ?? product.image_url ?? null
+  const translatedImageAlt = resolveManualField(null, tr, 'image_alt', locale)
+  const imageAlt = translatedImageAlt
+    || (locale === 'uk' ? (primaryImg?.alt ?? product.image_alt ?? name) : name)
 
-  const description = resolveManualField(null, tr, 'seo_description', locale)
-    || `Натуральний ${name.toLowerCase()} від сімейної пасіки на Харківщині.${product.packaging?.length ? ' ' + product.packaging.join(', ') + '.' : ''} Замовляйте напряму від пасічника без посередників.`
+  const translatedSeoDescription = resolveManualField(null, tr, 'seo_description', locale)
+  const description = translatedSeoDescription
+    || (locale === 'uk' ? (product.short_description ?? '').trim() : '')
+    || honeyFallbackDescription(locale, name)
+
   return {
-    title: name,
+    title: seoTitle,
     description,
     alternates: { canonical, languages },
     openGraph: {
-      title: name,
+      title: seoTitle,
       description,
-      images: ogImageUrl ? [{ url: ogImageUrl, width: 1200, height: 630, alt: name }] : [],
+      url: canonical,
+      images: ogImageUrl ? [{ url: ogImageUrl, width: 1200, height: 630, alt: imageAlt }] : [],
       type: 'website',
     },
     twitter: {
       card: 'summary_large_image',
-      title: name,
+      title: seoTitle,
       description,
       images: ogImageUrl ? [ogImageUrl] : [],
     },
   }
 }
-
 
 const BLUR_DATA_URL =
   'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjQwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmJiZjI0Ii8+PC9zdmc+'
@@ -78,8 +96,13 @@ export default async function HoneyProductPage({ params }: Props) {
   if (!product) notFound()
   const tr = locale === 'uk' ? null : (await getManualTranslations('honey_product', [product.id], locale)).get(product.id)
   const name = resolveManualField(product.name, tr, 'name', locale)
-  const shortDesc = resolveManualField(product.short_description ?? null, tr, 'short_description', locale)
-  const fullDesc = resolveManualField(product.full_description ?? null, tr, 'description', locale)
+  const shortDesc = locale === 'uk'
+    ? (product.short_description ?? '').trim()
+    : resolveManualField(null, tr, 'short_description', locale)
+  const fullDesc = locale === 'uk'
+    ? (product.full_description ?? '').trim()
+    : resolveManualField(null, tr, 'description', locale)
+  const translatedImageAlt = resolveManualField(null, tr, 'image_alt', locale)
   const details = VARIETY_DETAILS[product.variety]?.[locale]
   const media = product.media ?? []
   const primaryImg = media.find((m) => m.media_type === 'image' && m.is_primary) ?? media.find((m) => m.media_type === 'image') ?? null
@@ -88,7 +111,8 @@ export default async function HoneyProductPage({ params }: Props) {
   const ytItems = media.filter((m) => m.media_type === 'youtube')
   // Fall back to legacy columns when media table is empty (migration not yet applied)
   const heroImageSrc = primaryImg?.url ?? product.image_url ?? null
-  const heroImageAlt = primaryImg?.alt ?? product.image_alt ?? `${name} — Дача TV`
+  const heroImageAlt = translatedImageAlt
+    || (locale === 'uk' ? (primaryImg?.alt ?? product.image_alt ?? `${name} — Дача TV`) : `${name} — Дача TV`)
   const heroImage = heroImageSrc?.startsWith('http') ? heroImageSrc : null
   const youtubeId = ytItems[0] ? extractYouTubeId(ytItems[0].url) : extractYouTubeId(product.youtube_video_link)
   const extraYoutubeIds = ytItems.length > 1
@@ -96,8 +120,11 @@ export default async function HoneyProductPage({ params }: Props) {
     : (product.youtube_video_urls ?? []).map(extractYouTubeId).filter(Boolean) as string[]
   const videoUrl = localVideo?.url ?? product.video_url ?? null
   const galleryImageSrcs = galleryImgs.length > 0
-    ? galleryImgs.map((m) => ({ src: m.url, alt: m.alt ?? product.image_alt ?? product.name }))
-    : (product.gallery_images ?? []).map((src) => ({ src, alt: product.image_alt ?? product.name }))
+    ? galleryImgs.map((m) => ({
+        src: m.url,
+        alt: locale === 'uk' ? (m.alt ?? product.image_alt ?? product.name) : heroImageAlt,
+      }))
+    : (product.gallery_images ?? []).map((src) => ({ src, alt: heroImageAlt }))
   const allImages = heroImage
     ? [{ src: heroImage, alt: heroImageAlt }, ...galleryImageSrcs]
     : galleryImageSrcs
@@ -106,22 +133,36 @@ export default async function HoneyProductPage({ params }: Props) {
     .filter((p) => p.id !== product.id && (p.status === 'available' || p.status === 'preorder'))
     .slice(0, 3)
 
+  const unitPrice = honeyUnitPriceUah(product)
+  const productPath = localizedPath(locale, `/honey/${slug}`)
+  const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL ?? '').replace(/\/$/, '')
+  const productUrl = siteUrl ? `${siteUrl}${productPath}` : undefined
+  const schemaDescription = shortDesc || details?.taste || honeyFallbackDescription(locale, name)
+  const schemaAvailability = product.status === 'available'
+    ? 'https://schema.org/InStock'
+    : product.status === 'preorder'
+      ? 'https://schema.org/PreOrder'
+      : 'https://schema.org/OutOfStock'
+  const schemaOffer = unitPrice != null && unitPrice > 0
+    ? {
+        '@type': 'Offer',
+        priceCurrency: 'UAH',
+        price: unitPrice,
+        availability: schemaAvailability,
+        seller: { '@type': 'Organization', name: 'Дача TV' },
+        ...(productUrl ? { url: productUrl } : {}),
+      }
+    : undefined
+
   const productSchema = {
     '@context': 'https://schema.org',
     '@type': 'Product',
-    name: product.name,
-    description: product.short_description || details?.taste || `Натуральний ${product.name} від пасіки на Харківщині`,
+    name,
+    description: schemaDescription,
     brand: { '@type': 'Brand', name: 'Дача TV' },
-    offers: {
-      '@type': 'Offer',
-      priceCurrency: 'UAH',
-      price: honeyUnitPriceUah(product),
-      availability: (product.status === 'available' || product.status === 'preorder')
-        ? 'https://schema.org/InStock'
-        : 'https://schema.org/OutOfStock',
-      seller: { '@type': 'Organization', name: 'Дача TV' },
-    },
-    image: primaryImg?.url ?? heroImage ?? product.image_url ?? undefined,
+    image: heroImageSrc ?? undefined,
+    ...(productUrl ? { url: productUrl } : {}),
+    ...(schemaOffer ? { offers: schemaOffer } : {}),
   }
 
   return (
@@ -187,12 +228,14 @@ export default async function HoneyProductPage({ params }: Props) {
             )}
 
             {/* Price block: canonical per-litre price from the shared source */}
-            <div className="flex items-baseline gap-2 mb-6 py-3 border-t border-b border-honey-100">
-              <span className="text-2xl font-bold text-bark">
-                {honeyUnitPriceUah(product)} грн
-              </span>
-              <span className="text-sm text-bark/50">{t.detailPerLiter}</span>
-            </div>
+            {unitPrice != null && unitPrice > 0 && (
+              <div className="flex items-baseline gap-2 mb-6 py-3 border-t border-b border-honey-100">
+                <span className="text-2xl font-bold text-bark">
+                  {unitPrice} {locale === 'en' ? 'UAH' : 'грн'}
+                </span>
+                <span className="text-sm text-bark/50">{t.detailPerLiter}</span>
+              </div>
+            )}
 
             {/* Details table */}
             <dl className="space-y-3 mb-6">
@@ -283,7 +326,7 @@ export default async function HoneyProductPage({ params }: Props) {
             <HoneyCartWidget
               productSlug={product.slug}
               productName={name}
-              price={honeyUnitPriceUah(product)}
+              price={unitPrice}
               imageUrl={product.image_url}
               status={product.status}
             />
@@ -319,7 +362,7 @@ export default async function HoneyProductPage({ params }: Props) {
             </h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
               {related.map((p) => (
-                <HoneyCard key={p.id} product={p} />
+                <HoneyCard key={p.id} product={p} locale={locale} />
               ))}
             </div>
           </div>
