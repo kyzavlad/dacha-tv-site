@@ -34,9 +34,9 @@ const D = {
   // ── Checkout: success screen ──
   successTitle: { uk: 'Дякуємо за замовлення!', ru: 'Спасибо за заказ!', en: 'Thank you for your order!' },
   successBody: {
-    uk: 'Ваше замовлення прийнято та передано на комплектацію.',
-    ru: 'Ваш заказ принят и передан на комплектацию.',
-    en: 'Your order has been received and passed on for fulfilment.',
+    uk: 'Ваше замовлення прийнято в обробку.',
+    ru: 'Ваш заказ принят в обработку.',
+    en: 'Your order has been received and is being processed.',
   },
   successHome: { uk: 'На головну', ru: 'На главную', en: 'Home' },
 
@@ -84,7 +84,11 @@ const D = {
   payCodLabel: { uk: 'Накладний платіж', ru: 'Наложенный платёж', en: 'Cash on delivery' },
   payCodDesc: { uk: 'Оплата при отриманні', ru: 'Оплата при получении', en: 'Pay on receipt' },
   payPrepayLabel: { uk: 'Передоплата', ru: 'Предоплата', en: 'Prepayment' },
-  payPrepayDesc: { uk: 'Оплата до відправки', ru: 'Оплата до отправки', en: 'Pay before shipping' },
+  payPrepayDesc: {
+    uk: 'Оплата до відправки після підтвердження менеджером',
+    ru: 'Оплата до отправки после подтверждения менеджером',
+    en: 'Payment before shipping after manager confirmation',
+  },
   payLockedHint: {
     uk: 'Передплата буде доступна після підтвердження менеджером',
     ru: 'Предоплата будет доступна после подтверждения менеджером',
@@ -205,5 +209,4 @@ export function shopUiDict(locale: Locale) {
   return out
 }
 
-// Raw dictionary (unresolved Tr map) for tooling/coverage checks.
 export const RAW_SHOP_UI = D

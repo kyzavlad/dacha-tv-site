@@ -86,5 +86,5 @@ test('breadcrumb and success-screen strings are localized to specific known valu
   assert.equal(shopUiDict('ru').crumbHome, 'Главная')
   assert.equal(shopUiDict('en').crumbHome, 'Home')
   assert.equal(shopUiDict('en').successTitle, 'Thank you for your order!')
-  assert.equal(shopUiDict('ru').successBody, 'Ваш заказ принят и передан на комплектацию.')
+  assert.equal(shopUiDict('ru').successBody, 'Ваш заказ принят в обработку.')
 })
