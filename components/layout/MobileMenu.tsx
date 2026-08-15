@@ -10,6 +10,7 @@ import { trackPhoneClick } from '@/lib/analytics/gtag'
 import { PRIMARY_NAV } from '@/lib/navigation'
 import { splitLocale, localizedPath } from '@/lib/i18n'
 import { useLocale } from '@/lib/i18n/locale-context'
+import { tr } from '@/lib/i18n/pages'
 import { navLabel } from '@/lib/i18n-ui'
 import { LanguageSwitcher } from '@/components/shared/LanguageSwitcher'
 import {
@@ -158,7 +159,7 @@ export function MobileMenu({ phone, phoneSecondary, siteSettings, logoPath }: Mo
 
         <Link href={localizedPath(locale, '/catalog')} onClick={() => setMenuOpen(false)}
           className="flex items-center justify-center w-full py-3.5 bg-honey-700 hover:bg-honey-800 text-white font-semibold rounded-full transition-colors min-h-[52px] text-base">
-          Перейти в магазин
+          {tr({ uk: 'Перейти до магазину', ru: 'Перейти в магазин', en: 'Go to shop' }, locale)}
         </Link>
       </div>
     </div>
