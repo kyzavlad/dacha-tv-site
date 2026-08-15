@@ -1,0 +1,111 @@
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { buildAlternates, buildSocialMetadata } from '../lib/seo.ts'
+import { localizedPath } from '../lib/i18n.ts'
+import { pageDict } from '../lib/i18n/pages.ts'
+import { getStaticFaqItems } from '../lib/i18n/static-faq.ts'
+
+const PAGES = [
+  ['delivery', '/delivery'],
+  ['about', '/about'],
+  ['contact', '/contact'],
+  ['faq', '/faq'],
+]
+
+for (const [page, path] of PAGES) {
+  test(`${path} wires request-locale metadata instead of static Ukrainian metadata`, () => {
+    const src = readFileSync(new URL(`../app/${page}/page.tsx`, import.meta.url), 'utf8')
+
+    assert.match(src, /export async function generateMetadata\(\): Promise<Metadata>/)
+    assert.ok(!src.includes('export const metadata:'), `${path} must not export static metadata`)
+    assert.ok(src.includes(`buildAlternates(locale, '${path}')`), `${path} must build locale-aware alternates`)
+    assert.ok(src.includes('buildSocialMetadata({'), `${path} must use the shared social metadata builder`)
+    assert.ok(src.includes(`bareTitle: t.${page}.title`), `${path} title must come from pageDict`)
+    assert.ok(src.includes(`description: t.${page}.intro`), `${path} description must come from pageDict`)
+  })
+
+  test(`${path} produces self-canonical UA/RU URLs with reciprocal alternates`, () => {
+    const uk = buildAlternates('uk', path)
+    const ru = buildAlternates('ru', path)
+
+    assert.equal(new URL(uk.canonical).pathname, path)
+    assert.equal(new URL(ru.canonical).pathname, `/ru${path}`)
+
+    for (const alternates of [uk.languages, ru.languages]) {
+      const paths = Object.values(alternates).map((url) => new URL(url).pathname)
+      assert.ok(paths.includes(path), `${path} alternates must contain Ukrainian URL`)
+      assert.ok(paths.includes(`/ru${path}`), `${path} alternates must contain Russian URL`)
+      assert.equal(new URL(alternates['x-default']).pathname, path)
+    }
+  })
+
+  test(`${path} social metadata follows the active localized copy and canonical`, () => {
+    const ukCopy = pageDict('uk')[page]
+    const ruCopy = pageDict('ru')[page]
+    assert.notEqual(ukCopy.intro, ruCopy.intro, `${path} must have distinct UA/RU descriptions`)
+
+    for (const locale of ['uk', 'ru']) {
+      const copy = pageDict(locale)[page]
+      const { canonical, languages } = buildAlternates(locale, path)
+      const meta = buildSocialMetadata({
+        bareTitle: copy.title,
+        description: copy.intro,
+        canonical,
+        languages,
+        imageAlt: copy.title,
+      })
+
+      assert.equal(meta.title, copy.title)
+      assert.equal(meta.description, copy.intro)
+      assert.equal(meta.alternates?.canonical, canonical)
+      assert.deepEqual(meta.alternates?.languages, languages)
+      assert.equal(meta.openGraph?.title, copy.title)
+      assert.equal(meta.openGraph?.description, copy.intro)
+      assert.equal(meta.openGraph?.url, canonical)
+      assert.equal(meta.twitter?.title, copy.title)
+      assert.equal(meta.twitter?.description, copy.intro)
+    }
+  })
+}
+
+test('localizedPath keeps static-page CTA navigation in the active locale', () => {
+  assert.equal(localizedPath('uk', '/contact'), '/contact')
+  assert.equal(localizedPath('ru', '/contact'), '/ru/contact')
+  assert.equal(localizedPath('uk', '/catalog'), '/catalog')
+  assert.equal(localizedPath('ru', '/catalog'), '/ru/catalog')
+})
+
+test('delivery and FAQ CTAs do not drop RU users onto prefix-less UA routes', () => {
+  const delivery = readFileSync(new URL('../app/delivery/page.tsx', import.meta.url), 'utf8')
+  const faq = readFileSync(new URL('../app/faq/page.tsx', import.meta.url), 'utf8')
+
+  assert.ok(delivery.includes("href={localizedPath(locale, '/contact')}"))
+  assert.ok(faq.includes("href={localizedPath(locale, '/catalog')}"))
+  assert.ok(faq.includes("href={localizedPath(locale, '/contact')}"))
+  assert.ok(!delivery.includes('href="/contact"'))
+  assert.ok(!faq.includes('href="/catalog"'))
+  assert.ok(!faq.includes('href="/contact"'))
+})
+
+test('static FAQ content is localized for both public locales without a missing-table dependency', () => {
+  const uk = getStaticFaqItems('uk')
+  const ru = getStaticFaqItems('ru')
+
+  assert.equal(uk.length, 10)
+  assert.equal(ru.length, 10)
+  assert.equal(uk.length, ru.length)
+  assert.equal(ru[0].question, 'Как заказать мёд?')
+
+  for (let i = 0; i < uk.length; i += 1) {
+    assert.equal(uk[i].id, ru[i].id)
+    assert.equal(uk[i].category, ru[i].category)
+    assert.equal(uk[i].display_order, ru[i].display_order)
+    assert.notEqual(uk[i].question, ru[i].question)
+    assert.notEqual(uk[i].answer, ru[i].answer)
+  }
+
+  const faq = readFileSync(new URL('../app/faq/page.tsx', import.meta.url), 'utf8')
+  assert.ok(faq.includes('const items = getStaticFaqItems(locale)'))
+  assert.ok(!faq.includes('getAllFaqItems'))
+})

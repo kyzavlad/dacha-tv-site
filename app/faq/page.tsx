@@ -1,50 +1,33 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import type { FaqItem } from '@/types'
-import { getAllFaqItems } from '@/lib/supabase/queries'
 import { StructuredData } from '@/components/shared/StructuredData'
-import { getRequestLocale } from '@/lib/i18n'
+import { getRequestLocale, localizedPath } from '@/lib/i18n'
 import { pageDict } from '@/lib/i18n/pages'
+import { getStaticFaqItems } from '@/lib/i18n/static-faq'
+import { buildAlternates, buildSocialMetadata } from '@/lib/seo'
 
-export const metadata: Metadata = {
-  title: 'Часті запитання',
-  description:
-    'Відповіді на часті запитання про мед, замовлення, доставку та бджільництво від пасіки Дача TV на Харківщині.',
-  alternates: { canonical: '/faq' },
-  openGraph: {
-    title: 'FAQ',
-    description: 'Часті запитання про мед, замовлення, доставку та бджільництво від пасіки Дача TV.',
-    images: [{ url: '/images/dacha-tv/logo-square.png', width: 1200, height: 1200, alt: 'Дача TV: FAQ' }],
-  },
-  twitter: {
-    card: 'summary_large_image',
-    title: 'FAQ',
-    description: 'Часті запитання про мед, замовлення, доставку та бджільництво від пасіки Дача TV.',
-  },
+export async function generateMetadata(): Promise<Metadata> {
+  const locale = await getRequestLocale()
+  const t = pageDict(locale)
+  const { canonical, languages } = buildAlternates(locale, '/faq')
+
+  return buildSocialMetadata({
+    bareTitle: t.faq.title,
+    description: t.faq.intro,
+    canonical,
+    languages,
+    imageAlt: t.faq.title,
+  })
 }
 
 type FaqCategory = 'products' | 'ordering' | 'delivery' | 'beekeeping'
 
 const CATEGORIES: FaqCategory[] = ['products', 'ordering', 'delivery', 'beekeeping']
 
-const STATIC_FAQ: FaqItem[] = [
-  { id: 's1', question: 'Як замовити мед?', answer: 'Ви можете залишити заявку на сайті або зателефонувати нам напряму. Ми уточнимо сорт, упаковку та спосіб доставки.', category: 'ordering', display_order: 1 },
-  { id: 's2', question: 'Які сорти меду у вас є?', answer: 'Наявність залежить від сезону. Основні сорти: акація, липа, сонях, різнотрав\'я, садовий та лісовий мед.', category: 'products', display_order: 1 },
-  { id: 's3', question: 'У якій упаковці доступний мед?', answer: 'Основні варіанти: 1 л пластик та 1 л скло.', category: 'products', display_order: 2 },
-  { id: 's4', question: 'Чи є доставка по Україні?', answer: 'Так, ми відправляємо замовлення по Україні службами доставки.', category: 'delivery', display_order: 1 },
-  { id: 's5', question: 'Чи можна замовити самовивіз?', answer: 'Так, деталі самовивозу узгоджуються під час оформлення.', category: 'delivery', display_order: 2 },
-  { id: 's6', question: 'Як швидко ви відповідаєте?', answer: 'Зазвичай відповідаємо протягом кількох годин.', category: 'ordering', display_order: 2 },
-  { id: 's7', question: 'Чи є у вас продукція для пасічників?', answer: 'Так, окрім меду, ми маємо продукцію для пасічників, зокрема приманку для роїв.', category: 'beekeeping', display_order: 1 },
-  { id: 's8', question: 'Чи весь мед натуральний?', answer: 'Так, ми продаємо натуральний мед із власної сімейної пасіки.', category: 'products', display_order: 3 },
-  { id: 's9', question: 'Чому деяких сортів може тимчасово не бути?', answer: 'Мед є сезонним продуктом, тому окремі сорти можуть бути недоступні в окремі періоди.', category: 'products', display_order: 4 },
-  { id: 's10', question: 'Чи можна уточнити деталі перед замовленням?', answer: 'Так, ми завжди можемо проконсультувати перед оформленням заявки.', category: 'ordering', display_order: 3 },
-]
-
 export default async function FaqPage() {
   const locale = await getRequestLocale()
   const t = pageDict(locale)
-  const dbItems = await getAllFaqItems().catch(() => [])
-  const items = dbItems.length > 0 ? dbItems : STATIC_FAQ
+  const items = getStaticFaqItems(locale)
 
   const faqSchema = {
     '@context': 'https://schema.org',
@@ -121,13 +104,13 @@ export default async function FaqPage() {
           <p className="text-bark/70 mb-4">{t.faq.ctaBody}</p>
           <div className="flex flex-wrap justify-center gap-3">
             <Link
-              href="/catalog"
+              href={localizedPath(locale, '/catalog')}
               className="inline-flex items-center gap-2 bg-honey-700 hover:bg-honey-800 text-white font-semibold px-6 py-3 rounded-lg transition-colors min-h-[48px]"
             >
               {t.common.toCatalog}
             </Link>
             <Link
-              href="/contact"
+              href={localizedPath(locale, '/contact')}
               className="inline-flex items-center gap-2 border border-honey-700 text-honey-800 hover:bg-honey-100 font-semibold px-6 py-3 rounded-lg transition-colors min-h-[48px]"
             >
               {t.common.contactUs}

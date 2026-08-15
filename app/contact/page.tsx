@@ -11,22 +11,20 @@ import {
 } from '@/lib/launch-defaults'
 import { getRequestLocale } from '@/lib/i18n'
 import { pageDict } from '@/lib/i18n/pages'
+import { buildAlternates, buildSocialMetadata } from '@/lib/seo'
 
-export const metadata: Metadata = {
-  title: "Зв'язатись з нами",
-  description:
-    "Зателефонуйте або напишіть: Дача TV відповідає протягом кількох годин. Адреса: Коротич, Пісочинська ОТГ, Харківська область.",
-  alternates: { canonical: '/contact' },
-  openGraph: {
-    title: "Контакти",
-    description: "Зв'яжіться з Дача TV на Харківщині — мед, квіти, товари для дому. Телефон, Telegram, адреса.",
-    images: [{ url: '/images/dacha-tv/logo-square.png', width: 1200, height: 1200, alt: 'Дача TV: Контакти' }],
-  },
-  twitter: {
-    card: 'summary_large_image',
-    title: "Контакти",
-    description: "Зателефонуйте або напишіть: Дача TV відповідає протягом кількох годин.",
-  },
+export async function generateMetadata(): Promise<Metadata> {
+  const locale = await getRequestLocale()
+  const t = pageDict(locale)
+  const { canonical, languages } = buildAlternates(locale, '/contact')
+
+  return buildSocialMetadata({
+    bareTitle: t.contact.title,
+    description: t.contact.intro,
+    canonical,
+    languages,
+    imageAlt: t.contact.title,
+  })
 }
 
 export default async function ContactPage() {
