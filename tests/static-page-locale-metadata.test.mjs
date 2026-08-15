@@ -2,6 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { buildAlternates, buildSocialMetadata } from '../lib/seo.ts'
+import { localizedPath } from '../lib/i18n.ts'
 import { pageDict } from '../lib/i18n/pages.ts'
 
 const PAGES = [
@@ -66,3 +67,22 @@ for (const [page, path] of PAGES) {
     }
   })
 }
+
+test('localizedPath keeps static-page CTA navigation in the active locale', () => {
+  assert.equal(localizedPath('uk', '/contact'), '/contact')
+  assert.equal(localizedPath('ru', '/contact'), '/ru/contact')
+  assert.equal(localizedPath('uk', '/catalog'), '/catalog')
+  assert.equal(localizedPath('ru', '/catalog'), '/ru/catalog')
+})
+
+test('delivery and FAQ CTAs do not drop RU users onto prefix-less UA routes', () => {
+  const delivery = readFileSync(new URL('../app/delivery/page.tsx', import.meta.url), 'utf8')
+  const faq = readFileSync(new URL('../app/faq/page.tsx', import.meta.url), 'utf8')
+
+  assert.ok(delivery.includes("href={localizedPath(locale, '/contact')}"))
+  assert.ok(faq.includes("href={localizedPath(locale, '/catalog')}"))
+  assert.ok(faq.includes("href={localizedPath(locale, '/contact')}"))
+  assert.ok(!delivery.includes('href="/contact"'))
+  assert.ok(!faq.includes('href="/catalog"'))
+  assert.ok(!faq.includes('href="/contact"'))
+})
