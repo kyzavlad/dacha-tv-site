@@ -1,9 +1,13 @@
 name: Build standalone Linux artifact
 
 # Phase 1 of self-hosting on the Ubuntu server: produces a downloadable,
-# reproducible Linux x86_64 build artifact. Manual trigger only — this
-# workflow never deploys anything and never runs automatically on push/PR.
+# reproducible Linux x86_64 build artifact. Pull requests into main are
+# validated automatically; workflow_dispatch remains available as a manual
+# fallback. This workflow never deploys anything.
 on:
+  pull_request:
+    branches:
+      - main
   workflow_dispatch: {}
 
 permissions:
