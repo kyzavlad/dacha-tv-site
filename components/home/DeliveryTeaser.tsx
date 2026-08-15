@@ -6,8 +6,8 @@ const DELIVERY_CARDS: { title: Tr; description: Tr; icon: React.ReactNode }[] = 
   {
     title: { uk: 'Товари з каталогу', ru: 'Товары из каталога' },
     description: {
-      uk: 'Відправляємо Новою Поштою по всій Україні. Оплата накладеним платежем при отриманні.',
-      ru: 'Отправляем Новой Почтой по всей Украине. Оплата наложенным платежом при получении.',
+      uk: 'Відправляємо Новою Поштою по всій Україні. Оплата при отриманні або передоплата до відправки після підтвердження менеджером.',
+      ru: 'Отправляем Новой Почтой по всей Украине. Оплата при получении или предоплата до отправки после подтверждения менеджером.',
     },
     icon: (
       <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} aria-hidden="true">
@@ -54,7 +54,6 @@ export async function DeliveryTeaser() {
     <section className="py-20 md:py-28 bg-white" aria-labelledby="delivery-teaser-heading">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
-          {/* Text side */}
           <div>
             <span className="text-xs font-semibold text-honey-700 uppercase tracking-widest mb-4 block">
               {tr({ uk: 'Доставка', ru: 'Доставка' }, locale)}
@@ -73,7 +72,6 @@ export async function DeliveryTeaser() {
             </CTAButton>
           </div>
 
-          {/* Cards side */}
           <div className="flex flex-col gap-4">
             {DELIVERY_CARDS.map(({ title, description, icon }) => (
               <div
@@ -90,7 +88,6 @@ export async function DeliveryTeaser() {
               </div>
             ))}
 
-            {/* Mini trust strip */}
             <div className="flex items-center gap-6 pt-2 pl-1">
               {DELIVERY_METHODS.map((method) => (
                 <div key={method.uk} className="flex items-center gap-1.5 text-sm text-gray-400">
