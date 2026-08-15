@@ -3,7 +3,7 @@ import Link from 'next/link'
 import type { FaqItem } from '@/types'
 import { getAllFaqItems } from '@/lib/supabase/queries'
 import { StructuredData } from '@/components/shared/StructuredData'
-import { getRequestLocale } from '@/lib/i18n'
+import { getRequestLocale, localizedPath } from '@/lib/i18n'
 import { pageDict } from '@/lib/i18n/pages'
 import { buildAlternates, buildSocialMetadata } from '@/lib/seo'
 
@@ -119,13 +119,13 @@ export default async function FaqPage() {
           <p className="text-bark/70 mb-4">{t.faq.ctaBody}</p>
           <div className="flex flex-wrap justify-center gap-3">
             <Link
-              href="/catalog"
+              href={localizedPath(locale, '/catalog')}
               className="inline-flex items-center gap-2 bg-honey-700 hover:bg-honey-800 text-white font-semibold px-6 py-3 rounded-lg transition-colors min-h-[48px]"
             >
               {t.common.toCatalog}
             </Link>
             <Link
-              href="/contact"
+              href={localizedPath(locale, '/contact')}
               className="inline-flex items-center gap-2 border border-honey-700 text-honey-800 hover:bg-honey-100 font-semibold px-6 py-3 rounded-lg transition-colors min-h-[48px]"
             >
               {t.common.contactUs}
