@@ -5,22 +5,20 @@ import { getAllFaqItems } from '@/lib/supabase/queries'
 import { StructuredData } from '@/components/shared/StructuredData'
 import { getRequestLocale } from '@/lib/i18n'
 import { pageDict } from '@/lib/i18n/pages'
+import { buildAlternates, buildSocialMetadata } from '@/lib/seo'
 
-export const metadata: Metadata = {
-  title: 'Часті запитання',
-  description:
-    'Відповіді на часті запитання про мед, замовлення, доставку та бджільництво від пасіки Дача TV на Харківщині.',
-  alternates: { canonical: '/faq' },
-  openGraph: {
-    title: 'FAQ',
-    description: 'Часті запитання про мед, замовлення, доставку та бджільництво від пасіки Дача TV.',
-    images: [{ url: '/images/dacha-tv/logo-square.png', width: 1200, height: 1200, alt: 'Дача TV: FAQ' }],
-  },
-  twitter: {
-    card: 'summary_large_image',
-    title: 'FAQ',
-    description: 'Часті запитання про мед, замовлення, доставку та бджільництво від пасіки Дача TV.',
-  },
+export async function generateMetadata(): Promise<Metadata> {
+  const locale = await getRequestLocale()
+  const t = pageDict(locale)
+  const { canonical, languages } = buildAlternates(locale, '/faq')
+
+  return buildSocialMetadata({
+    bareTitle: t.faq.title,
+    description: t.faq.intro,
+    canonical,
+    languages,
+    imageAlt: t.faq.title,
+  })
 }
 
 type FaqCategory = 'products' | 'ordering' | 'delivery' | 'beekeeping'
