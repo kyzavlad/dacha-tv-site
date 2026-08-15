@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import { buildAlternates, buildSocialMetadata } from '../lib/seo.ts'
 import { localizedPath } from '../lib/i18n.ts'
 import { pageDict } from '../lib/i18n/pages.ts'
+import { getStaticFaqItems } from '../lib/i18n/static-faq.ts'
 
 const PAGES = [
   ['delivery', '/delivery'],
@@ -85,4 +86,26 @@ test('delivery and FAQ CTAs do not drop RU users onto prefix-less UA routes', ()
   assert.ok(!delivery.includes('href="/contact"'))
   assert.ok(!faq.includes('href="/catalog"'))
   assert.ok(!faq.includes('href="/contact"'))
+})
+
+test('static FAQ content is localized for both public locales without a missing-table dependency', () => {
+  const uk = getStaticFaqItems('uk')
+  const ru = getStaticFaqItems('ru')
+
+  assert.equal(uk.length, 10)
+  assert.equal(ru.length, 10)
+  assert.equal(uk.length, ru.length)
+  assert.equal(ru[0].question, 'Как заказать мёд?')
+
+  for (let i = 0; i < uk.length; i += 1) {
+    assert.equal(uk[i].id, ru[i].id)
+    assert.equal(uk[i].category, ru[i].category)
+    assert.equal(uk[i].display_order, ru[i].display_order)
+    assert.notEqual(uk[i].question, ru[i].question)
+    assert.notEqual(uk[i].answer, ru[i].answer)
+  }
+
+  const faq = readFileSync(new URL('../app/faq/page.tsx', import.meta.url), 'utf8')
+  assert.ok(faq.includes('const items = getStaticFaqItems(locale)'))
+  assert.ok(!faq.includes('getAllFaqItems'))
 })
