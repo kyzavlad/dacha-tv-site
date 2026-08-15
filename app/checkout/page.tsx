@@ -13,7 +13,6 @@ import { localizedPath, DEFAULT_LOCALE, type Locale } from '@/lib/i18n'
 import { useLocale } from '@/lib/i18n/locale-context'
 import { shopUiDict } from '@/lib/i18n/sections/shop-ui'
 
-// Map cart items → GA4 ecommerce items (SKU = productSlug when available).
 function toAnalyticsItems(items: CartItem[]): AnalyticsItem[] {
   return items.map((i) => ({
     item_id: i.productSlug || i.id,
@@ -25,7 +24,6 @@ function toAnalyticsItems(items: CartItem[]): AnalyticsItem[] {
   }))
 }
 
-// Shape returned by /api/supplier/warehouses (server-filtered, ≤30 rows)
 interface WarehouseResult {
   internal_id: string
   city: string
@@ -34,9 +32,6 @@ interface WarehouseResult {
   label: string
 }
 
-// Lightweight combobox for Nova Poshta settlement/warehouse selection.
-// Searches are server-side filtered (≤30 results), so we never render
-// thousands of options. Debounced 300ms + AbortController for stale requests.
 function WarehousePicker({
   warehouseId,
   onChange,
@@ -60,10 +55,6 @@ function WarehousePicker({
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const slowTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Debounced search is triggered directly from the input's onChange handler
-  // (a user-initiated event, not an effect keyed on `query`), so a
-  // programmatic query change (select() below) never needs to distinguish
-  // itself from a real search.
   function search(raw: string) {
     if (debounceRef.current) clearTimeout(debounceRef.current)
     if (slowTimerRef.current) clearTimeout(slowTimerRef.current)
@@ -85,7 +76,6 @@ function WarehousePicker({
     setLoading(true)
     setSlowLoad(false)
 
-    // Slow-load hint: if the first fetch takes over 1.2s (cold cache), tell the user.
     slowTimerRef.current = setTimeout(() => setSlowLoad(true), 1200)
 
     debounceRef.current = setTimeout(async () => {
@@ -125,7 +115,6 @@ function WarehousePicker({
     }
   }, [])
 
-  // Close the dropdown on outside click.
   useEffect(() => {
     function onDocClick(e: MouseEvent) {
       if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpen(false)
@@ -136,7 +125,6 @@ function WarehousePicker({
 
   function handleInput(val: string) {
     setQuery(val)
-    // Any manual edit invalidates the previously selected warehouse.
     if (warehouseId) onChange('', '')
     search(val)
   }
@@ -188,12 +176,10 @@ function WarehousePicker({
         )}
       </div>
 
-      {/* Short-query hint */}
       {trimLen > 0 && trimLen < 2 && !warehouseId && (
         <p className="text-bark/40 text-xs">{t.warehouseShortHint}</p>
       )}
 
-      {/* Loading state — visible text + spinner */}
       {loading && !warehouseId && (
         <div className="space-y-0.5">
           <p className="text-bark/60 text-xs flex items-center gap-1.5">
@@ -214,19 +200,16 @@ function WarehousePicker({
         </div>
       )}
 
-      {/* Error — hidden once a warehouse is selected to avoid visual noise */}
       {fetchError && !warehouseId && (
         <p className="text-red-500 text-xs">{fetchError}</p>
       )}
 
-      {/* Green selected state */}
       {warehouseId && (
         <p className="text-xs text-green-700 bg-green-50 rounded-lg px-3 py-2">
           ✓ {t.warehouseSelected} {query}
         </p>
       )}
 
-      {/* Form-level validation error (e.g. "submit without selecting") */}
       {error && <p className="text-red-500 text-xs">{error}</p>}
     </div>
   )
@@ -236,8 +219,6 @@ export default function CheckoutPage() {
   const locale = useLocale()
   const t = shopUiDict(locale)
   const { items, totalPrice, clearCart, hydrated } = useCart()
-  // Home path keeps the active locale prefix so the success screen, empty-cart
-  // fallback and breadcrumb all stay in RU when checking out from /ru/checkout.
   const homeHref = localizedPath(locale, '/')
 
   const [firstName, setFirstName] = useState('')
@@ -252,25 +233,6 @@ export default function CheckoutPage() {
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({})
   const [successOrderId, setSuccessOrderId] = useState<string | null>(null)
 
-  // Supplier (catalog) items stay locked to cashondelivery until live prepayment
-  // is enabled — preserving PR #16 payment lock.
-  const hasSupplierItems = items.some((item) => item.productType === 'catalog')
-
-  // Force the payment method back to cashondelivery whenever a supplier item
-  // is present and prepayment is (still) selected — e.g. a supplier item was
-  // added to the cart after prepayment was chosen. Adjusted directly during
-  // render rather than via an effect — see
-  // https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes
-  const lockKey = `${hasSupplierItems}:${methodPayment}`
-  const [prevLockKey, setPrevLockKey] = useState(lockKey)
-  if (lockKey !== prevLockKey) {
-    setPrevLockKey(lockKey)
-    if (hasSupplierItems && methodPayment === 'prepayment') {
-      setMethodPayment('cashondelivery')
-    }
-  }
-
-  // GA4 begin_checkout — fire once when the cart is hydrated and non-empty.
   const beginCheckoutFired = useRef(false)
   useEffect(() => {
     if (beginCheckoutFired.current) return
@@ -289,9 +251,7 @@ export default function CheckoutPage() {
             </svg>
           </div>
           <h1 className="font-serif text-2xl font-bold text-bark mb-3">{t.successTitle}</h1>
-          <p className="text-bark/70 mb-8">
-            {t.successBody}
-          </p>
+          <p className="text-bark/70 mb-8">{t.successBody}</p>
           <Link
             href={homeHref}
             className="inline-flex items-center justify-center px-6 py-3 bg-honey-600 hover:bg-honey-700 text-white font-semibold rounded-xl transition-colors"
@@ -344,7 +304,6 @@ export default function CheckoutPage() {
     if (comment.trim()) fd.set('comment', comment.trim())
     fd.set('source', '/checkout')
 
-    // Snapshot the cart BEFORE clearing so the purchase event has line items.
     const purchasedItems = toAnalyticsItems(items)
     const purchasedValue = totalPrice
 
@@ -357,8 +316,6 @@ export default function CheckoutPage() {
       return
     }
 
-    // Purchase fires ONLY here — after the internal order was created. Test /
-    // internal orders send a marked debug event instead of the real conversion.
     trackPurchase({
       orderId: result.orderId,
       value: purchasedValue,
@@ -370,8 +327,6 @@ export default function CheckoutPage() {
     setSuccessOrderId(result.orderId)
   }
 
-  // Live phone validation: show inline hint as the user types (before submit),
-  // without relying on the browser's native tooltip (which may be in Russian).
   const phoneDirtyInvalid = phone.length > 0 && !isValidUkrainianPhone(phone)
   const cyrillicNameRe = /^[Ѐ-ӿ\s\-'ʼ]+$/
   const firstNameCyrillicInvalid = firstName.trim().length > 0 && !cyrillicNameRe.test(firstName.trim())
@@ -391,13 +346,11 @@ export default function CheckoutPage() {
         <h1 className="font-serif text-3xl font-bold text-bark mb-8">{t.checkoutTitle}</h1>
 
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-8 items-start">
-          {/* Form */}
           <div className="lg:col-span-3">
             <div className="bg-white rounded-2xl p-6 border border-honey-100 shadow-sm">
               <form onSubmit={handleSubmit} className="space-y-5">
                 <h2 className="font-serif text-xl font-bold text-bark">{t.recipientTitle}</h2>
 
-                {/* Last + first name */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label htmlFor="lastName" className="block text-sm font-medium text-bark/70 mb-1.5">
@@ -439,7 +392,6 @@ export default function CheckoutPage() {
                   </div>
                 </div>
 
-                {/* Phone — live inline validation, no reliance on browser tooltip */}
                 <div>
                   <label htmlFor="phone" className="block text-sm font-medium text-bark/70 mb-1.5">
                     {t.phoneLabel} <span className="text-red-500">*</span>
@@ -453,16 +405,12 @@ export default function CheckoutPage() {
                     placeholder={t.phonePlaceholder}
                     className="w-full border border-gray-200 rounded-xl px-4 py-3 text-bark placeholder:text-bark/40 focus:outline-none focus:ring-2 focus:ring-honey-400 focus:border-transparent"
                   />
-                  {/* Live hint while typing — hidden once corrected or after server error */}
                   {phoneDirtyInvalid && !fieldErrors.phone?.length && (
-                    <p className="text-red-500 text-xs mt-1">
-                      {t.phoneHint}
-                    </p>
+                    <p className="text-red-500 text-xs mt-1">{t.phoneHint}</p>
                   )}
                   {fieldErrors.phone?.map((e) => <p key={e} className="text-red-500 text-xs mt-1">{e}</p>)}
                 </div>
 
-                {/* Payment method */}
                 <div>
                   <p className="block text-sm font-medium text-bark/70 mb-2">
                     {t.paymentTitle} <span className="text-red-500">*</span>
@@ -470,43 +418,31 @@ export default function CheckoutPage() {
                   <div className="grid grid-cols-2 gap-3">
                     {([
                       { value: 'cashondelivery', label: t.payCodLabel, desc: t.payCodDesc },
-                      { value: 'prepayment',     label: t.payPrepayLabel, desc: t.payPrepayDesc },
-                    ] as const).map((opt) => {
-                      const lockedOut = opt.value === 'prepayment' && hasSupplierItems
-                      return (
-                        <label
-                          key={opt.value}
-                          className={`flex flex-col gap-0.5 p-3 border-2 rounded-xl transition-colors ${
-                            lockedOut
-                              ? 'border-gray-200 opacity-60 cursor-not-allowed'
-                              : methodPayment === opt.value
-                              ? 'border-honey-500 bg-honey-50 cursor-pointer'
-                              : 'border-gray-200 hover:border-gray-300 cursor-pointer'
-                          }`}
-                        >
-                          <input
-                            type="radio"
-                            name="methodPayment"
-                            value={opt.value}
-                            checked={methodPayment === opt.value}
-                            disabled={lockedOut}
-                            onChange={() => !lockedOut && setMethodPayment(opt.value)}
-                            className="sr-only"
-                          />
-                          <span className="text-sm font-semibold text-bark">{opt.label}</span>
-                          <span className="text-xs text-bark/50">{opt.desc}</span>
-                          {lockedOut && (
-                            <span className="text-xs text-amber-700 mt-0.5 leading-snug">
-                              {t.payLockedHint}
-                            </span>
-                          )}
-                        </label>
-                      )
-                    })}
+                      { value: 'prepayment', label: t.payPrepayLabel, desc: t.payPrepayDesc },
+                    ] as const).map((opt) => (
+                      <label
+                        key={opt.value}
+                        className={`flex flex-col gap-0.5 p-3 border-2 rounded-xl cursor-pointer transition-colors ${
+                          methodPayment === opt.value
+                            ? 'border-honey-500 bg-honey-50'
+                            : 'border-gray-200 hover:border-gray-300'
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="methodPayment"
+                          value={opt.value}
+                          checked={methodPayment === opt.value}
+                          onChange={() => setMethodPayment(opt.value)}
+                          className="sr-only"
+                        />
+                        <span className="text-sm font-semibold text-bark">{opt.label}</span>
+                        <span className="text-xs text-bark/50">{opt.desc}</span>
+                      </label>
+                    ))}
                   </div>
                 </div>
 
-                {/* Nova Poshta warehouse */}
                 <div>
                   <label className="block text-sm font-medium text-bark/70 mb-1.5">
                     {t.warehouseLabel} <span className="text-red-500">*</span>
@@ -519,7 +455,6 @@ export default function CheckoutPage() {
                   />
                 </div>
 
-                {/* Comment */}
                 <div>
                   <label htmlFor="comment" className="block text-sm font-medium text-bark/70 mb-1.5">
                     {t.commentLabel} <span className="text-bark/40 font-normal">{t.commentOptional}</span>
@@ -548,14 +483,11 @@ export default function CheckoutPage() {
                   {submitting ? t.submitting : t.submit}
                 </button>
 
-                <p className="text-xs text-bark/40 text-center">
-                  {t.afterSubmitNote}
-                </p>
+                <p className="text-xs text-bark/40 text-center">{t.afterSubmitNote}</p>
               </form>
             </div>
           </div>
 
-          {/* Order summary */}
           <div className="lg:col-span-2">
             <div className="bg-white rounded-2xl p-6 border border-honey-100 shadow-sm sticky top-24">
               <h2 className="font-serif text-xl font-bold text-bark mb-4">{t.orderSummaryTitle}</h2>
@@ -582,17 +514,11 @@ export default function CheckoutPage() {
                 </span>
               </div>
 
-              <p className="text-xs text-bark/40 mt-3">
-                {t.summaryNote}
-              </p>
+              <p className="text-xs text-bark/40 mt-3">{t.summaryNote}</p>
             </div>
 
             <div className="mt-4 space-y-2.5 text-xs text-bark/60">
-              {[
-                t.infoDelivery,
-                t.infoPayment,
-                t.infoCall,
-              ].map((text) => (
+              {[t.infoDelivery, t.infoPayment, t.infoCall].map((text) => (
                 <div key={text} className="flex items-start gap-2">
                   <svg className="w-4 h-4 text-green-500 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
