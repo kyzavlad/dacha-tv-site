@@ -3,6 +3,8 @@ import Image from 'next/image'
 import type { FlowerProduct } from '@/types'
 import { AddToCartButton } from '@/components/cart/AddToCartButton'
 import { getRequestLocale, localizedPath } from '@/lib/i18n'
+import { getManualTranslations, resolveManualField } from '@/lib/i18n/manual-translations'
+import { localizeFlowerBloomSeason, localizeFlowerColor, localizeFlowerVariety } from '@/lib/i18n/manual-attributes'
 import { tr } from '@/lib/i18n/pages'
 
 const BLUR_DATA_URL =
@@ -23,8 +25,17 @@ function resolveImage(product: FlowerProduct): { src: string; alt: string } | nu
 
 export async function FlowerCard({ product }: FlowerCardProps) {
   const locale = await getRequestLocale()
+  const translation = locale === 'uk'
+    ? null
+    : (await getManualTranslations('flower_product', [product.id], locale)).get(product.id) ?? null
+  const name = resolveManualField(product.name, translation, 'name', locale) || product.name
+  const shortDesc = locale === 'uk'
+    ? (product.short_description ?? '').trim()
+    : resolveManualField(null, translation, 'short_description', locale)
   const img = resolveImage(product)
+  const imageAlt = translation?.image_alt?.trim() || (locale === 'uk' ? img?.alt : '') || name
   const canBuy = Boolean(product.price_uah && product.price_uah > 0 && (product.status === 'available' || product.status === 'preorder'))
+  const detailsLabel = tr({ uk: 'Детальніше', ru: 'Подробнее', en: 'Details' }, locale)
 
   return (
     <article className="group bg-white rounded-2xl overflow-hidden border border-gray-100 hover:border-gray-300 hover:shadow-xl transition-all duration-300 flex flex-col">
@@ -32,7 +43,7 @@ export async function FlowerCard({ product }: FlowerCardProps) {
         {img ? (
           <Image
             src={img.src}
-            alt={img.alt}
+            alt={imageAlt}
             fill
             className="object-cover group-hover:scale-105 transition-transform duration-500"
             sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
@@ -42,14 +53,14 @@ export async function FlowerCard({ product }: FlowerCardProps) {
         ) : (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-pink-50 to-purple-50 gap-2">
             <span className="text-4xl opacity-40 group-hover:opacity-60 transition-opacity select-none" aria-hidden="true">🌸</span>
-            <span className="text-gray-400 text-xs text-center px-4 leading-tight">{product.name}</span>
+            <span className="text-gray-400 text-xs text-center px-4 leading-tight">{name}</span>
           </div>
         )}
 
         {product.is_featured && (
           <div className="absolute top-3 left-3">
             <span className="bg-gray-900 text-white text-xs font-semibold px-3 py-1.5 rounded-full shadow-sm">
-              {tr({ uk: 'Популярна', ru: 'Популярный' }, locale)}
+              {tr({ uk: 'Популярна', ru: 'Популярный', en: 'Popular' }, locale)}
             </span>
           </div>
         )}
@@ -57,7 +68,7 @@ export async function FlowerCard({ product }: FlowerCardProps) {
         {product.status !== 'available' && product.status !== 'preorder' && (
           <div className="absolute inset-0 bg-white/75 backdrop-blur-[1px] flex items-center justify-center">
             <span className="bg-gray-800 text-white text-sm font-semibold px-4 py-2 rounded-full">
-              {tr({ uk: 'Немає в наявності', ru: 'Нет в наличии' }, locale)}
+              {tr({ uk: 'Немає в наявності', ru: 'Нет в наличии', en: 'Out of stock' }, locale)}
             </span>
           </div>
         )}
@@ -66,17 +77,17 @@ export async function FlowerCard({ product }: FlowerCardProps) {
       <div className="p-4 flex flex-col flex-1">
         {product.variety && (
           <span className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-1">
-            {product.variety}
+            {localizeFlowerVariety(product.variety, locale)}
           </span>
         )}
 
         <h3 className="font-serif text-base font-bold text-gray-900 mb-1 leading-tight">
-          {product.name}
+          {name}
         </h3>
 
-        {product.short_description && (
+        {shortDesc && (
           <p className="text-xs text-gray-500 leading-relaxed mb-2 line-clamp-2">
-            {product.short_description}
+            {shortDesc}
           </p>
         )}
 
@@ -84,12 +95,12 @@ export async function FlowerCard({ product }: FlowerCardProps) {
           <div className="flex flex-wrap gap-1.5 mb-2">
             {product.color && (
               <span className="text-xs text-gray-500 bg-gray-50 border border-gray-200 px-2 py-0.5 rounded-full">
-                {product.color}
+                {localizeFlowerColor(product.color, locale)}
               </span>
             )}
             {product.bloom_season && (
               <span className="text-xs text-gray-500 bg-gray-50 border border-gray-200 px-2 py-0.5 rounded-full">
-                {product.bloom_season}
+                {localizeFlowerBloomSeason(product.bloom_season, locale)}
               </span>
             )}
           </div>
@@ -98,7 +109,7 @@ export async function FlowerCard({ product }: FlowerCardProps) {
         <div className="mt-auto">
           {product.price_uah ? (
             <p className="text-lg font-bold text-gray-900 mb-3">
-              {tr({ uk: 'від', ru: 'от' }, locale)} {Number(product.price_uah).toLocaleString('uk-UA')} грн
+              {tr({ uk: 'від', ru: 'от', en: 'from' }, locale)} {Number(product.price_uah).toLocaleString(locale === 'ru' ? 'ru-RU' : 'uk-UA')} {locale === 'en' ? 'UAH' : 'грн'}
             </p>
           ) : null}
 
@@ -108,7 +119,7 @@ export async function FlowerCard({ product }: FlowerCardProps) {
                 id: `flower-${product.slug}`,
                 productType: 'flower',
                 productSlug: product.slug,
-                name: product.name,
+                name,
                 price: product.price_uah!,
                 imageUrl: img?.src ?? undefined,
               }}
@@ -117,9 +128,9 @@ export async function FlowerCard({ product }: FlowerCardProps) {
           <Link
             href={localizedPath(locale, `/flowers/${product.slug}`)}
             className="block text-center text-xs font-medium mt-2 text-gray-400 hover:text-gray-700 transition-colors"
-            aria-label={tr({ uk: `Детальніше про ${product.name}`, ru: `Подробнее о ${product.name}` }, locale)}
+            aria-label={`${detailsLabel}: ${name}`}
           >
-            {tr({ uk: 'Детальніше →', ru: 'Подробнее →' }, locale)}
+            {detailsLabel} →
           </Link>
         </div>
       </div>
