@@ -18,8 +18,17 @@ test('self-host supplier runner is locked, authenticated and never prints the cr
   assert.match(runner, /flock -n 9/)
   assert.match(runner, /Authorization: Bearer \$\{CRON_SECRET\}/)
   assert.match(runner, /\[ -n "\$\{CRON_SECRET:-\}" \]/)
-  assert.doesNotMatch(runner, /echo[^\n]*CRON_SECRET/)
-  assert.doesNotMatch(runner, /printf[^\n]*CRON_SECRET/)
+
+  const executableLines = runner
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith('#'))
+
+  for (const line of executableLines) {
+    if (/^(echo|printf)\b/.test(line)) {
+      assert.doesNotMatch(line, /CRON_SECRET/, `runner must not print CRON_SECRET: ${line}`)
+    }
+  }
 })
 
 test('supplier stages run in the required economic and data-integrity order', () => {
