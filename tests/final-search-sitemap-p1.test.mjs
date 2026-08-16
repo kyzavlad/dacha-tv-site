@@ -85,9 +85,10 @@ test('UUID range boundaries cover the full space without gaps or overlaps', () =
   assert.equal(ranges.at(-1).upper, null)
 })
 
-test('product sitemap queries are range-bounded, overflow-guarded and fail loudly', () => {
+test('product sitemap queries are range-bounded, single-snapshot, overflow-guarded and fail loudly', () => {
   assert.match(shardSrc, /\.gte\('id', range\.lower\)/)
-  assert.match(shardSrc, /count: 'exact', head: true/)
+  assert.match(shardSrc, /select\('slug, category_slug', \{ count: 'exact' \}\)/)
+  assert.ok(!shardSrc.includes('head: true'), 'count and rows must come from one PostgREST statement/snapshot')
   assert.match(shardSrc, /count > SITEMAP_SHARD_ROW_LIMIT/)
   assert.match(shardSrc, /rows\.length !== count/)
   assert.match(shardSrc, /row\.category_slug \?\? 'all'/)
