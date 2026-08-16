@@ -1,21 +1,21 @@
 export const dynamic = 'force-dynamic'
 
 import {
-  searchPublishedCatalogProducts,
   displayProductName,
   getCatalogProductImage,
   formatCatalogPrice,
   normalizeSort,
-  CATALOG_PAGE_SIZE,
 } from '@/lib/supabase/catalog'
+import { searchPublishedCatalogProductsFast } from '@/lib/catalog/public-search'
 
 // ─── Public product search (server-side, paginated) ───────────────────────────
-// Full-catalog search that NEVER loads all 105k products: it delegates to
-// searchPublishedCatalogProducts, which matches tokens against name_ua (UA),
-// name (RU supplier feed) and supplier_sku, returns only published +
-// public-listable products, and paginates by CATALOG_PAGE_SIZE. `locale` is
-// accepted for parity with the localized pages (results are the same products;
-// translated-name search is a future enhancement — see TODO in catalog.ts).
+// Full-catalog search that NEVER loads the full catalog and NEVER requests an
+// exact total. It shares the same bounded page-size+1 search implementation as
+// /search, so API consumers cannot accidentally reintroduce the production
+// exact-count statement-timeout path.
+//
+// `count` is intentionally the number of products in THIS response only; it has
+// never been an authoritative catalog-wide total in this API contract.
 //
 //   GET /api/catalog/search?q=…&page=1&sort=featured&locale=ua
 //   → { ok, q, page, hasMore, count, products: [{ slug, categorySlug, name, price, image, sku }] }
@@ -29,15 +29,16 @@ export async function GET(req: Request) {
     return Response.json({ ok: true, q, page, hasMore: false, count: 0, products: [] })
   }
 
-  const { products } = await searchPublishedCatalogProducts(q, page, sort).catch(() => ({ products: [], total: 0 }))
+  // Do not catch an authoritative DB failure and manufacture a legitimate empty
+  // result set. Let the route fail observably; the shared search path logs the
+  // underlying PostgREST error first.
+  const { products, hasNext } = await searchPublishedCatalogProductsFast(q, page, sort)
 
   return Response.json({
     ok: true,
     q,
     page,
-    // A full page means there is (probably) a next page — the search function
-    // intentionally avoids an expensive exact COUNT over the whole match set.
-    hasMore: products.length >= CATALOG_PAGE_SIZE,
+    hasMore: hasNext,
     count: products.length,
     products: products.map((p) => ({
       slug: p.slug,
