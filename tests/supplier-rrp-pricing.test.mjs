@@ -6,6 +6,7 @@ const rrpSync = await readFile(new URL('../lib/supplier/rrp-sync.ts', import.met
 const route = await readFile(new URL('../app/api/admin/cron/refresh-rrp/route.ts', import.meta.url), 'utf8')
 const migration = await readFile(new URL('../supabase/migrations/20260816114500_supplier_rrp_price_layer.sql', import.meta.url), 'utf8')
 const bootstrapSafety = await readFile(new URL('../supabase/migrations/20260816131000_preserve_price_until_rrp_bootstrap.sql', import.meta.url), 'utf8')
+const postBootstrapSafety = await readFile(new URL('../supabase/migrations/20260816143500_supplier_rrp_post_bootstrap_fail_closed.sql', import.meta.url), 'utf8')
 
 test('RRP sync requests the supplier-calculated retail feed and never logs the API key', () => {
   assert.match(rrpSync, /rrp:\s*'on'/)
@@ -65,11 +66,27 @@ test('anti-dumping catalog guard never substitutes the base supplier price', () 
   assert.doesNotMatch(migration, /select sp\.price_uah\s+into v_rrp/)
 })
 
-test('bootstrap guard preserves existing live price until first official RRP exists', () => {
+test('temporary bootstrap guard preserves an existing live price while RRP coverage is incomplete', () => {
   assert.match(bootstrapSafety, /if found and v_rrp is not null and v_rrp > 0/)
   assert.match(bootstrapSafety, /elsif tg_op = 'UPDATE'/)
   assert.match(bootstrapSafety, /new\.price_uah := old\.price_uah/)
   assert.match(bootstrapSafety, /new\.price_uah := null/)
+})
+
+test('post-bootstrap cutover fails closed when a supplier row has no validated RRP', () => {
+  assert.match(postBootstrapSafety, /create or replace function public\.enforce_supplier_rrp_on_catalog/)
+  assert.match(postBootstrapSafety, /v_rrp >= v_base/)
+  assert.match(postBootstrapSafety, /new\.price_uah := v_rrp/)
+  assert.match(postBootstrapSafety, /else[\s\S]*new\.price_uah := null/)
+  assert.doesNotMatch(postBootstrapSafety, /new\.price_uah := old\.price_uah/)
+})
+
+test('post-bootstrap cleanup is narrow and preserves manual or locked storefront prices', () => {
+  assert.match(postBootstrapSafety, /update public\.catalog_products cp/)
+  assert.match(postBootstrapSafety, /set[\s\S]*price_uah = null/)
+  assert.match(postBootstrapSafety, /coalesce\(cp\.source, 'supplier'\) <> 'manual'/)
+  assert.match(postBootstrapSafety, /coalesce\(cp\.price_manual_lock, false\) = false/)
+  assert.match(postBootstrapSafety, /sp\.our_price_uah >= sp\.price_uah/)
 })
 
 test('RRP batch propagates retail prices only to unlocked supplier catalog rows', () => {
