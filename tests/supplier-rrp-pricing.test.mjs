@@ -22,6 +22,11 @@ test('RRP sync writes through the set-based retail-price RPC', () => {
   assert.match(rrpSync, /maxMillis/)
 })
 
+test('RRP traversal treats a sparse or shrunken non-empty tail as successful completion', () => {
+  assert.match(rrpSync, /const ok = processed > 0 \|\| done/)
+  assert.match(rrpSync, /previously persisted[\s\S]*supplier feed shrank/)
+})
+
 test('protected cron route keeps explicit-offset pilot/recovery bounded and stateless', () => {
   assert.match(route, /verifyCronAuth\(req\)/)
   assert.match(route, /maxDuration\s*=\s*60/)
