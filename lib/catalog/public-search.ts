@@ -214,10 +214,12 @@ export function splitSearchLookahead<T>(rows: T[], pageSize = CATALOG_PAGE_SIZE)
 /**
  * Production public catalog search with bounded pagination.
  *
- * The former path requested PostgREST count:'exact', which made PostgREST run a
- * second full matching branch and repeatedly hit the production statement
- * timeout on common queries. This path deliberately has NO global COUNT: every
- * result branch requests at most pageSize+1 rows and returns an explicit hasNext.
+ * The text branch intentionally runs through a bounded SECURITY DEFINER RPC.
+ * Direct anon ILIKE predicates on catalog_products sit behind RLS and PostgreSQL
+ * can choose a full sequential scan for multi-token searches even when the
+ * pg_trgm indexes exist. The RPC enforces the same published/storefront scope in
+ * the database, is read-only, and lets the planner use those indexes. Category
+ * intent and exact/normalized SKU branches remain unchanged.
  */
 export async function searchPublishedCatalogProductsFast(
   q: string,
@@ -234,25 +236,21 @@ export async function searchPublishedCatalogProductsFast(
 
   const from = (page - 1) * CATALOG_PAGE_SIZE
   // Supabase range() is inclusive: from + PAGE_SIZE fetches PAGE_SIZE + 1 rows.
+  // The RPC takes an ordinary LIMIT, so request the same page-size+1 sentinel.
   const lookaheadTo = from + CATALOG_PAGE_SIZE
-
-  let base = client
-    .from('catalog_products')
-    .select('*')
-    .eq('status', 'published')
-    .or(STOREFRONT_SCOPE_OR)
-  for (const tok of tokens) {
-    base = base.or(`name_ua.ilike.%${tok}%,name.ilike.%${tok}%,supplier_sku.ilike.%${tok}%,category_slug.ilike.%${tok}%`)
+  const { data: textData, error: textError } = await client.rpc('search_public_catalog_products_indexed', {
+    p_tokens: tokens,
+    p_offset: from,
+    p_limit: CATALOG_PAGE_SIZE + 1,
+    p_sort: sort,
+    p_buyable: buyable,
+    p_with_image: withImage,
+  })
+  if (textError) {
+    console.warn(`[search] product text query failed for "${term}": ${textError.message}`)
+    throw new Error(`catalog search query failed: ${textError.message}`)
   }
-  if (buyable) base = base.gte('price_uah', MIN_VALID_PRICE_UAH).not('is_price_suspicious', 'is', true)
-  if (withImage) base = base.or('main_image_url.not.is.null,images.not.is.null')
-
-  const textRes = await applyCatalogSort(base, sort).range(from, lookaheadTo)
-  if (textRes.error) {
-    console.warn(`[search] product text query failed for "${term}": ${textRes.error.message}`)
-    throw new Error(`catalog search query failed: ${textRes.error.message}`)
-  }
-  const textPage = splitSearchLookahead((textRes.data ?? []) as CatalogProduct[])
+  const textPage = splitSearchLookahead((textData ?? []) as CatalogProduct[])
 
   let catProducts: CatalogProduct[] = []
   let catHasNext = false
