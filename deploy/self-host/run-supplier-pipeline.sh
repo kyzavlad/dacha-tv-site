@@ -14,7 +14,7 @@ ENV_FILE="$ROOT/shared/.env.production"
 LOCK_FILE="$ROOT/shared/supplier-pipeline.lock"
 APP_ORIGIN="http://127.0.0.1:3030"
 MAX_PRODUCT_CALLS=6
-MAX_RRP_CALLS=8
+MAX_RRP_CALLS=30
 MAX_IMPORT_CALLS=40
 
 stamp() { date -u '+%Y-%m-%dT%H:%M:%SZ'; }
