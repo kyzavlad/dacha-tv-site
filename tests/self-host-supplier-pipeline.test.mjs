@@ -1,9 +1,17 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
+import { spawnSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 
-const runner = await readFile(new URL('../deploy/self-host/run-supplier-pipeline.sh', import.meta.url), 'utf8')
+const runnerUrl = new URL('../deploy/self-host/run-supplier-pipeline.sh', import.meta.url)
+const runner = await readFile(runnerUrl, 'utf8')
 const workflow = await readFile(new URL('../.github/workflows/build-standalone-linux.yml', import.meta.url), 'utf8')
+
+test('supplier runner is valid bash syntax', () => {
+  const result = spawnSync('bash', ['-n', fileURLToPath(runnerUrl)], { encoding: 'utf8' })
+  assert.equal(result.status, 0, result.stderr || result.stdout)
+})
 
 test('self-host supplier runner is locked, authenticated and never prints the cron secret', () => {
   assert.match(runner, /\/var\/www\/dacha-tv\/shared\/\.env\.production/)
@@ -18,7 +26,7 @@ test('supplier stages run in the required economic and data-integrity order', ()
   const products = runner.indexOf('run_resumable_stage "base products"')
   const categories = runner.indexOf("call_api '/api/admin/cron/sync-categories'")
   const rrp = runner.indexOf('run_resumable_stage "official RRP"')
-  const imported = runner.indexOf('run_import_stage')
+  const imported = runner.indexOf('\nrun_import_stage\n\nlog "publish products"')
   const published = runner.indexOf("call_api '/api/admin/cron/publish-products'")
 
   for (const [name, index] of Object.entries({ products, categories, rrp, imported, published })) {
@@ -37,7 +45,7 @@ test('resumable product and RRP stages require persisted completion before advan
   assert.match(runner, /\[ "\$state_saved" = "true" \] \|\| fail/)
   assert.match(runner, /\[ "\$complete" = "true" \]/)
   assert.match(runner, /MAX_PRODUCT_CALLS=6/)
-  assert.match(runner, /MAX_RRP_CALLS=8/)
+  assert.match(runner, /MAX_RRP_CALLS=30/)
 })
 
 test('catalog import is bounded and drains on the explicit done signal', () => {
