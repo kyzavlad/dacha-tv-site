@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { normalizeSort, CATALOG_PAGE_SIZE } from '@/lib/supabase/catalog'
+import { normalizeSort } from '@/lib/supabase/catalog'
 import { searchPublishedCatalogProductsFast } from '@/lib/catalog/public-search'
 import { CatalogProductCard } from '@/components/catalog/CatalogProductCard'
 import { CatalogSortSelect } from '@/components/catalog/CatalogSortSelect'
@@ -19,7 +19,7 @@ interface Props {
 const STRINGS: Record<Locale, {
   title: string
   resultsFor: (q: string) => string
-  showing: (from: number, to: number, hasNext: boolean) => string
+  showing: (count: number, hasNext: boolean) => string
   prompt: string
   empty: string
   contact: string
@@ -35,7 +35,7 @@ const STRINGS: Record<Locale, {
   uk: {
     title: 'Пошук товарів',
     resultsFor: (q) => `Результати за запитом «${q}»`,
-    showing: (from, to, hasNext) => `Показано ${from}–${to}${hasNext ? ', є ще результати' : ''}`,
+    showing: (count, hasNext) => `На цій сторінці: ${count.toLocaleString('uk-UA')} товарів${hasNext ? ', є ще результати' : ''}`,
     prompt: 'Введіть запит, щоб знайти товари за назвою або артикулом.',
     empty: 'Не знайшли потрібну деталь? Напишіть нам — допоможемо підібрати.',
     contact: "Зв'язатися з нами",
@@ -51,7 +51,7 @@ const STRINGS: Record<Locale, {
   ru: {
     title: 'Поиск товаров',
     resultsFor: (q) => `Результаты по запросу «${q}»`,
-    showing: (from, to, hasNext) => `Показано ${from}–${to}${hasNext ? ', есть ещё результаты' : ''}`,
+    showing: (count, hasNext) => `На этой странице: ${count.toLocaleString('ru-RU')} товаров${hasNext ? ', есть ещё результаты' : ''}`,
     prompt: 'Введите запрос, чтобы найти товары по названию или артикулу.',
     empty: 'Не нашли нужную деталь? Напишите нам — поможем подобрать.',
     contact: 'Связаться с нами',
@@ -67,7 +67,7 @@ const STRINGS: Record<Locale, {
   en: {
     title: 'Product search',
     resultsFor: (q) => `Results for “${q}”`,
-    showing: (from, to, hasNext) => `Showing ${from}–${to}${hasNext ? ', more results available' : ''}`,
+    showing: (count, hasNext) => `On this page: ${count.toLocaleString('en-US')} products${hasNext ? ', more results available' : ''}`,
     prompt: 'Enter a query to search products by name or SKU.',
     empty: "Didn't find the part you need? Message us — we'll help you choose.",
     contact: 'Contact us',
@@ -112,14 +112,18 @@ export default async function SearchPage({ searchParams }: Props) {
   const { products, hasNext } = query.length >= 2
     ? await searchPublishedCatalogProductsFast(query, page, sort, buyable, withImage)
     : { products: [], hasNext: false }
-  const from = (page - 1) * CATALOG_PAGE_SIZE
-  const rangeFrom = from + 1
-  const rangeTo = from + products.length
   const sortQs = sort === 'featured' ? '' : `&sort=${sort}`
   const buyableQs = buyable ? '&buyable=1' : ''
   const photoQs = withImage ? '&photo=1' : ''
   // Toggle links preserve q + sort + the OTHER filter, flipping one.
   const chipBase = `${searchBase}?q=${encodeURIComponent(query)}${sortQs}`
+  const paginationParams = {
+    q: query,
+    sort: sort === 'featured' ? undefined : sort,
+    buyable: buyable ? '1' : undefined,
+    photo: withImage ? '1' : undefined,
+  }
+  const paginationLabels = { prev: t.prev, next: t.next, pageCurrent: t.pageCurrent }
   const chip = (active: boolean, href: string, label: string) => (
     <Link
       href={href}
@@ -160,7 +164,7 @@ export default async function SearchPage({ searchParams }: Props) {
           <>
             <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
               <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
-                <p className="text-sm font-semibold text-bark">{t.showing(rangeFrom, rangeTo, hasNext)}</p>
+                <p className="text-sm font-semibold text-bark">{t.showing(products.length, hasNext)}</p>
                 {filterChips}
               </div>
               {(products.length > 1 || page > 1) && <CatalogSortSelect value={sort} locale={locale} />}
@@ -173,8 +177,8 @@ export default async function SearchPage({ searchParams }: Props) {
             <Pagination
               page={page}
               baseHref={searchBase}
-              params={{ q: query, sort: sort === 'featured' ? undefined : sort, buyable: buyable ? '1' : undefined, photo: withImage ? '1' : undefined }}
-              labels={{ prev: t.prev, next: t.next, pageCurrent: t.pageCurrent }}
+              params={paginationParams}
+              labels={paginationLabels}
               hasNext={hasNext}
             />
           </>
@@ -213,6 +217,15 @@ export default async function SearchPage({ searchParams }: Props) {
                 {t.contact}
               </Link>
             </div>
+            {page > 1 && (
+              <Pagination
+                page={page}
+                baseHref={searchBase}
+                params={paginationParams}
+                labels={paginationLabels}
+                hasNext={false}
+              />
+            )}
           </div>
         )}
       </div>
