@@ -14,7 +14,8 @@ test('supplier runner is valid bash syntax', () => {
 })
 
 test('self-host supplier runner is locked, authenticated and never prints the cron secret', () => {
-  assert.match(runner, /\/var\/www\/dacha-tv\/shared\/\.env\.production/)
+  assert.match(runner, /ROOT="\/var\/www\/dacha-tv"/)
+  assert.match(runner, /ENV_FILE="\$ROOT\/shared\/\.env\.production"/)
   assert.match(runner, /flock -n 9/)
   assert.match(runner, /Authorization: Bearer \$\{CRON_SECRET\}/)
   assert.match(runner, /\[ -n "\$\{CRON_SECRET:-\}" \]/)
