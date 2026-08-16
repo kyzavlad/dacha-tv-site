@@ -17,6 +17,14 @@ on:
 permissions:
   contents: read
 
+# A PR can receive several rapid commits while being fixed. Only the newest
+# build for that PR is useful, so cancel the stale in-flight PR run. Exact-main
+# push builds must never be cancelled because they are the release artifacts we
+# deploy to the self-hosted server.
+concurrency:
+  group: dacha-tv-build-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   build:
     name: Build (Ubuntu x86_64, Node 20)
