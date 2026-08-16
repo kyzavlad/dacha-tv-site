@@ -40,6 +40,47 @@ const D = {
   },
   successHome: { uk: 'На головну', ru: 'На главную', en: 'Home' },
 
+  // ── Checkout: payment-specific next steps ──
+  // Shown after a persisted order. The prepayment variant must never imply the
+  // money was already taken (the site takes no card payments) or that the parcel
+  // has already been handed to the carrier.
+  successNextTitle: { uk: 'Що далі', ru: 'Что дальше', en: 'What happens next' },
+  successCodStep1: {
+    uk: 'Ми отримали ваше замовлення і прийняли його в обробку.',
+    ru: 'Мы получили ваш заказ и приняли его в обработку.',
+    en: 'We have received your order and started processing it.',
+  },
+  successCodStep2: {
+    uk: 'Менеджер зателефонує, щоб підтвердити замовлення та наявність.',
+    ru: 'Менеджер позвонит, чтобы подтвердить заказ и наличие.',
+    en: 'A manager will call to confirm the order and availability.',
+  },
+  successCodStep3: {
+    uk: 'Після відправки ви оплатите замовлення при отриманні у відділенні Нової Пошти.',
+    ru: 'После отправки вы оплатите заказ при получении в отделении Новой Почты.',
+    en: 'Once shipped, you pay on receipt at the Nova Poshta branch.',
+  },
+  successPrepayStep1: {
+    uk: 'Ми отримали ваше замовлення і прийняли його в обробку.',
+    ru: 'Мы получили ваш заказ и приняли его в обработку.',
+    en: 'We have received your order and started processing it.',
+  },
+  successPrepayStep2: {
+    uk: 'Менеджер зателефонує, щоб підтвердити замовлення та наявність.',
+    ru: 'Менеджер позвонит, чтобы подтвердить заказ и наличие.',
+    en: 'A manager will call to confirm the order and availability.',
+  },
+  successPrepayStep3: {
+    uk: 'Після підтвердження менеджер надасть реквізити для передоплати — замовлення відправляємо після оплати.',
+    ru: 'После подтверждения менеджер предоставит реквизиты для предоплаты — заказ отправляем после оплаты.',
+    en: 'After confirmation the manager will send prepayment details — we ship once the payment is made.',
+  },
+  successPrepayNote: {
+    uk: 'Кошти ще не списані: сайт не приймає оплату карткою онлайн.',
+    ru: 'Средства ещё не списаны: сайт не принимает оплату картой онлайн.',
+    en: 'No money has been charged yet — the site does not take card payments online.',
+  },
+
   // ── Checkout: empty-cart guard ──
   emptyCartText: { uk: 'Кошик порожній', ru: 'Корзина пуста', en: 'Your cart is empty' },
   backToShopping: { uk: 'Повернутися до покупок', ru: 'Вернуться к покупкам', en: 'Back to shopping' },

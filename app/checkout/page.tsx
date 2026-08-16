@@ -232,6 +232,10 @@ export default function CheckoutPage() {
   const [error, setError] = useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({})
   const [successOrderId, setSuccessOrderId] = useState<string | null>(null)
+  // The payment method the customer actually submitted, snapshotted on success
+  // so the confirmation screen shows the right next step. Local state only — no
+  // extra request, and it disappears on reload along with the success screen.
+  const [successPayment, setSuccessPayment] = useState<'cashondelivery' | 'prepayment' | null>(null)
 
   const beginCheckoutFired = useRef(false)
   useEffect(() => {
@@ -251,7 +255,29 @@ export default function CheckoutPage() {
             </svg>
           </div>
           <h1 className="font-serif text-2xl font-bold text-bark mb-3">{t.successTitle}</h1>
-          <p className="text-bark/70 mb-8">{t.successBody}</p>
+          <p className="text-bark/70 mb-6">{t.successBody}</p>
+
+          {/* What happens next depends on how the customer chose to pay. Neither
+              variant claims money was taken or that the parcel already shipped. */}
+          <div className="text-left bg-white border border-honey-100 rounded-2xl p-5 mb-8">
+            <p className="text-sm font-semibold text-bark mb-3">{t.successNextTitle}</p>
+            <ol className="space-y-2">
+              {(successPayment === 'prepayment'
+                ? [t.successPrepayStep1, t.successPrepayStep2, t.successPrepayStep3]
+                : [t.successCodStep1, t.successCodStep2, t.successCodStep3]
+              ).map((step, i) => (
+                <li key={step} className="flex gap-3 text-sm text-bark/70">
+                  <span className="flex-shrink-0 w-5 h-5 rounded-full bg-honey-100 text-honey-700 text-xs font-semibold flex items-center justify-center">
+                    {i + 1}
+                  </span>
+                  <span className="leading-relaxed">{step}</span>
+                </li>
+              ))}
+            </ol>
+            {successPayment === 'prepayment' && (
+              <p className="text-xs text-bark/50 mt-4 leading-relaxed">{t.successPrepayNote}</p>
+            )}
+          </div>
           <Link
             href={homeHref}
             className="inline-flex items-center justify-center px-6 py-3 bg-honey-600 hover:bg-honey-700 text-white font-semibold rounded-xl transition-colors"
@@ -306,6 +332,9 @@ export default function CheckoutPage() {
 
     const purchasedItems = toAnalyticsItems(items)
     const purchasedValue = totalPrice
+    // Snapshot the submitted payment method too — the success screen must show
+    // the next step for what was actually sent, not for later UI state.
+    const submittedPayment = methodPayment
 
     const result = await submitProductOrder(items, fd)
     setSubmitting(false)
@@ -324,6 +353,7 @@ export default function CheckoutPage() {
     })
 
     clearCart()
+    setSuccessPayment(submittedPayment)
     setSuccessOrderId(result.orderId)
   }
 
@@ -415,7 +445,10 @@ export default function CheckoutPage() {
                   <p className="block text-sm font-medium text-bark/70 mb-2">
                     {t.paymentTitle} <span className="text-red-500">*</span>
                   </p>
-                  <div className="grid grid-cols-2 gap-3">
+                  {/* One option per row on narrow phones (320/375px), two once
+                      there is room. Radio semantics and selected states are
+                      unchanged — only the wrapper's column count is responsive. */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {([
                       { value: 'cashondelivery', label: t.payCodLabel, desc: t.payCodDesc },
                       { value: 'prepayment', label: t.payPrepayLabel, desc: t.payPrepayDesc },
