@@ -69,9 +69,12 @@ export function getAllSitemapIds(): number[] {
 /**
  * Read one product sitemap shard by UUID range. No OFFSET and no global count.
  *
- * A cheap exact count is intentionally scoped to this one narrow UUID bucket so
- * future catalog growth cannot silently cross PostgREST's row cap. If it does,
- * the shard fails loudly instead of publishing a truncated successful sitemap.
+ * A cheap exact count is intentionally scoped to this one narrow UUID bucket and
+ * requested in the SAME PostgREST statement as the bounded rows. That gives the
+ * overflow guard and the returned data one database snapshot: a concurrent sync
+ * cannot change the bucket between a separate count request and a data request.
+ * If future growth crosses the response ceiling, the shard fails loudly instead
+ * of publishing a truncated successful sitemap.
  */
 export async function getPublishedCatalogSlugsForShard(
   shardId: number,
@@ -85,17 +88,20 @@ export async function getPublishedCatalogSlugsForShard(
 
   const range = getSitemapUuidRange(shardId - 1)
 
-  let countQuery = client
+  let query = client
     .from('catalog_products')
-    .select('id', { count: 'exact', head: true })
+    .select('slug, category_slug', { count: 'exact' })
     .eq('status', 'published')
     .or(STOREFRONT_SCOPE_OR)
     .gte('id', range.lower)
-  if (range.upper) countQuery = countQuery.lt('id', range.upper)
+  if (range.upper) query = query.lt('id', range.upper)
 
-  const { count, error: countError } = await countQuery
-  if (countError) {
-    throw new Error(`sitemap shard ${shardId} count failed: ${countError.message}`)
+  const { data, count, error } = await query
+    .order('id', { ascending: true })
+    .limit(SITEMAP_SHARD_ROW_LIMIT)
+
+  if (error) {
+    throw new Error(`sitemap shard ${shardId} query failed: ${error.message}`)
   }
   if (count == null) {
     throw new Error(`sitemap shard ${shardId} count was unavailable`)
@@ -104,21 +110,6 @@ export async function getPublishedCatalogSlugsForShard(
     throw new Error(
       `sitemap shard ${shardId} overflow: ${count} rows exceeds ${SITEMAP_SHARD_ROW_LIMIT}; increase shard cardinality before serving this shard`,
     )
-  }
-
-  let dataQuery = client
-    .from('catalog_products')
-    .select('slug, category_slug')
-    .eq('status', 'published')
-    .or(STOREFRONT_SCOPE_OR)
-    .gte('id', range.lower)
-  if (range.upper) dataQuery = dataQuery.lt('id', range.upper)
-
-  const { data, error } = await dataQuery
-    .order('id', { ascending: true })
-    .limit(SITEMAP_SHARD_ROW_LIMIT)
-  if (error) {
-    throw new Error(`sitemap shard ${shardId} data query failed: ${error.message}`)
   }
 
   const rows = (data ?? []) as { slug: string | null; category_slug: string | null }[]
