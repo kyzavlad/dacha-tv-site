@@ -1,4 +1,13 @@
-export const AUTOMATION_MAX_PUBLISHED = 3000
+// Compatibility name retained because the admin UI and automation status still
+// reference it. There is intentionally NO total catalog-size ceiling anymore:
+// production already contains the full ~106k supplier catalog and the daily
+// pipeline must keep admitting genuinely-new supplier SKUs as the feed grows.
+// Safety is enforced by NEW_PRODUCT_INSERT_BATCH_CAP per request instead of an
+// arbitrary lifetime published-count cap. Number.POSITIVE_INFINITY also keeps
+// existing comparison/display callers source-compatible (`>=` is always false,
+// toLocaleString renders the no-limit state as ∞) while we avoid a breaking API
+// shape change in AutomationStatus.
+export const AUTOMATION_MAX_PUBLISHED = Number.POSITIVE_INFINITY
 export const AUTOMATION_BATCH_SIZE = 300
 
 // Normal per-call batch size for the EXISTING-row set-based refresh RPC
