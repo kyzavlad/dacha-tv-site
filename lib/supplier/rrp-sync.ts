@@ -7,6 +7,7 @@ import { extractRootCurrency, resolvePriceUah } from '@/lib/supplier/sync'
 // controlled way rather than being killed mid-write.
 const SUPPLIER_TIMEOUT_MS = 40_000
 const DEFAULT_BATCH_SIZE = 5_000
+const DEFAULT_MAX_BATCHES = 1_000
 const DEFAULT_MAX_MILLIS = 50_000
 
 interface RpcError {
@@ -137,15 +138,19 @@ async function loadOfficialRrpFeed(): Promise<{
  *
  * The feed has no supplier-side pagination, so every invocation downloads it
  * once and processes a bounded slice. `offset` makes the operation resumable.
+ * `maxBatches=1` is intended for the first production pilot so only one small
+ * window is changed before the resulting prices are audited.
  */
 export async function syncSupplierRrpPrices(options?: {
   offset?: number
   batchSize?: number
+  maxBatches?: number
   maxMillis?: number
 }): Promise<RrpSyncResult> {
   const startedAt = Date.now()
   const requestedOffset = Math.max(0, Math.floor(options?.offset ?? 0))
   const batchSize = Math.max(100, Math.min(10_000, Math.floor(options?.batchSize ?? DEFAULT_BATCH_SIZE)))
+  const maxBatches = Math.max(1, Math.min(1_000, Math.floor(options?.maxBatches ?? DEFAULT_MAX_BATCHES)))
   const maxMillis = Math.max(5_000, Math.min(55_000, Math.floor(options?.maxMillis ?? DEFAULT_MAX_MILLIS)))
 
   try {
@@ -179,8 +184,13 @@ export async function syncSupplierRrpPrices(options?: {
     let missingPrice = 0
     let supplierUpdated = 0
     let catalogUpdated = 0
+    let batchesProcessed = 0
 
-    while (offset < totalInFeed && (Date.now() - startedAt) < maxMillis) {
+    while (
+      offset < totalInFeed &&
+      batchesProcessed < maxBatches &&
+      (Date.now() - startedAt) < maxMillis
+    ) {
       const sourceWindow = products.slice(offset, offset + batchSize)
       if (sourceWindow.length === 0) break
 
@@ -217,6 +227,7 @@ export async function syncSupplierRrpPrices(options?: {
 
       processed += sourceWindow.length
       offset += sourceWindow.length
+      batchesProcessed++
     }
 
     const done = offset >= totalInFeed

@@ -18,6 +18,7 @@ export async function GET(req: Request) {
   const result = await syncSupplierRrpPrices({
     offset: intParam(url, 'offset'),
     batchSize: intParam(url, 'batchSize'),
+    maxBatches: intParam(url, 'maxBatches'),
     maxMillis: intParam(url, 'maxMillis'),
   })
 

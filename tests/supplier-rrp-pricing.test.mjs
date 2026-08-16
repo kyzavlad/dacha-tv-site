@@ -5,6 +5,7 @@ import { readFile } from 'node:fs/promises'
 const rrpSync = await readFile(new URL('../lib/supplier/rrp-sync.ts', import.meta.url), 'utf8')
 const route = await readFile(new URL('../app/api/admin/cron/refresh-rrp/route.ts', import.meta.url), 'utf8')
 const migration = await readFile(new URL('../supabase/migrations/20260816114500_supplier_rrp_price_layer.sql', import.meta.url), 'utf8')
+const bootstrapSafety = await readFile(new URL('../supabase/migrations/20260816131000_preserve_price_until_rrp_bootstrap.sql', import.meta.url), 'utf8')
 
 test('RRP sync requests the supplier-calculated retail feed and never logs the API key', () => {
   assert.match(rrpSync, /rrp:\s*'on'/)
@@ -20,11 +21,15 @@ test('RRP sync writes through the set-based retail-price RPC', () => {
   assert.match(rrpSync, /maxMillis/)
 })
 
-test('protected cron route is bounded and resumable', () => {
+test('protected cron route is bounded, resumable and supports a one-batch pilot', () => {
   assert.match(route, /verifyCronAuth\(req\)/)
   assert.match(route, /maxDuration\s*=\s*60/)
   assert.match(route, /offset:\s*intParam\(url, 'offset'\)/)
+  assert.match(route, /maxBatches:\s*intParam\(url, 'maxBatches'\)/)
   assert.match(route, /syncSupplierRrpPrices/)
+  assert.match(rrpSync, /maxBatches\?: number/)
+  assert.match(rrpSync, /batchesProcessed < maxBatches/)
+  assert.match(rrpSync, /batchesProcessed\+\+/)
 })
 
 test('database layer keeps base cost separate from official retail price', () => {
@@ -42,6 +47,13 @@ test('anti-dumping catalog guard never substitutes the base supplier price', () 
   assert.match(migration, /price_manual_lock/)
   assert.match(migration, /source, 'supplier'\) <> 'manual'/)
   assert.doesNotMatch(migration, /select sp\.price_uah\s+into v_rrp/)
+})
+
+test('bootstrap guard preserves existing live price until first official RRP exists', () => {
+  assert.match(bootstrapSafety, /if found and v_rrp is not null and v_rrp > 0/)
+  assert.match(bootstrapSafety, /elsif tg_op = 'UPDATE'/)
+  assert.match(bootstrapSafety, /new\.price_uah := old\.price_uah/)
+  assert.match(bootstrapSafety, /new\.price_uah := null/)
 })
 
 test('RRP batch propagates retail prices only to unlocked supplier catalog rows', () => {
