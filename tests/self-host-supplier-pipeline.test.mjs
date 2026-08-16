@@ -40,17 +40,19 @@ test('supplier stages run in the required economic and data-integrity order', ()
   const products = orchestration.indexOf('run_resumable_stage "base products"')
   const categories = orchestration.indexOf("call_api '/api/admin/cron/sync-categories'")
   const rrp = orchestration.indexOf('run_resumable_stage "official RRP"')
+  const existing = orchestration.indexOf('\nrun_existing_catalog_refresh_stage\n')
   const imported = orchestration.indexOf('\nrun_import_stage\n')
   const published = orchestration.indexOf("call_api '/api/admin/cron/publish-products'")
 
-  for (const [name, index] of Object.entries({ products, categories, rrp, imported, published })) {
+  for (const [name, index] of Object.entries({ products, categories, rrp, existing, imported, published })) {
     assert.ok(index >= 0, `${name} stage must exist`)
   }
 
   assert.ok(products < categories, 'base products must finish before category reconciliation')
   assert.ok(categories < rrp, 'category reconciliation must precede official RRP')
-  assert.ok(rrp < imported, 'official RRP must finish before catalog import')
-  assert.ok(imported < published, 'catalog import must drain before publish')
+  assert.ok(rrp < existing, 'official RRP must finish before existing catalog refresh')
+  assert.ok(existing < imported, 'existing catalog refresh must drain before new-product finalization')
+  assert.ok(imported < published, 'new-product finalization must drain before publish')
 })
 
 test('resumable product and RRP stages require persisted completion before advancing', () => {
@@ -62,11 +64,19 @@ test('resumable product and RRP stages require persisted completion before advan
   assert.match(runner, /MAX_RRP_CALLS=30/)
 })
 
-test('catalog import is bounded and drains on the explicit done signal', () => {
-  assert.match(runner, /MAX_IMPORT_CALLS=40/)
+test('existing catalog refresh has enough bounded calls for the full 112k queue', () => {
+  assert.match(runner, /MAX_CATALOG_REFRESH_CALLS=400/)
+  assert.match(runner, /\/api\/admin\/cron\/refresh-catalog-existing/)
   assert.match(runner, /json_field done/)
+  assert.match(runner, /existing catalog refresh drained/)
+  assert.match(runner, /fail "existing catalog refresh did not drain/)
+})
+
+test('new-product finalization remains bounded and drains on the explicit done signal', () => {
+  assert.match(runner, /MAX_IMPORT_CALLS=40/)
+  assert.match(runner, /\/api\/admin\/cron\/import-products/)
   assert.match(runner, /if \[ "\$done" = "true" \]; then/)
-  assert.match(runner, /fail "catalog import did not drain/)
+  assert.match(runner, /fail "new-product import finalization did not drain/)
 })
 
 test('runner health-checks before and after mutating the supplier pipeline', () => {

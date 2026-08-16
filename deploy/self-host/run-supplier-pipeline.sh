@@ -2,7 +2,8 @@
 # Dacha TV self-host supplier pipeline.
 #
 # One invocation fully drains each resumable stage before advancing:
-#   base products -> categories -> official RRP -> catalog import -> publish.
+#   base products -> categories -> official RRP -> existing catalog refresh
+#   -> genuinely-new import finalization -> publish.
 # It is safe for cron use: a non-blocking flock prevents overlapping runs, the
 # CRON_SECRET is loaded only from the protected server env file, and no secret
 # values are printed.
@@ -15,6 +16,12 @@ LOCK_FILE="$ROOT/shared/supplier-pipeline.lock"
 APP_ORIGIN="http://127.0.0.1:3030"
 MAX_PRODUCT_CALLS=6
 MAX_RRP_CALLS=30
+# 112,535 / 300 = 376 calls in the absolute worst case where every supplier
+# row already exists in catalog_products. 400 leaves bounded headroom while the
+# endpoint itself stays memory-safe at the production-proven 300-row batch.
+MAX_CATALOG_REFRESH_CALLS=400
+# After the existing queue is drained, import-products is left only with the
+# small genuinely-new-SKU path. 40 remains ample for that bounded batch flow.
 MAX_IMPORT_CALLS=40
 
 stamp() { date -u '+%Y-%m-%dT%H:%M:%SZ'; }
@@ -105,34 +112,63 @@ run_resumable_stage() {
   fail "$label did not complete after $max_calls bounded calls"
 }
 
-run_import_stage() {
-  local i body ok done processed inserted updated remaining
+run_existing_catalog_refresh_stage() {
+  local i body ok done processed updated approved
 
-  for ((i=1; i<=MAX_IMPORT_CALLS; i++)); do
-    log "catalog import call $i/$MAX_IMPORT_CALLS"
-    if ! body="$(call_api '/api/admin/cron/import-products')"; then
-      fail "catalog import HTTP request failed"
+  for ((i=1; i<=MAX_CATALOG_REFRESH_CALLS; i++)); do
+    log "existing catalog refresh call $i/$MAX_CATALOG_REFRESH_CALLS"
+    if ! body="$(call_api '/api/admin/cron/refresh-catalog-existing')"; then
+      fail "existing catalog refresh HTTP request failed"
     fi
 
-    ok="$(printf '%s' "$body" | json_field ok)" || fail "catalog import returned invalid JSON"
-    done="$(printf '%s' "$body" | json_field done)" || fail "catalog import returned invalid JSON"
+    ok="$(printf '%s' "$body" | json_field ok)" || fail "existing catalog refresh returned invalid JSON"
+    done="$(printf '%s' "$body" | json_field done)" || fail "existing catalog refresh returned invalid JSON"
     processed="$(printf '%s' "$body" | json_field processed)" || true
-    inserted="$(printf '%s' "$body" | json_field inserted)" || true
     updated="$(printf '%s' "$body" | json_field updated)" || true
-    remaining="$(printf '%s' "$body" | json_field remaining)" || true
+    approved="$(printf '%s' "$body" | json_field approved)" || true
 
-    log "catalog import ok=${ok:-unknown} done=${done:-unknown} processed=${processed:-n/a} inserted=${inserted:-n/a} updated=${updated:-n/a} remaining=${remaining:-n/a}"
+    log "existing catalog refresh ok=${ok:-unknown} done=${done:-unknown} processed=${processed:-n/a} updated=${updated:-n/a} approved=${approved:-n/a}"
 
-    [ "$ok" = "true" ] || fail "catalog import reported ok=$ok"
+    [ "$ok" = "true" ] || fail "existing catalog refresh reported ok=$ok"
     if [ "$done" = "true" ]; then
-      log "catalog import drained"
+      log "existing catalog refresh drained"
       return 0
     fi
 
     sleep 1
   done
 
-  fail "catalog import did not drain after $MAX_IMPORT_CALLS calls"
+  fail "existing catalog refresh did not drain after $MAX_CATALOG_REFRESH_CALLS calls"
+}
+
+run_import_stage() {
+  local i body ok done processed inserted updated remaining
+
+  for ((i=1; i<=MAX_IMPORT_CALLS; i++)); do
+    log "new-product import finalization call $i/$MAX_IMPORT_CALLS"
+    if ! body="$(call_api '/api/admin/cron/import-products')"; then
+      fail "new-product import finalization HTTP request failed"
+    fi
+
+    ok="$(printf '%s' "$body" | json_field ok)" || fail "new-product import finalization returned invalid JSON"
+    done="$(printf '%s' "$body" | json_field done)" || fail "new-product import finalization returned invalid JSON"
+    processed="$(printf '%s' "$body" | json_field processed)" || true
+    inserted="$(printf '%s' "$body" | json_field inserted)" || true
+    updated="$(printf '%s' "$body" | json_field updated)" || true
+    remaining="$(printf '%s' "$body" | json_field remaining)" || true
+
+    log "new-product import finalization ok=${ok:-unknown} done=${done:-unknown} processed=${processed:-n/a} inserted=${inserted:-n/a} updated=${updated:-n/a} remaining=${remaining:-n/a}"
+
+    [ "$ok" = "true" ] || fail "new-product import finalization reported ok=$ok"
+    if [ "$done" = "true" ]; then
+      log "new-product import finalization drained"
+      return 0
+    fi
+
+    sleep 1
+  done
+
+  fail "new-product import finalization did not drain after $MAX_IMPORT_CALLS calls"
 }
 
 log "starting full supplier pipeline"
@@ -161,8 +197,13 @@ fi
 # 3. Only after base cost/stock is current, refresh official retail prices.
 run_resumable_stage "official RRP" "/api/admin/cron/refresh-rrp" "$MAX_RRP_CALLS"
 
-# 4. Drain supplier -> catalog refresh, then publish drafts once all upstream
-# product and retail-price data is current.
+# 4. Drain the large EXISTING supplier -> catalog queue without repeatedly
+# invoking the genuinely-new-SKU scanner on every small memory-safe batch.
+run_existing_catalog_refresh_stage
+
+# 5. With existing rows already current, finish genuinely-new SKU handling.
+# Under the current publication cap this normally terminates in one call; if the
+# cap is later raised, the endpoint's own bounded new-insert path can still loop.
 run_import_stage
 
 log "publish products"
