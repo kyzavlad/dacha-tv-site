@@ -90,9 +90,9 @@ const DICT = {
     eyebrow: { uk: 'Доставка та оплата', ru: 'Доставка и оплата', en: 'Delivery & payment' },
     title: { uk: 'Доставка', ru: 'Доставка', en: 'Delivery' },
     intro: {
-      uk: 'Відправляємо по всій Україні: Новою Поштою або Укрпоштою.',
-      ru: 'Отправляем по всей Украине: Новой Почтой или Укрпочтой.',
-      en: 'We ship across Ukraine via Nova Poshta or Ukrposhta.',
+      uk: 'Замовлення з каталогу — Новою Поштою. Продукти нашого господарства — Новою Поштою чи Укрпоштою, або самовивозом.',
+      ru: 'Заказы из каталога — Новой Почтой. Продукты нашего хозяйства — Новой Почтой или Укрпочтой, либо самовывозом.',
+      en: 'Catalog orders ship via Nova Poshta. Our own farm products ship via Nova Poshta or Ukrposhta, or by self-pickup.',
     },
     questionsTitle: { uk: 'Є питання щодо доставки?', ru: 'Есть вопросы по доставке?', en: 'Questions about delivery?' },
     questionsBody: {
@@ -101,6 +101,14 @@ const DICT = {
       en: 'Call or message us — we reply quickly',
     },
     sections: [
+      {
+        heading: { uk: 'Товари з каталогу', ru: 'Товары из каталога', en: 'Catalog goods' },
+        body: {
+          uk: 'Замовлення з каталогу оформлюються на сайті й відправляються Новою Поштою — під час оформлення потрібно обрати відділення. Оплата на вибір: накладений платіж при отриманні або передоплата до відправки. Передоплату ми узгоджуємо з вами після підтвердження замовлення менеджером — сайт не списує кошти з картки. Частина товарів у каталозі — від перевірених виробників і партнерів, тож менеджер підтверджує наявність перед відправкою.',
+          ru: 'Заказы из каталога оформляются на сайте и отправляются Новой Почтой — при оформлении нужно выбрать отделение. Оплата на выбор: наложенный платёж при получении или предоплата до отправки. Предоплату мы согласовываем с вами после подтверждения заказа менеджером — сайт не списывает средства с карты. Часть товаров в каталоге — от проверенных производителей и партнёров, поэтому менеджер подтверждает наличие перед отправкой.',
+          en: 'Catalog orders are placed on the site and ship via Nova Poshta — you choose a branch during checkout. Payment is your choice: cash on delivery on receipt, or prepayment before shipping. Prepayment is arranged with you after a manager confirms the order — the site does not charge your card. Some catalog goods come from trusted producers and partners, so a manager confirms availability before shipping.',
+        },
+      },
       {
         heading: { uk: 'Мед та продукти пасіки', ru: 'Мёд и продукты пасеки', en: 'Honey & apiary products' },
         body: {
@@ -136,9 +144,9 @@ const DICT = {
       {
         heading: { uk: 'Оплата', ru: 'Оплата', en: 'Payment' },
         body: {
-          uk: 'Приймаємо оплату банківським переказом (Monobank) або готівкою при самовивозі. Оплата накладеним платежем також можлива при відправці Новою Поштою. Деталі уточнюйте при оформленні замовлення.',
-          ru: 'Принимаем оплату банковским переводом (Monobank) или наличными при самовывозе. Оплата наложенным платежом также возможна при отправке Новой Почтой. Детали уточняйте при оформлении заказа.',
-          en: 'We accept bank transfer (Monobank) or cash on self-pickup. Cash on delivery is also available with Nova Poshta. Details are confirmed at checkout.',
+          uk: 'Замовлення з каталогу: накладений платіж при отриманні або передоплата до відправки — спосіб ви обираєте на сайті. Продукти нашого господарства, бджолопакети та послуги: банківський переказ (Monobank) або готівка при самовивозі чи особистій передачі. Сайт не приймає оплату карткою онлайн — реквізити для передоплати менеджер надає після підтвердження замовлення.',
+          ru: 'Заказы из каталога: наложенный платёж при получении или предоплата до отправки — способ вы выбираете на сайте. Продукты нашего хозяйства, пчелопакеты и услуги: банковский перевод (Monobank) или наличные при самовывозе либо личной передаче. Сайт не принимает оплату картой онлайн — реквизиты для предоплаты менеджер предоставляет после подтверждения заказа.',
+          en: 'Catalog orders: cash on delivery on receipt, or prepayment before shipping — you choose the method on the site. Our own farm products, bee packages and services: bank transfer (Monobank), or cash on self-pickup or handover. The site does not take card payments online — a manager provides prepayment details after confirming the order.',
         },
       },
     ],

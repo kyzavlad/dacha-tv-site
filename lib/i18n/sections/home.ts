@@ -140,9 +140,9 @@ const D = {
     en: 'Dacha TV is a family farm in the Kharkiv region. We started with an apiary, and today it also means natural products, flowers, a lavender field, services and a shop of goods for home and farm.',
   },
   storyPara2: {
-    uk: 'Кожен напрям — це наша власна праця. На YouTube-каналі ми відкрито показуємо весь процес, бо чесність у роботі — це не маркетинг, а наш спосіб.',
-    ru: 'Каждое направление — это наш собственный труд. На YouTube-канале мы открыто показываем весь процесс, ведь честность в работе — это не маркетинг, а наш способ.',
-    en: 'Every part of it is our own work. On our YouTube channel we openly show the whole process, because honesty in our work isn’t marketing — it’s our way.',
+    uk: 'Мед і продукти пасіки, натуральні продукти, квіти, лаванду та послуги садиби ми робимо самі. Магазин товарів для дому й господарства ми ведемо як продавець: там є і наші вироби, і товари перевірених виробників та партнерів. На YouTube-каналі ми відкрито показуємо весь процес, бо чесність у роботі — це не маркетинг, а наш спосіб.',
+    ru: 'Мёд и продукты пасеки, натуральные продукты, цветы, лаванду и услуги усадьбы мы делаем сами. Магазин товаров для дома и хозяйства мы ведём как продавец: там есть и наши изделия, и товары проверенных производителей и партнёров. На YouTube-канале мы открыто показываем весь процесс, ведь честность в работе — это не маркетинг, а наш способ.',
+    en: 'The honey and apiary products, natural goods, flowers, lavender and homestead services are our own work. The shop of goods for home and farm we run as the seller: it carries both our own items and products from trusted producers and partners. On our YouTube channel we openly show the whole process, because honesty in our work isn’t marketing — it’s our way.',
   },
   storyStatTitle: { uk: 'Власне господарство', ru: 'Собственное хозяйство', en: 'Our own farm' },
   storyStatLocation: { uk: 'Харківщина, с. Коротич', ru: 'Харьковщина, с. Коротич', en: 'Kharkiv region, Korotych' },
@@ -154,9 +154,9 @@ const D = {
   storyCta: { uk: 'Читати нашу історію', ru: 'Читать нашу историю', en: 'Read our story' },
   storyTrust1Label: { uk: 'Сімейна справа', ru: 'Семейное дело', en: 'A family business' },
   storyTrust1Desc: {
-    uk: 'Власне господарство на Харківщині — без посередників.',
-    ru: 'Собственное хозяйство на Харьковщине — без посредников.',
-    en: 'Our own farm in the Kharkiv region — no middlemen.',
+    uk: 'Власне господарство на Харківщині — продукти пасіки та ферми без посередників.',
+    ru: 'Собственное хозяйство на Харьковщине — продукты пасеки и фермы без посредников.',
+    en: 'Our own farm in the Kharkiv region — apiary and farm products with no middlemen.',
   },
   storyTrust2Label: { uk: 'Власне виробництво', ru: 'Собственное производство', en: 'Our own production' },
   storyTrust2Desc: {
@@ -172,9 +172,9 @@ const D = {
   },
   storyTrust4Label: { uk: 'Зручне замовлення', ru: 'Удобный заказ', en: 'Easy ordering' },
   storyTrust4Desc: {
-    uk: 'Замовляйте онлайн із доставкою Новою Поштою по всій Україні.',
-    ru: 'Заказывайте онлайн с доставкой Новой Почтой по всей Украине.',
-    en: 'Order online with Nova Poshta delivery across Ukraine.',
+    uk: 'Наші продукти й товари партнерів — в одному замовленні, з доставкою Новою Поштою по Україні.',
+    ru: 'Наши продукты и товары партнёров — в одном заказе, с доставкой Новой Почтой по Украине.',
+    en: 'Our own products and partner goods in one order, delivered by Nova Poshta across Ukraine.',
   },
 
   // YouTubeSection
@@ -226,9 +226,9 @@ const D = {
   },
   orderStep3Title: { uk: 'Отримайте замовлення', ru: 'Получите заказ', en: 'Receive your order' },
   orderStep3Desc: {
-    uk: 'Відправимо Новою Поштою або Укрпоштою по всій Україні. Можливий самовивіз.',
-    ru: 'Отправим Новой Почтой или Укрпочтой по всей Украине. Возможен самовывоз.',
-    en: 'We ship via Nova Poshta or Ukrposhta across Ukraine. Self-pickup is available.',
+    uk: 'Товари з каталогу відправляємо Новою Поштою. Для продуктів нашого господарства можлива Укрпошта або самовивіз.',
+    ru: 'Товары из каталога отправляем Новой Почтой. Для продуктов нашего хозяйства возможна Укрпочта или самовывоз.',
+    en: 'Catalog goods ship via Nova Poshta. For our own farm products, Ukrposhta or self-pickup is also possible.',
   },
 
   // Reviews (client component)
@@ -259,9 +259,9 @@ const D = {
   deliveryCta: { uk: 'Детальніше про доставку', ru: 'Подробнее о доставке', en: 'More about delivery' },
   deliveryCard1Title: { uk: 'Товари з каталогу', ru: 'Товары из каталога', en: 'Catalog goods' },
   deliveryCard1Desc: {
-    uk: 'Відправляємо Новою Поштою по всій Україні. Оплата накладеним платежем при отриманні.',
-    ru: 'Отправляем Новой Почтой по всей Украине. Оплата наложенным платежом при получении.',
-    en: 'We ship via Nova Poshta across Ukraine. Cash on delivery on receipt.',
+    uk: 'Відправляємо Новою Поштою по всій Україні. Оплата при отриманні або передоплата до відправки після підтвердження менеджером.',
+    ru: 'Отправляем Новой Почтой по всей Украине. Оплата при получении или предоплата до отправки после подтверждения менеджером.',
+    en: 'We ship via Nova Poshta across Ukraine. Pay on receipt, or prepay before shipping after a manager confirms.',
   },
   deliveryCard2Title: { uk: 'Мед та продукти пасіки', ru: 'Мёд и продукты пасеки', en: 'Honey & apiary products' },
   deliveryCard2Desc: {

@@ -18,8 +18,11 @@ export async function generateMetadata(): Promise<Metadata> {
   })
 }
 
-// The 5th section (index 4) is the payment anchor.
-const SECTION_IDS = [undefined, undefined, undefined, undefined, 'payment'] as const
+// The payment section is always the LAST one in t.delivery.sections, so the
+// #payment anchor is derived rather than pinned to a hardcoded index — adding a
+// section (e.g. catalog delivery) can no longer move the anchor onto the wrong
+// article.
+const paymentAnchorIndex = (sections: readonly unknown[]) => sections.length - 1
 
 export default async function DeliveryPage() {
   const locale = await getRequestLocale()
@@ -40,7 +43,11 @@ export default async function DeliveryPage() {
 
       <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-12 space-y-8">
         {t.delivery.sections.map((section, idx) => (
-          <article key={idx} id={SECTION_IDS[idx]} className="bg-white rounded-2xl p-6 border border-honey-100 shadow-sm">
+          <article
+            key={idx}
+            id={idx === paymentAnchorIndex(t.delivery.sections) ? 'payment' : undefined}
+            className="bg-white rounded-2xl p-6 border border-honey-100 shadow-sm"
+          >
             <h2 className="font-serif text-2xl font-bold text-bark mb-4">
               {section.heading}
             </h2>
