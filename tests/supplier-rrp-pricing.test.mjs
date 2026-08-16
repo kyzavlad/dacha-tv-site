@@ -21,15 +21,31 @@ test('RRP sync writes through the set-based retail-price RPC', () => {
   assert.match(rrpSync, /maxMillis/)
 })
 
-test('protected cron route is bounded, resumable and supports a one-batch pilot', () => {
+test('protected cron route keeps explicit-offset pilot/recovery bounded and stateless', () => {
   assert.match(route, /verifyCronAuth\(req\)/)
   assert.match(route, /maxDuration\s*=\s*60/)
+  assert.match(route, /const explicitOffset = intParam\(url, 'offset'\)/)
+  assert.match(route, /if \(explicitOffset != null\)/)
   assert.match(route, /offset:\s*intParam\(url, 'offset'\)/)
-  assert.match(route, /maxBatches:\s*intParam\(url, 'maxBatches'\)/)
-  assert.match(route, /syncSupplierRrpPrices/)
+  assert.match(route, /mode:\s*'manual'/)
+  assert.match(route, /batchSize/)
+  assert.match(route, /maxBatches/)
   assert.match(rrpSync, /maxBatches\?: number/)
   assert.match(rrpSync, /batchesProcessed < maxBatches/)
   assert.match(rrpSync, /batchesProcessed\+\+/)
+})
+
+test('plain scheduled RRP calls reuse the canonical durable supplier cursor', () => {
+  assert.match(route, /const SYNC_TYPE = 'rrp'/)
+  assert.match(route, /loadSyncState\(SYNC_TYPE\)/)
+  assert.match(route, /planResume\(state\)/)
+  assert.match(route, /offset:\s*plan\.offset/)
+  assert.match(route, /computeNextState/)
+  assert.match(route, /finalizeFields/)
+  assert.match(route, /saveSyncState\(SYNC_TYPE, plan, finalFields\)/)
+  assert.match(route, /processedThisCycle:\s*finalFields\.processed/)
+  assert.match(route, /persistedNextOffset/)
+  assert.match(route, /const ok = result\.ok && stateSaved/)
 })
 
 test('database layer keeps base cost separate from official retail price', () => {
