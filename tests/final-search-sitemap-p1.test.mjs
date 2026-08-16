@@ -13,6 +13,7 @@ import { splitSearchLookahead } from '../lib/catalog/public-search.ts'
 
 const publicSearchSrc = readFileSync(new URL('../lib/catalog/public-search.ts', import.meta.url), 'utf8')
 const searchPageSrc = readFileSync(new URL('../app/search/page.tsx', import.meta.url), 'utf8')
+const searchApiSrc = readFileSync(new URL('../app/api/catalog/search/route.ts', import.meta.url), 'utf8')
 const paginationSrc = readFileSync(new URL('../components/catalog/Pagination.tsx', import.meta.url), 'utf8')
 const sitemapSrc = readFileSync(new URL('../app/sitemap.ts', import.meta.url), 'utf8')
 const robotsSrc = readFileSync(new URL('../app/robots.ts', import.meta.url), 'utf8')
@@ -37,6 +38,15 @@ test('production search path has no exact full count and surfaces authoritative 
   assert.match(publicSearchSrc, /throw new Error\(`catalog search query failed:/)
   assert.ok(!searchPageSrc.includes('.catch(() => ({ products: [], total: 0 }))'))
   assert.match(searchPageSrc, /searchPublishedCatalogProductsFast/)
+})
+
+test('public search API shares the bounded path and does not hide DB failures as zero results', () => {
+  assert.match(searchApiSrc, /searchPublishedCatalogProductsFast/)
+  assert.ok(!searchApiSrc.includes('searchPublishedCatalogProducts,'), 'API must not import the legacy exact-count search')
+  assert.ok(!searchApiSrc.includes('.catch(() => ({ products: [], total: 0 }))'))
+  assert.match(searchApiSrc, /const \{ products, hasNext \} = await searchPublishedCatalogProductsFast/)
+  assert.match(searchApiSrc, /hasMore: hasNext/)
+  assert.match(searchApiSrc, /count: products\.length/)
 })
 
 test('search UI and pagination do not fabricate an unknown total', () => {
