@@ -1,11 +1,11 @@
 import type { MetadataRoute } from 'next'
 import { getAllHoneySlugs, getAllFlowerSlugs, getAllApiaryProductSlugs, getAllBeekeeperSlugs, getAllServiceSlugs } from '@/lib/supabase/queries'
+import { getPublishedCategories } from '@/lib/supabase/catalog'
 import {
-  getPublishedCategories,
-  getPublishedCatalogSlugsPage,
-  getPublishedCatalogProductCount,
-  SITEMAP_PRODUCTS_PER_CHUNK,
-} from '@/lib/supabase/catalog'
+  getAllSitemapIds,
+  getPublishedCatalogSlugsForShard,
+  SITEMAP_PRODUCT_SHARD_COUNT,
+} from '@/lib/catalog/sitemap-shards'
 
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.dachatv.com'
 
@@ -13,20 +13,21 @@ const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.dachatv.com'
 // redeploy (a plain sitemap.ts is otherwise cached at build time).
 export const revalidate = 3600
 
-// Sharded sitemap: a single flat file cannot hold 105k product URLs (Google's
-// hard limit is 50,000 URLs / 50MB per file). Shard 0 carries the static +
-// non-catalog + category URLs; shards 1..N each carry one
-// SITEMAP_PRODUCTS_PER_CHUNK-product window (1000, well under the 50k limit).
-// Shards are served at /sitemap/[id].xml and enumerated in robots.ts.
+// Deterministic sharding: shard 0 carries static/non-catalog/category URLs;
+// product shards 1..512 each own one equal UUID address-space range. This needs
+// neither a global COUNT nor OFFSET pagination, so the final shard stays as cheap
+// as the first one even when the catalog grows.
 export async function generateSitemaps(): Promise<{ id: number }[]> {
-  const productCount = await getPublishedCatalogProductCount().catch(() => 0)
-  const productShards = Math.max(1, Math.ceil(productCount / SITEMAP_PRODUCTS_PER_CHUNK))
-  return Array.from({ length: productShards + 1 }, (_, i) => ({ id: i }))
+  return getAllSitemapIds().map((id) => ({ id }))
 }
 
 // Next 16 passes the shard id as a Promise<string>.
 export default async function sitemap(props: { id: Promise<string> }): Promise<MetadataRoute.Sitemap> {
-  const id = Number(await props.id) || 0
+  const rawId = await props.id
+  const id = Number(rawId)
+  if (!Number.isInteger(id) || id < 0 || id > SITEMAP_PRODUCT_SHARD_COUNT) {
+    throw new Error(`invalid sitemap shard id: ${rawId}`)
+  }
 
   if (id === 0) {
     const staticRoutes: MetadataRoute.Sitemap = [
@@ -77,9 +78,10 @@ export default async function sitemap(props: { id: Promise<string> }): Promise<M
     ]
   }
 
-  // Product shard N → the Nth SITEMAP_PRODUCTS_PER_CHUNK (1000) window.
-  const offset = (id - 1) * SITEMAP_PRODUCTS_PER_CHUNK
-  const slugs = await getPublishedCatalogSlugsPage(offset, SITEMAP_PRODUCTS_PER_CHUNK).catch(() => [])
+  // Product shard errors are intentionally NOT converted to []: a DB failure or
+  // future bucket overflow must be observable, never a misleading HTTP-200 empty
+  // sitemap that quietly drops catalog URLs.
+  const slugs = await getPublishedCatalogSlugsForShard(id)
   return slugs.map(({ category, product }) => ({
     url: `${BASE_URL}/catalog/${category}/${product}`,
     lastModified: new Date(),
