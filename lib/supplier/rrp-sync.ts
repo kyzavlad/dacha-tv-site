@@ -1,7 +1,11 @@
 import { getAdminClient } from '@/lib/supabase/admin'
 import { extractRootCurrency, resolvePriceUah } from '@/lib/supplier/sync'
 
-const SUPPLIER_TIMEOUT_MS = 15_000
+// The full Personal.cab catalog is ~110k products and the documented rrp=on
+// response can legitimately take longer than the generic 15s supplier timeout.
+// Keep this below the route's 60s budget so a slow upstream still fails in a
+// controlled way rather than being killed mid-write.
+const SUPPLIER_TIMEOUT_MS = 40_000
 const DEFAULT_BATCH_SIZE = 5_000
 const DEFAULT_MAX_MILLIS = 50_000
 
