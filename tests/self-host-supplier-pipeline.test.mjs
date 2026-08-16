@@ -23,11 +23,15 @@ test('self-host supplier runner is locked, authenticated and never prints the cr
 })
 
 test('supplier stages run in the required economic and data-integrity order', () => {
-  const products = runner.indexOf('run_resumable_stage "base products"')
-  const categories = runner.indexOf("call_api '/api/admin/cron/sync-categories'")
-  const rrp = runner.indexOf('run_resumable_stage "official RRP"')
-  const imported = runner.indexOf('\nrun_import_stage\n\nlog "publish products"')
-  const published = runner.indexOf("call_api '/api/admin/cron/publish-products'")
+  const start = runner.indexOf('log "starting full supplier pipeline"')
+  assert.ok(start >= 0, 'pipeline orchestration block must exist')
+  const orchestration = runner.slice(start)
+
+  const products = orchestration.indexOf('run_resumable_stage "base products"')
+  const categories = orchestration.indexOf("call_api '/api/admin/cron/sync-categories'")
+  const rrp = orchestration.indexOf('run_resumable_stage "official RRP"')
+  const imported = orchestration.indexOf('\nrun_import_stage\n')
+  const published = orchestration.indexOf("call_api '/api/admin/cron/publish-products'")
 
   for (const [name, index] of Object.entries({ products, categories, rrp, imported, published })) {
     assert.ok(index >= 0, `${name} stage must exist`)
@@ -56,9 +60,12 @@ test('catalog import is bounded and drains on the explicit done signal', () => {
 })
 
 test('runner health-checks before and after mutating the supplier pipeline', () => {
-  const first = runner.indexOf('health_check || fail "pre-flight health check failed"')
-  const products = runner.indexOf('run_resumable_stage "base products"')
-  const final = runner.indexOf('health_check || fail "final health check failed"')
+  const start = runner.indexOf('log "starting full supplier pipeline"')
+  assert.ok(start >= 0, 'pipeline orchestration block must exist')
+  const orchestration = runner.slice(start)
+  const first = orchestration.indexOf('health_check || fail "pre-flight health check failed"')
+  const products = orchestration.indexOf('run_resumable_stage "base products"')
+  const final = orchestration.indexOf('health_check || fail "final health check failed"')
   assert.ok(first >= 0 && products >= 0 && final >= 0)
   assert.ok(first < products)
   assert.ok(final > products)
