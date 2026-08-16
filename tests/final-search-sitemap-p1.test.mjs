@@ -49,14 +49,26 @@ test('public search API shares the bounded path and does not hide DB failures as
   assert.match(searchApiSrc, /count: products\.length/)
 })
 
-test('search UI and pagination do not fabricate an unknown total', () => {
+test('search UI and pagination do not fabricate an unknown total or global ordinal range', () => {
   assert.ok(!searchPageSrc.includes('t.found('))
   assert.ok(!searchPageSrc.includes('pageOf: t.pageOf'))
+  assert.ok(!searchPageSrc.includes('rangeFrom'))
+  assert.ok(!searchPageSrc.includes('rangeTo'))
+  assert.match(searchPageSrc, /t\.showing\(products\.length, hasNext\)/)
+  assert.match(searchPageSrc, /На цій сторінці:/)
+  assert.match(searchPageSrc, /На этой странице:/)
+  assert.match(searchPageSrc, /On this page:/)
   assert.match(searchPageSrc, /hasNext=\{hasNext\}/)
   assert.match(searchPageSrc, /pageCurrent: t\.pageCurrent/)
   assert.match(paginationSrc, /total\?: number \| null/)
   assert.match(paginationSrc, /lastPage == null \? hasNext === true/)
   assert.match(paginationSrc, /lastPage == null \? l\.pageCurrent\(page\) : l\.pageOf\(page, lastPage\)/)
+})
+
+test('unknown-total search keeps a Previous path when a requested later page is empty', () => {
+  assert.match(searchPageSrc, /page > 1 && \(/)
+  assert.match(searchPageSrc, /hasNext=\{false\}/)
+  assert.match(searchPageSrc, /params=\{paginationParams\}/)
 })
 
 test('UUID sitemap partition exposes exactly shard 0 plus 512 product shards', () => {
