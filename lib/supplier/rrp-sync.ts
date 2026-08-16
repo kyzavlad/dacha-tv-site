@@ -234,8 +234,15 @@ export async function syncSupplierRrpPrices(options?: {
     const nextOffset = done ? null : offset
     const durationMs = Date.now() - startedAt
 
+    // Reaching the end of a non-empty feed is a successful traversal even when
+    // the tail contains no valid retail rows, or when a previously persisted
+    // cursor is now beyond the end because the supplier feed shrank. Missing or
+    // rejected prices remain visible through counters/DB audits; they are not a
+    // transport/persistence failure and must not strand the durable cursor.
+    const ok = processed > 0 || done
+
     return {
-      ok: processed > 0 && validPrices > 0,
+      ok,
       totalInFeed,
       validPrices,
       processed,
