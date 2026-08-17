@@ -6,6 +6,7 @@ import {
   getPublishedCatalogSlugsForShard,
   SITEMAP_PRODUCT_SHARD_COUNT,
 } from '@/lib/catalog/sitemap-shards'
+import { SCOOTER_GUIDE_SLUGS } from '@/lib/moto/scooter-guides'
 
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.dachatv.com'
 
@@ -49,6 +50,14 @@ export default async function sitemap(props: { id: Promise<string> }): Promise<M
       { url: `${BASE_URL}/moto/skutery/honda-dio`, lastModified: new Date(), priority: 0.85 },
       { url: `${BASE_URL}/moto/skutery/yamaha-jog`, lastModified: new Date(), priority: 0.85 },
       { url: `${BASE_URL}/moto/skutery/suzuki-lets`, lastModified: new Date(), priority: 0.85 },
+      // Commerce-focused scooter guides: one reusable route + config, canonical UA
+      // URLs only. Each guide emits its own UA/RU hreflang in page metadata.
+      { url: `${BASE_URL}/moto/guides`, lastModified: new Date(), priority: 0.75 },
+      ...SCOOTER_GUIDE_SLUGS.map((slug) => ({
+        url: `${BASE_URL}/moto/guides/${slug}`,
+        lastModified: new Date(),
+        priority: 0.72,
+      })),
     ]
 
     const [honeySlugs, flowerSlugs, apiarySlugs, beekeeperSlugs, serviceSlugs, catalogCategories] = await Promise.all([
