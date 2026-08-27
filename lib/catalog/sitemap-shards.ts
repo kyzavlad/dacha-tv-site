@@ -69,12 +69,11 @@ export function getAllSitemapIds(): number[] {
 /**
  * Read one product sitemap shard by UUID range. No OFFSET and no global count.
  *
- * A cheap exact count is intentionally scoped to this one narrow UUID bucket and
- * requested in the SAME PostgREST statement as the bounded rows. That gives the
- * overflow guard and the returned data one database snapshot: a concurrent sync
- * cannot change the bucket between a separate count request and a data request.
- * If future growth crosses the response ceiling, the shard fails loudly instead
- * of publishing a truncated successful sitemap.
+ * An exact COUNT used to be requested together with every shard. On the current
+ * large Free-plan catalog that COUNT can exceed the database statement timeout
+ * during `next build`, even though each UUID bucket contains only a few hundred
+ * rows. A limit+1 sentinel preserves the same overflow safety in one snapshot
+ * without forcing PostgreSQL to count every matching row in the bucket.
  */
 export async function getPublishedCatalogSlugsForShard(
   shardId: number,
@@ -90,31 +89,25 @@ export async function getPublishedCatalogSlugsForShard(
 
   let query = client
     .from('catalog_products')
-    .select('slug, category_slug', { count: 'exact' })
+    .select('slug, category_slug')
     .eq('status', 'published')
     .or(STOREFRONT_SCOPE_OR)
     .gte('id', range.lower)
   if (range.upper) query = query.lt('id', range.upper)
 
-  const { data, count, error } = await query
+  const { data, error } = await query
     .order('id', { ascending: true })
-    .limit(SITEMAP_SHARD_ROW_LIMIT)
+    .limit(SITEMAP_SHARD_ROW_LIMIT + 1)
 
   if (error) {
     throw new Error(`sitemap shard ${shardId} query failed: ${error.message}`)
   }
-  if (count == null) {
-    throw new Error(`sitemap shard ${shardId} count was unavailable`)
-  }
-  if (count > SITEMAP_SHARD_ROW_LIMIT) {
-    throw new Error(
-      `sitemap shard ${shardId} overflow: ${count} rows exceeds ${SITEMAP_SHARD_ROW_LIMIT}; increase shard cardinality before serving this shard`,
-    )
-  }
 
   const rows = (data ?? []) as { slug: string | null; category_slug: string | null }[]
-  if (rows.length !== count) {
-    throw new Error(`sitemap shard ${shardId} row mismatch: expected ${count}, received ${rows.length}`)
+  if (rows.length > SITEMAP_SHARD_ROW_LIMIT) {
+    throw new Error(
+      `sitemap shard ${shardId} overflow: more than ${SITEMAP_SHARD_ROW_LIMIT} rows; increase shard cardinality before serving this shard`,
+    )
   }
 
   return rows.map((row) => {
