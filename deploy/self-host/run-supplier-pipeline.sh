@@ -14,7 +14,11 @@ ROOT="/var/www/dacha-tv"
 ENV_FILE="$ROOT/shared/.env.production"
 LOCK_FILE="$ROOT/shared/supplier-pipeline.lock"
 APP_ORIGIN="http://127.0.0.1:3030"
-MAX_PRODUCT_CALLS=6
+# Production feed is currently ~112k rows. Each bounded sync-products request
+# processes roughly 7k-11k rows after downloading/parsing the full supplier JSON,
+# so the former cap of 6 calls could never drain one full daily cycle. 20 calls
+# keeps the runner bounded while leaving headroom for slower per-call progress.
+MAX_PRODUCT_CALLS=20
 MAX_RRP_CALLS=30
 # 112,535 / 300 = 376 calls in the absolute worst case where every supplier
 # row already exists in catalog_products. 400 leaves bounded headroom while the
