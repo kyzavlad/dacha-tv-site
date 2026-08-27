@@ -97,15 +97,11 @@ export function toMerchantFeedItem(row: MerchantCatalogRow, origin = MERCHANT_FE
 }
 
 export function renderMerchantRss(items: MerchantFeedItem[], origin = MERCHANT_FEED_ORIGIN): string {
-  // In RSS 2.0, title/link/description are standard RSS item elements and must
-  // remain unprefixed. Only Merchant-specific attributes use the `g:` namespace.
-  // Using g:title/g:link/g:description makes Google treat the required RSS item
-  // fields as missing and can cause the entire source to process as 0 products.
   const xmlItems = items.map((item) => `    <item>
       <g:id>${xmlEscape(item.id)}</g:id>
-      <title>${xmlEscape(item.title)}</title>
-      <description>${xmlEscape(item.description)}</description>
-      <link>${xmlEscape(item.link)}</link>
+      <g:title>${xmlEscape(item.title)}</g:title>
+      <g:description>${xmlEscape(item.description)}</g:description>
+      <g:link>${xmlEscape(item.link)}</g:link>
       <g:image_link>${xmlEscape(item.imageLink)}</g:image_link>
       <g:availability>${item.availability}</g:availability>
       <g:price>${xmlEscape(item.price)}</g:price>
