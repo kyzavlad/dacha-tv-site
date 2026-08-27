@@ -60,7 +60,7 @@ test('resumable product and RRP stages require persisted completion before advan
   assert.match(runner, /json_field stateSaved/)
   assert.match(runner, /\[ "\$state_saved" = "true" \] \|\| fail/)
   assert.match(runner, /\[ "\$complete" = "true" \]/)
-  assert.match(runner, /MAX_PRODUCT_CALLS=6/)
+  assert.match(runner, /MAX_PRODUCT_CALLS=20/)
   assert.match(runner, /MAX_RRP_CALLS=30/)
 })
 
