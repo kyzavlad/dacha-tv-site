@@ -36,7 +36,7 @@ test('a clean supplier product becomes a Merchant item with canonical Dacha URL'
   assert.ok(item)
   assert.equal(item.price, '2499.00 UAH')
   assert.equal(item.availability, 'in_stock')
-  assert.equal(item.link, 'https://www.dachatv.com/catalog/kompresory/kompresor-1')
+  assert.equal(item.link, 'https://dachatv.com/catalog/kompresory/kompresor-1')
   assert.equal(item.description, 'Надійний компресор для майстерні')
 })
 
@@ -58,7 +58,7 @@ test('Merchant safety gates reject non-buyable or risky catalog rows', () => {
 })
 
 test('relative images are made absolute and insecure http images are upgraded', () => {
-  assert.equal(absoluteMerchantUrl('/img/p.jpg'), 'https://www.dachatv.com/img/p.jpg')
+  assert.equal(absoluteMerchantUrl('/img/p.jpg'), 'https://dachatv.com/img/p.jpg')
   assert.equal(absoluteMerchantUrl('http://cdn.example.com/p.jpg'), 'https://cdn.example.com/p.jpg')
 })
 
