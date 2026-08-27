@@ -62,14 +62,23 @@ test('relative images are made absolute and insecure http images are upgraded', 
   assert.equal(absoluteMerchantUrl('http://cdn.example.com/p.jpg'), 'https://cdn.example.com/p.jpg')
 })
 
-test('RSS output escapes XML and contains required core product fields', () => {
+test('RSS output follows Google Merchant RSS 2.0 element rules', () => {
   const item = toMerchantFeedItem(good)
   assert.ok(item)
   const xml = renderMerchantRss([item])
   assert.match(xml, /xmlns:g="http:\/\/base\.google\.com\/ns\/1\.0"/)
-  for (const field of ['g:id', 'g:title', 'g:description', 'g:link', 'g:image_link', 'g:availability', 'g:price', 'g:condition']) {
+
+  // RSS-native item fields must be unprefixed.
+  for (const field of ['title', 'description', 'link']) {
+    assert.match(xml, new RegExp(`<${field}>`))
+    assert.doesNotMatch(xml, new RegExp(`<g:${field}>`))
+  }
+
+  // Merchant-specific attributes belong to the Google namespace.
+  for (const field of ['g:id', 'g:image_link', 'g:availability', 'g:price', 'g:condition']) {
     assert.match(xml, new RegExp(`<${field}>`))
   }
+
   assert.match(xml, /Компресор &amp; набір/)
 })
 
