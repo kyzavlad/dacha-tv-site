@@ -1,8 +1,8 @@
 import { createClient } from '@supabase/supabase-js'
-import { STOREFRONT_SCOPE_OR } from '@/lib/supabase/catalog'
+import { isStorefrontProduct } from '@/lib/supabase/catalog'
 
 // 9 high-order UUID bits => 512 deterministic, equal address-space buckets.
-// Production currently has ~168-253 storefront products per bucket, leaving
+// Production currently has ~168-253 published rows per bucket, leaving
 // substantial headroom below PostgREST's 1000-row response ceiling.
 export const SITEMAP_PRODUCT_SHARD_COUNT = 512
 export const SITEMAP_SHARD_ROW_LIMIT = 1000
@@ -66,14 +66,24 @@ export function getAllSitemapIds(): number[] {
   return Array.from({ length: SITEMAP_PRODUCT_SHARD_COUNT + 1 }, (_, id) => id)
 }
 
+interface SitemapCatalogRow {
+  slug: string | null
+  category_slug: string | null
+  source: string | null
+  lead_type: string | null
+  supplier_sku: string | null
+  supplier_product_id: string | null
+}
+
 /**
  * Read one product sitemap shard by UUID range. No OFFSET and no global count.
  *
- * An exact COUNT used to be requested together with every shard. On the current
- * large Free-plan catalog that COUNT can exceed the database statement timeout
- * during `next build`, even though each UUID bucket contains only a few hundred
- * rows. A limit+1 sentinel preserves the same overflow safety in one snapshot
- * without forcing PostgreSQL to count every matching row in the bucket.
+ * The public RLS policy already restricts anon reads to status='published'. Keep
+ * the database predicate deliberately limited to the UUID primary-key range so
+ * PostgreSQL can use the id index even while the Free-plan catalog is oversized.
+ * The small range result is then filtered in memory with the exact same pure
+ * storefront predicate used elsewhere. This avoids the nested PostgREST OR that
+ * was timing out during `next build` while preserving the public URL boundary.
  */
 export async function getPublishedCatalogSlugsForShard(
   shardId: number,
@@ -89,9 +99,7 @@ export async function getPublishedCatalogSlugsForShard(
 
   let query = client
     .from('catalog_products')
-    .select('slug, category_slug')
-    .eq('status', 'published')
-    .or(STOREFRONT_SCOPE_OR)
+    .select('slug, category_slug, source, lead_type, supplier_sku, supplier_product_id')
     .gte('id', range.lower)
   if (range.upper) query = query.lt('id', range.upper)
 
@@ -103,14 +111,14 @@ export async function getPublishedCatalogSlugsForShard(
     throw new Error(`sitemap shard ${shardId} query failed: ${error.message}`)
   }
 
-  const rows = (data ?? []) as { slug: string | null; category_slug: string | null }[]
+  const rows = (data ?? []) as SitemapCatalogRow[]
   if (rows.length > SITEMAP_SHARD_ROW_LIMIT) {
     throw new Error(
-      `sitemap shard ${shardId} overflow: more than ${SITEMAP_SHARD_ROW_LIMIT} rows; increase shard cardinality before serving this shard`,
+      `sitemap shard ${shardId} overflow: more than ${SITEMAP_SHARD_ROW_LIMIT} published rows; increase shard cardinality before serving this shard`,
     )
   }
 
-  return rows.map((row) => {
+  return rows.filter(isStorefrontProduct).map((row) => {
     if (!row.slug) throw new Error(`sitemap shard ${shardId} contains a published storefront row without a slug`)
     return {
       category: row.category_slug ?? 'all',
