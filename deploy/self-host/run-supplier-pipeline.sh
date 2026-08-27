@@ -7,6 +7,11 @@
 # It is safe for cron use: a non-blocking flock prevents overlapping runs, the
 # CRON_SECRET is loaded only from the protected server env file, and no secret
 # values are printed.
+#
+# Optional recovery mode:
+#   run-supplier-pipeline.sh rrp
+# starts at the named stage without replaying earlier completed stages. The
+# default remains `products`, so the scheduled cron behavior is unchanged.
 
 set -uo pipefail
 
@@ -14,12 +19,14 @@ ROOT="/var/www/dacha-tv"
 ENV_FILE="$ROOT/shared/.env.production"
 LOCK_FILE="$ROOT/shared/supplier-pipeline.lock"
 APP_ORIGIN="http://127.0.0.1:3030"
+START_STAGE="${1:-products}"
 # Production feed is currently ~112k rows. Each bounded sync-products request
 # processes roughly 7k-11k rows after downloading/parsing the full supplier JSON,
 # so the former cap of 6 calls could never drain one full daily cycle. 20 calls
 # keeps the runner bounded while leaving headroom for slower per-call progress.
 MAX_PRODUCT_CALLS=20
 MAX_RRP_CALLS=30
+MAX_STAGE_HTTP_FAILURES=3
 # 112,535 / 300 = 376 calls in the absolute worst case where every supplier
 # row already exists in catalog_products. 400 leaves bounded headroom while the
 # endpoint itself stays memory-safe at the production-proven 300-row batch.
@@ -31,6 +38,27 @@ MAX_IMPORT_CALLS=40
 stamp() { date -u '+%Y-%m-%dT%H:%M:%SZ'; }
 log() { printf '[supplier-pipeline] %s %s\n' "$(stamp)" "$*"; }
 fail() { log "ERROR: $*"; exit 1; }
+
+stage_rank() {
+  case "$1" in
+    products) printf '1' ;;
+    categories) printf '2' ;;
+    rrp) printf '3' ;;
+    existing) printf '4' ;;
+    import) printf '5' ;;
+    publish) printf '6' ;;
+    *) return 1 ;;
+  esac
+}
+
+if ! stage_rank "$START_STAGE" >/dev/null; then
+  fail "invalid start stage '$START_STAGE' (expected products|categories|rrp|existing|import|publish)"
+fi
+
+should_run_stage() {
+  local stage="$1"
+  [ "$(stage_rank "$stage")" -ge "$(stage_rank "$START_STAGE")" ]
+}
 
 command -v curl >/dev/null 2>&1 || fail "curl is required"
 command -v node >/dev/null 2>&1 || fail "node is required"
@@ -86,12 +114,20 @@ run_resumable_stage() {
   local path="$2"
   local max_calls="$3"
   local i body ok complete state_saved resumed next processed
+  local http_failures=0
 
   for ((i=1; i<=max_calls; i++)); do
     log "$label call $i/$max_calls"
     if ! body="$(call_api "$path")"; then
-      fail "$label HTTP request failed"
+      http_failures=$((http_failures + 1))
+      if [ "$http_failures" -ge "$MAX_STAGE_HTTP_FAILURES" ]; then
+        fail "$label HTTP request failed $http_failures consecutive times"
+      fi
+      log "WARNING: $label HTTP request failed ($http_failures/$MAX_STAGE_HTTP_FAILURES); retrying from durable cursor"
+      sleep $((http_failures * 3))
+      continue
     fi
+    http_failures=0
 
     ok="$(printf '%s' "$body" | json_field ok)" || fail "$label returned invalid JSON"
     complete="$(printf '%s' "$body" | json_field cycleComplete)" || fail "$label returned invalid JSON"
@@ -176,45 +212,58 @@ run_import_stage() {
 }
 
 log "starting full supplier pipeline"
+log "start stage=$START_STAGE"
 health_check || fail "pre-flight health check failed"
 
 # 1. Finish the full base-price/stock feed first. This also refreshes
 # supplier_categories from the same Personal.cab response.
-run_resumable_stage "base products" "/api/admin/cron/sync-products" "$MAX_PRODUCT_CALLS"
+if should_run_stage "products"; then
+  run_resumable_stage "base products" "/api/admin/cron/sync-products" "$MAX_PRODUCT_CALLS"
+fi
 
 # 2. Reconcile/publish categories after products, so any categories extracted
 # from today's product feed are available to today's catalog import.
-log "categories reconciliation"
-if category_body="$(call_api '/api/admin/cron/sync-categories')"; then
-  category_ok="$(printf '%s' "$category_body" | json_field ok)" || category_ok="false"
-  if [ "$category_ok" = "true" ]; then
-    log "categories reconciliation complete"
+if should_run_stage "categories"; then
+  log "categories reconciliation"
+  if category_body="$(call_api '/api/admin/cron/sync-categories')"; then
+    category_ok="$(printf '%s' "$category_body" | json_field ok)" || category_ok="false"
+    if [ "$category_ok" = "true" ]; then
+      log "categories reconciliation complete"
+    else
+      # Categories are intentionally non-blocking for price/stock freshness; the
+      # endpoint itself isolates its sub-stages. Record the warning and continue.
+      log "WARNING: categories reconciliation reported ok=${category_ok:-unknown}; continuing supplier price pipeline"
+    fi
   else
-    # Categories are intentionally non-blocking for price/stock freshness; the
-    # endpoint itself isolates its sub-stages. Record the warning and continue.
-    log "WARNING: categories reconciliation reported ok=${category_ok:-unknown}; continuing supplier price pipeline"
+    log "WARNING: categories reconciliation HTTP request failed; continuing supplier price pipeline"
   fi
-else
-  log "WARNING: categories reconciliation HTTP request failed; continuing supplier price pipeline"
 fi
 
 # 3. Only after base cost/stock is current, refresh official retail prices.
-run_resumable_stage "official RRP" "/api/admin/cron/refresh-rrp" "$MAX_RRP_CALLS"
+if should_run_stage "rrp"; then
+  run_resumable_stage "official RRP" "/api/admin/cron/refresh-rrp" "$MAX_RRP_CALLS"
+fi
 
 # 4. Drain the large EXISTING supplier -> catalog queue without repeatedly
 # invoking the genuinely-new-SKU scanner on every small memory-safe batch.
-run_existing_catalog_refresh_stage
+if should_run_stage "existing"; then
+  run_existing_catalog_refresh_stage
+fi
 
 # 5. With existing rows already current, finish genuinely-new SKU handling.
 # Under the current publication cap this normally terminates in one call; if the
 # cap is later raised, the endpoint's own bounded new-insert path can still loop.
-run_import_stage
+if should_run_stage "import"; then
+  run_import_stage
+fi
 
-log "publish products"
-publish_body="$(call_api '/api/admin/cron/publish-products')" || fail "publish-products HTTP request failed"
-publish_ok="$(printf '%s' "$publish_body" | json_field ok)" || fail "publish-products returned invalid JSON"
-[ "$publish_ok" = "true" ] || fail "publish-products reported ok=$publish_ok"
-log "publish products complete"
+if should_run_stage "publish"; then
+  log "publish products"
+  publish_body="$(call_api '/api/admin/cron/publish-products')" || fail "publish-products HTTP request failed"
+  publish_ok="$(printf '%s' "$publish_body" | json_field ok)" || fail "publish-products returned invalid JSON"
+  [ "$publish_ok" = "true" ] || fail "publish-products reported ok=$publish_ok"
+  log "publish products complete"
+fi
 
 health_check || fail "final health check failed"
 log "supplier pipeline complete"
