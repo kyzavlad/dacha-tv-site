@@ -40,8 +40,8 @@ test('supplier stages run in the required economic and data-integrity order', ()
   const products = orchestration.indexOf('run_resumable_stage "base products"')
   const categories = orchestration.indexOf("call_api '/api/admin/cron/sync-categories'")
   const rrp = orchestration.indexOf('run_resumable_stage "official RRP"')
-  const existing = orchestration.indexOf('\nrun_existing_catalog_refresh_stage\n')
-  const imported = orchestration.indexOf('\nrun_import_stage\n')
+  const existing = orchestration.indexOf('\n  run_existing_catalog_refresh_stage\n')
+  const imported = orchestration.indexOf('\n  run_import_stage\n')
   const published = orchestration.indexOf("call_api '/api/admin/cron/publish-products'")
 
   for (const [name, index] of Object.entries({ products, categories, rrp, existing, imported, published })) {
@@ -62,6 +62,22 @@ test('resumable product and RRP stages require persisted completion before advan
   assert.match(runner, /\[ "\$complete" = "true" \]/)
   assert.match(runner, /MAX_PRODUCT_CALLS=20/)
   assert.match(runner, /MAX_RRP_CALLS=30/)
+})
+
+test('manual recovery can start from RRP without replaying completed product stages', () => {
+  assert.match(runner, /START_STAGE="\$\{1:-products\}"/)
+  assert.match(runner, /products\) printf '1'/)
+  assert.match(runner, /rrp\) printf '3'/)
+  assert.match(runner, /should_run_stage "products"/)
+  assert.match(runner, /should_run_stage "rrp"/)
+  assert.match(runner, /start stage=\$START_STAGE/)
+})
+
+test('resumable stages retry transient HTTP failures from the durable cursor', () => {
+  assert.match(runner, /MAX_STAGE_HTTP_FAILURES=3/)
+  assert.match(runner, /http_failures=\$\(\(http_failures \+ 1\)\)/)
+  assert.match(runner, /retrying from durable cursor/)
+  assert.match(runner, /HTTP request failed \$http_failures consecutive times/)
 })
 
 test('existing catalog refresh has enough bounded calls for the full 112k queue', () => {
