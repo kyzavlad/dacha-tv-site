@@ -97,12 +97,13 @@ test('UUID range boundaries cover the full space without gaps or overlaps', () =
   assert.equal(ranges.at(-1).upper, null)
 })
 
-test('product sitemap queries are range-bounded, single-snapshot, overflow-guarded and fail loudly', () => {
+test('product sitemap queries are range-bounded, one-snapshot lookahead, overflow-guarded and fail loudly', () => {
   assert.match(shardSrc, /\.gte\('id', range\.lower\)/)
-  assert.match(shardSrc, /select\('slug, category_slug', \{ count: 'exact' \}\)/)
-  assert.ok(!shardSrc.includes('head: true'), 'count and rows must come from one PostgREST statement/snapshot')
-  assert.match(shardSrc, /count > SITEMAP_SHARD_ROW_LIMIT/)
-  assert.match(shardSrc, /rows\.length !== count/)
+  assert.match(shardSrc, /\.select\('slug, category_slug'\)/)
+  assert.ok(!shardSrc.includes("count: 'exact'"), 'sitemap shards must not run exact counts against the large catalog')
+  assert.ok(!shardSrc.includes('head: true'), 'sitemap overflow detection must stay in the rows query')
+  assert.match(shardSrc, /\.limit\(SITEMAP_SHARD_ROW_LIMIT \+ 1\)/)
+  assert.match(shardSrc, /rows\.length > SITEMAP_SHARD_ROW_LIMIT/)
   assert.match(shardSrc, /row\.category_slug \?\? 'all'/)
   assert.ok(!shardSrc.includes('.range(offset'))
 
