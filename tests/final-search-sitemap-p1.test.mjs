@@ -81,6 +81,11 @@ test('UUID sitemap partition exposes exactly shard 0 plus 512 product shards', (
   assert.deepEqual(ids, Array.from({ length: 513 }, (_, i) => i))
 })
 
+test('sitemap is request-time so releases never prerender 512 remote catalog shards', () => {
+  assert.match(sitemapSrc, /export const dynamic = 'force-dynamic'/)
+  assert.ok(!sitemapSrc.includes('export const revalidate ='), 'force-dynamic sitemap must not imply build-time or ISR catalog traversal')
+})
+
 test('UUID range boundaries cover the full space without gaps or overlaps', () => {
   assert.equal(sitemapUuidBoundary(0), '00000000-0000-0000-0000-000000000000')
   assert.equal(sitemapUuidBoundary(1), '00800000-0000-0000-0000-000000000000')
