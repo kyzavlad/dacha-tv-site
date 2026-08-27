@@ -10,9 +10,12 @@ import { SCOOTER_GUIDE_SLUGS } from '@/lib/moto/scooter-guides'
 
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.dachatv.com'
 
-// Refresh hourly so nightly-cron catalog changes reach the sitemap without a
-// redeploy (a plain sitemap.ts is otherwise cached at build time).
-export const revalidate = 3600
+// Do not prerender 512 live-catalog shards during `next build`. The production
+// catalog is intentionally large and lives on Supabase Free; making hundreds of
+// database reads concurrently at build time can exhaust its statement budget and
+// block an otherwise healthy release. Keep sitemap generation request-time so a
+// release never depends on walking the whole remote catalog.
+export const dynamic = 'force-dynamic'
 
 // Deterministic sharding: shard 0 carries static/non-catalog/category URLs;
 // product shards 1..512 each own one equal UUID address-space range. This needs

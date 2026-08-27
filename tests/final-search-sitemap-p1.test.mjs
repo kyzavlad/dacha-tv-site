@@ -81,6 +81,11 @@ test('UUID sitemap partition exposes exactly shard 0 plus 512 product shards', (
   assert.deepEqual(ids, Array.from({ length: 513 }, (_, i) => i))
 })
 
+test('sitemap is request-time so releases never prerender 512 remote catalog shards', () => {
+  assert.match(sitemapSrc, /export const dynamic = 'force-dynamic'/)
+  assert.ok(!sitemapSrc.includes('export const revalidate ='), 'force-dynamic sitemap must not imply build-time or ISR catalog traversal')
+})
+
 test('UUID range boundaries cover the full space without gaps or overlaps', () => {
   assert.equal(sitemapUuidBoundary(0), '00000000-0000-0000-0000-000000000000')
   assert.equal(sitemapUuidBoundary(1), '00800000-0000-0000-0000-000000000000')
@@ -97,12 +102,15 @@ test('UUID range boundaries cover the full space without gaps or overlaps', () =
   assert.equal(ranges.at(-1).upper, null)
 })
 
-test('product sitemap queries are range-bounded, single-snapshot, overflow-guarded and fail loudly', () => {
+test('product sitemap queries stay on the UUID index and filter storefront scope in memory', () => {
   assert.match(shardSrc, /\.gte\('id', range\.lower\)/)
-  assert.match(shardSrc, /select\('slug, category_slug', \{ count: 'exact' \}\)/)
-  assert.ok(!shardSrc.includes('head: true'), 'count and rows must come from one PostgREST statement/snapshot')
-  assert.match(shardSrc, /count > SITEMAP_SHARD_ROW_LIMIT/)
-  assert.match(shardSrc, /rows\.length !== count/)
+  assert.match(shardSrc, /\.select\('slug, category_slug, source, lead_type, supplier_sku, supplier_product_id'\)/)
+  assert.ok(!shardSrc.includes("count: 'exact'"), 'sitemap shards must not run exact counts against the large catalog')
+  assert.ok(!shardSrc.includes('.or(STOREFRONT_SCOPE_OR)'), 'nested storefront OR must not be pushed into the hot UUID-range query')
+  assert.ok(!shardSrc.includes(".eq('status', 'published')"), 'published visibility is already enforced by anon RLS')
+  assert.match(shardSrc, /\.limit\(SITEMAP_SHARD_ROW_LIMIT \+ 1\)/)
+  assert.match(shardSrc, /rows\.length > SITEMAP_SHARD_ROW_LIMIT/)
+  assert.match(shardSrc, /rows\.filter\(isStorefrontProduct\)\.map/)
   assert.match(shardSrc, /row\.category_slug \?\? 'all'/)
   assert.ok(!shardSrc.includes('.range(offset'))
 
