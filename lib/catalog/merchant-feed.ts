@@ -1,4 +1,4 @@
-export const MERCHANT_FEED_ORIGIN = 'https://www.dachatv.com'
+export const MERCHANT_FEED_ORIGIN = 'https://dachatv.com'
 export const MERCHANT_INITIAL_FEED_LIMIT = 500
 
 export interface MerchantCatalogRow {

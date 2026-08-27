@@ -23,6 +23,10 @@ function getApiConfig() {
 // a controlled, clearly-labeled error instead of letting an AbortError leak
 // to the caller unlabeled.
 const DEFAULT_SUPPLIER_TIMEOUT_MS = 15000
+// The full JSON product payload is ~29 MB and was measured at 19.5s in production.
+// Give only that heavyweight call enough headroom while keeping all lightweight
+// supplier endpoints on the tighter 15s default and staying below the 60s route budget.
+const GET_PRODUCTS_SUPPLIER_TIMEOUT_MS = 35000
 
 async function timedFetch(url: string, init: RequestInit, method: string, timeoutMs: number): Promise<Response> {
   try {
@@ -969,7 +973,7 @@ export async function syncSupplierProducts(options?: {
     if (options?.categoryId) extra.category_id = options.categoryId
     if (options?.page) extra.page = String(options.page)
 
-    const { raw, safeUrl, httpStatus, topLevelKeys } = await apiFetch('get_products', extra)
+    const { raw, safeUrl, httpStatus, topLevelKeys } = await apiFetch('get_products', extra, GET_PRODUCTS_SUPPLIER_TIMEOUT_MS)
     const allProducts = extractProducts(raw)
     const rootCurrency = extractRootCurrency(raw)
     const totalInFeed = allProducts.length
