@@ -72,8 +72,10 @@ test('manual recovery can start from RRP without replaying completed product sta
   assert.match(runner, /START_STAGE="\$\{1:-products\}"/)
   assert.match(runner, /products\) printf '1'/)
   assert.match(runner, /rrp\) printf '3'/)
+  assert.match(runner, /existing\) printf '4'/)
   assert.match(runner, /should_run_stage "products"/)
   assert.match(runner, /should_run_stage "rrp"/)
+  assert.match(runner, /should_run_stage "existing"/)
   assert.match(runner, /start stage=\$START_STAGE/)
 })
 
@@ -84,9 +86,16 @@ test('resumable stages retry transient HTTP failures from the durable cursor', (
   assert.match(runner, /HTTP request failed \$http_failures consecutive times/)
 })
 
-test('existing catalog refresh has enough bounded calls for the full 112k queue', () => {
+test('existing catalog refresh keeps full queue capacity while applying DB backpressure', () => {
   assert.match(runner, /MAX_CATALOG_REFRESH_CALLS=400/)
+  assert.match(runner, /CATALOG_REFRESH_SUCCESS_SLEEP_S=2/)
+  assert.match(runner, /CATALOG_REFRESH_RETRY_BASE_SLEEP_S=10/)
+  assert.match(runner, /POST_RRP_DB_COOLDOWN_S=30/)
   assert.match(runner, /\/api\/admin\/cron\/refresh-catalog-existing/)
+  assert.match(runner, /existing catalog refresh HTTP request failed \(\$http_failures\/\$MAX_STAGE_HTTP_FAILURES\)/)
+  assert.match(runner, /retrying the remaining diff queue/)
+  assert.match(runner, /sleep "\$CATALOG_REFRESH_SUCCESS_SLEEP_S"/)
+  assert.match(runner, /cooling \$\{POST_RRP_DB_COOLDOWN_S\}s after RRP writes/)
   assert.match(runner, /json_field done/)
   assert.match(runner, /existing catalog refresh drained/)
   assert.match(runner, /fail "existing catalog refresh did not drain/)
