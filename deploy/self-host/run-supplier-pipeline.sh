@@ -18,6 +18,7 @@ set -uo pipefail
 ROOT="/var/www/dacha-tv"
 ENV_FILE="$ROOT/shared/.env.production"
 LOCK_FILE="$ROOT/shared/supplier-pipeline.lock"
+RRP_CACHE_FILE="$ROOT/shared/supplier-rrp-cache.json"
 APP_ORIGIN="http://127.0.0.1:3030"
 APP_NAME="dacha-tv"
 START_STAGE="${1:-products}"
@@ -26,13 +27,18 @@ START_STAGE="${1:-products}"
 # so the former cap of 6 calls could never drain one full daily cycle. 20 calls
 # keeps the runner bounded while leaving headroom for slower per-call progress.
 MAX_PRODUCT_CALLS=20
-MAX_RRP_CALLS=30
+# RRP uses 1k-row DB batches because the former 5k-row RPC exceeded the
+# function's 30s PostgreSQL statement timeout. One local feed snapshot is reused
+# across calls, so raising the bounded call count does NOT redownload Personal.cab.
+MAX_RRP_CALLS=120
+RRP_BATCH_SIZE=1000
+RRP_STAGE_MAX_MILLIS=45000
+RRP_CACHE_FETCH_TIMEOUT_S=70
 MAX_STAGE_HTTP_FAILURES=3
 # The full Personal.cab JSON expands substantially in Node memory. Production
-# showed the Next process reaching ~600 MB after repeated feed calls while PM2's
-# configured safety ceiling is 450 MB. Proactively recycle between heavy calls
-# once RSS reaches 350 MB, when no request is in flight, instead of letting PM2
-# restart the app unpredictably during the next supplier request.
+# showed the Next process reaching >800 MB during repeated full-feed calls.
+# Proactively recycle between heavy calls once RSS reaches 350 MB, when no
+# request is in flight, instead of letting PM2 restart the app unpredictably.
 MEMORY_RECYCLE_KB=350000
 ACTIVE_RUN_RETRY_SLEEP_S=55
 # 112,535 / 300 = 376 calls in the absolute worst case where every supplier
@@ -104,6 +110,77 @@ json_field() {
       process.exit(2);
     }
   ' "$field"
+}
+
+validate_rrp_cache() {
+  local file="$1"
+  node - "$file" <<'NODE'
+const fs = require('fs')
+const file = process.argv[2]
+try {
+  const raw = JSON.parse(fs.readFileSync(file, 'utf8'))
+  let products = null
+  if (Array.isArray(raw)) products = raw
+  else if (raw && typeof raw === 'object') {
+    for (const key of ['products', 'tovar', 'data', 'items', 'result', 'results', 'list', 'goods']) {
+      if (Array.isArray(raw[key])) { products = raw[key]; break }
+    }
+    if (!products) {
+      const values = Object.values(raw)
+      if (values.length > 0 && values[0] && typeof values[0] === 'object') products = values
+    }
+  }
+  if (!Array.isArray(products) || products.length === 0) process.exit(2)
+  process.stdout.write(String(products.length))
+} catch (_) {
+  process.exit(2)
+}
+NODE
+}
+
+ensure_rrp_cache() {
+  local count tmp
+
+  if [ -s "$RRP_CACHE_FILE" ]; then
+    count="$(validate_rrp_cache "$RRP_CACHE_FILE" 2>/dev/null)" || count=""
+    if [[ "$count" =~ ^[0-9]+$ ]] && [ "$count" -gt 0 ]; then
+      log "official RRP cache ready from existing recovery snapshot: products=$count"
+      return 0
+    fi
+    log "WARNING: existing RRP cache is invalid; replacing it atomically"
+    rm -f "$RRP_CACHE_FILE"
+  fi
+
+  [ -n "${SUPPLIER_API_URL:-}" ] || fail "SUPPLIER_API_URL is missing"
+  [ -n "${SUPPLIER_API_KEY:-}" ] || fail "SUPPLIER_API_KEY is missing"
+
+  tmp="${RRP_CACHE_FILE}.tmp.$$"
+  rm -f "$tmp"
+  log "prefetching one official RRP feed snapshot"
+  if ! curl -LfsS \
+      --retry 2 \
+      --retry-all-errors \
+      --retry-delay 3 \
+      --max-time "$RRP_CACHE_FETCH_TIMEOUT_S" \
+      -G "${SUPPLIER_API_URL%/}" \
+      --data-urlencode "key=$SUPPLIER_API_KEY" \
+      --data-urlencode "method=get_products" \
+      --data-urlencode "type=json" \
+      --data-urlencode "rrp=on" \
+      -o "$tmp"; then
+    rm -f "$tmp"
+    fail "official RRP cache prefetch failed"
+  fi
+
+  chmod 600 "$tmp" || { rm -f "$tmp"; fail "cannot secure official RRP cache"; }
+  count="$(validate_rrp_cache "$tmp" 2>/dev/null)" || count=""
+  if ! [[ "$count" =~ ^[0-9]+$ ]] || [ "$count" -le 0 ]; then
+    rm -f "$tmp"
+    fail "official RRP cache validation failed"
+  fi
+
+  mv -f "$tmp" "$RRP_CACHE_FILE" || { rm -f "$tmp"; fail "cannot install official RRP cache"; }
+  log "official RRP cache downloaded once: products=$count"
 }
 
 call_api() {
@@ -290,8 +367,17 @@ if should_run_stage "categories"; then
 fi
 
 # 3. Only after base cost/stock is current, refresh official retail prices.
+# The runner downloads one stable snapshot once and the route reuses it for
+# every small database batch. A failed recovery keeps the same snapshot so the
+# durable offset always refers to the exact same feed ordering.
 if should_run_stage "rrp"; then
-  run_resumable_stage "official RRP" "/api/admin/cron/refresh-rrp" "$MAX_RRP_CALLS"
+  ensure_rrp_cache
+  run_resumable_stage \
+    "official RRP" \
+    "/api/admin/cron/refresh-rrp?batchSize=${RRP_BATCH_SIZE}&maxBatches=1&maxMillis=${RRP_STAGE_MAX_MILLIS}" \
+    "$MAX_RRP_CALLS"
+  rm -f "$RRP_CACHE_FILE"
+  log "official RRP cache removed after completed cycle"
 fi
 
 # 4. Drain the large EXISTING supplier -> catalog queue without repeatedly
