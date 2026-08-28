@@ -19,6 +19,7 @@ ROOT="/var/www/dacha-tv"
 ENV_FILE="$ROOT/shared/.env.production"
 LOCK_FILE="$ROOT/shared/supplier-pipeline.lock"
 RRP_CACHE_FILE="$ROOT/shared/supplier-rrp-cache.json"
+RRP_CACHE_RESET_MARKER="$ROOT/shared/supplier-rrp-cache.needs-reset"
 APP_ORIGIN="http://127.0.0.1:3030"
 APP_NAME="dacha-tv"
 START_STAGE="${1:-products}"
@@ -148,7 +149,7 @@ ensure_rrp_cache() {
       return 0
     fi
     log "WARNING: existing RRP cache is invalid; replacing it atomically"
-    rm -f "$RRP_CACHE_FILE"
+    rm -f "$RRP_CACHE_FILE" "$RRP_CACHE_RESET_MARKER"
   fi
 
   [ -n "${SUPPLIER_API_URL:-}" ] || fail "SUPPLIER_API_URL is missing"
@@ -180,6 +181,14 @@ ensure_rrp_cache() {
   fi
 
   mv -f "$tmp" "$RRP_CACHE_FILE" || { rm -f "$tmp"; fail "cannot install official RRP cache"; }
+  if ! : > "$RRP_CACHE_RESET_MARKER"; then
+    rm -f "$RRP_CACHE_FILE" "$RRP_CACHE_RESET_MARKER"
+    fail "cannot mark new official RRP cache for cursor reset"
+  fi
+  chmod 600 "$RRP_CACHE_RESET_MARKER" || {
+    rm -f "$RRP_CACHE_FILE" "$RRP_CACHE_RESET_MARKER"
+    fail "cannot secure official RRP cache reset marker"
+  }
   log "official RRP cache downloaded once: products=$count"
 }
 
@@ -372,11 +381,26 @@ fi
 # durable offset always refers to the exact same feed ordering.
 if should_run_stage "rrp"; then
   ensure_rrp_cache
+
+  # A fresh snapshot is a new ordering boundary. Keep a crash-safe sidecar
+  # marker until the old durable cursor has been reset. If the runner dies after
+  # download but before reset, the marker survives and the next run completes
+  # the reset before applying any rows. Existing recovery snapshots have no
+  # marker after their reset and therefore resume normally.
+  if [ -f "$RRP_CACHE_RESET_MARKER" ]; then
+    log "new official RRP snapshot requires durable cursor reset"
+    reset_body="$(call_api '/api/admin/cron/refresh-rrp?reset=1')" || fail "official RRP durable cursor reset HTTP request failed"
+    reset_ok="$(printf '%s' "$reset_body" | json_field ok)" || fail "official RRP durable cursor reset returned invalid JSON"
+    [ "$reset_ok" = "true" ] || fail "official RRP durable cursor reset reported ok=$reset_ok"
+    rm -f "$RRP_CACHE_RESET_MARKER"
+    log "official RRP durable cursor reset for new snapshot"
+  fi
+
   run_resumable_stage \
     "official RRP" \
     "/api/admin/cron/refresh-rrp?batchSize=${RRP_BATCH_SIZE}&maxBatches=1&maxMillis=${RRP_STAGE_MAX_MILLIS}" \
     "$MAX_RRP_CALLS"
-  rm -f "$RRP_CACHE_FILE"
+  rm -f "$RRP_CACHE_FILE" "$RRP_CACHE_RESET_MARKER"
   log "official RRP cache removed after completed cycle"
 fi
 
