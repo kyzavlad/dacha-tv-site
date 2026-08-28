@@ -43,12 +43,26 @@ test('already-running auto product calls return before durable cursor persistenc
   assert.doesNotMatch(busyBlock, /saveSyncState\(/)
 })
 
-test('official RRP fetch has measured headroom and bounds body parsing', () => {
+test('official RRP fallback fetch has measured headroom and bounds body parsing', () => {
   assert.match(rrp, /const SUPPLIER_TIMEOUT_MS = 52_000/)
   const tryStart = rrp.indexOf('try {', rrp.indexOf('async function loadOfficialRrpFeed'))
   const jsonRead = rrp.indexOf('const raw = await response.json()', tryStart)
   const catchStart = rrp.indexOf('} catch (error) {', tryStart)
   assert.ok(tryStart >= 0 && jsonRead > tryStart && catchStart > jsonRead, 'response.json() must remain inside the timeout-protected try/catch')
+})
+
+test('RRP recovery downloads one stable snapshot and uses small DB-safe slices', () => {
+  assert.match(rrp, /const DEFAULT_BATCH_SIZE = 1_000/)
+  assert.match(rrp, /supplier-rrp-cache\.json/)
+  assert.match(rrp, /readFile\(RRP_CACHE_FILE, 'utf8'\)/)
+  assert.match(rrp, /safeUrl: 'local-rrp-cache'/)
+  assert.match(runner, /RRP_CACHE_FILE="\$ROOT\/shared\/supplier-rrp-cache\.json"/)
+  assert.match(runner, /MAX_RRP_CALLS=120/)
+  assert.match(runner, /RRP_BATCH_SIZE=1000/)
+  assert.match(runner, /ensure_rrp_cache/)
+  assert.match(runner, /prefetching one official RRP feed snapshot/)
+  assert.match(runner, /batchSize=\$\{RRP_BATCH_SIZE\}/)
+  assert.match(runner, /rm -f "\$RRP_CACHE_FILE"/)
 })
 
 test('repository PM2 ceiling matches the production 750 MiB safety limit', () => {
