@@ -1,11 +1,11 @@
 import { getAdminClient } from '@/lib/supabase/admin'
 import { extractRootCurrency, resolvePriceUah } from '@/lib/supplier/sync'
 
-// The full Personal.cab catalog is ~110k products and the documented rrp=on
-// response can legitimately take longer than the generic 15s supplier timeout.
-// Keep this below the route's 60s budget so a slow upstream still fails in a
-// controlled way rather than being killed mid-write.
-const SUPPLIER_TIMEOUT_MS = 40_000
+// The full Personal.cab catalog is ~110k products. Production measurement on
+// 2026-08-28 showed the official rrp=on JSON taking 40.73s for ~29 MiB, so the
+// former 40s timeout rejected a healthy response. Allow measured headroom while
+// still staying below the route's 60s budget and bounding the ENTIRE body read.
+const SUPPLIER_TIMEOUT_MS = 52_000
 const DEFAULT_BATCH_SIZE = 5_000
 const DEFAULT_MAX_BATCHES = 1_000
 const DEFAULT_MAX_MILLIS = 50_000
@@ -100,29 +100,31 @@ async function loadOfficialRrpFeed(): Promise<{
   const fullUrl = `${base}?${params}`
   const safeUrl = `${base}?method=get_products&type=json&rrp=on&key=***`
 
-  let response: Response
   try {
-    response = await fetch(fullUrl, {
+    const response = await fetch(fullUrl, {
       cache: 'no-store',
       headers: { Accept: 'application/json' },
       signal: AbortSignal.timeout(SUPPLIER_TIMEOUT_MS),
     })
+
+    if (!response.ok) {
+      throw new Error(`personal.cab RRP feed → ${response.status} ${response.statusText}`)
+    }
+
+    // Keep body streaming/parsing inside the timeout-protected try. fetch()
+    // resolves after headers, so placing response.json() outside this block let
+    // a stalled 29 MiB body hang until the outer shell curl killed the request.
+    const raw = await response.json()
+    return {
+      products: extractProducts(raw),
+      rootCurrency: extractRootCurrency(raw),
+      safeUrl,
+    }
   } catch (error) {
     if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')) {
       throw new Error(`personal.cab RRP feed timed out after ${SUPPLIER_TIMEOUT_MS}ms`)
     }
     throw error
-  }
-
-  if (!response.ok) {
-    throw new Error(`personal.cab RRP feed → ${response.status} ${response.statusText}`)
-  }
-
-  const raw = await response.json()
-  return {
-    products: extractProducts(raw),
-    rootCurrency: extractRootCurrency(raw),
-    safeUrl,
   }
 }
 
