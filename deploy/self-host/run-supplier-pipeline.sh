@@ -42,11 +42,16 @@ MAX_STAGE_HTTP_FAILURES=3
 # request is in flight, instead of letting PM2 restart the app unpredictably.
 MEMORY_RECYCLE_KB=350000
 ACTIVE_RUN_RETRY_SLEEP_S=55
-# The existing-catalog RPC is set-based and production normally processes 300
-# rows in only a few seconds. The Free DB can transiently cross its 30s statement
-# timeout during write-heavy checkpoints, however, so preserve the 300-row batch
-# and 400-call capacity while adding pacing/retry backpressure around it.
-MAX_CATALOG_REFRESH_CALLS=400
+# Existing-catalog refresh normally drains safely in 300-row set-based batches,
+# but the Free database can temporarily lose enough I/O/maintenance headroom for
+# three consecutive 300-row calls to hit the function's 30s statement timeout.
+# Start at 300, then adapt down to 150 and finally 100 after sustained transport
+# failures. Keep the smaller batch for the rest of that recovery cycle to avoid
+# oscillating under pressure. 1400 calls can still drain the full ~112k queue at
+# the 100-row floor while remaining explicitly bounded.
+MAX_CATALOG_REFRESH_CALLS=1400
+CATALOG_REFRESH_INITIAL_BATCH_SIZE=300
+CATALOG_REFRESH_MIN_BATCH_SIZE=100
 CATALOG_REFRESH_SUCCESS_SLEEP_S=2
 CATALOG_REFRESH_RETRY_BASE_SLEEP_S=10
 POST_RRP_DB_COOLDOWN_S=30
@@ -296,16 +301,33 @@ run_existing_catalog_refresh_stage() {
   local i body ok done processed updated approved
   local http_failures=0
   local retry_sleep
+  local batch_size="$CATALOG_REFRESH_INITIAL_BATCH_SIZE"
+  local next_batch_size
 
   for ((i=1; i<=MAX_CATALOG_REFRESH_CALLS; i++)); do
-    log "existing catalog refresh call $i/$MAX_CATALOG_REFRESH_CALLS"
-    if ! body="$(call_api '/api/admin/cron/refresh-catalog-existing')"; then
+    log "existing catalog refresh call $i/$MAX_CATALOG_REFRESH_CALLS batch=${batch_size}"
+    if ! body="$(call_api "/api/admin/cron/refresh-catalog-existing?batchSize=${batch_size}")"; then
       http_failures=$((http_failures + 1))
+
+      if [ "$batch_size" -gt "$CATALOG_REFRESH_MIN_BATCH_SIZE" ]; then
+        if [ "$batch_size" -gt 150 ]; then
+          next_batch_size=150
+        else
+          next_batch_size="$CATALOG_REFRESH_MIN_BATCH_SIZE"
+        fi
+        retry_sleep=$((http_failures * CATALOG_REFRESH_RETRY_BASE_SLEEP_S))
+        log "WARNING: existing catalog refresh HTTP request failed at batch=${batch_size}; reducing batch to ${next_batch_size} and cooling ${retry_sleep}s before retrying the remaining diff queue"
+        batch_size="$next_batch_size"
+        http_failures=0
+        sleep "$retry_sleep"
+        continue
+      fi
+
       if [ "$http_failures" -ge "$MAX_STAGE_HTTP_FAILURES" ]; then
-        fail "existing catalog refresh HTTP request failed $http_failures consecutive times"
+        fail "existing catalog refresh HTTP request failed $http_failures consecutive times at minimum batch=${batch_size}"
       fi
       retry_sleep=$((http_failures * CATALOG_REFRESH_RETRY_BASE_SLEEP_S))
-      log "WARNING: existing catalog refresh HTTP request failed ($http_failures/$MAX_STAGE_HTTP_FAILURES); cooling ${retry_sleep}s before retrying the remaining diff queue"
+      log "WARNING: existing catalog refresh HTTP request failed ($http_failures/$MAX_STAGE_HTTP_FAILURES) at minimum batch=${batch_size}; cooling ${retry_sleep}s before retrying the remaining diff queue"
       sleep "$retry_sleep"
       continue
     fi
@@ -317,7 +339,7 @@ run_existing_catalog_refresh_stage() {
     updated="$(printf '%s' "$body" | json_field updated)" || true
     approved="$(printf '%s' "$body" | json_field approved)" || true
 
-    log "existing catalog refresh ok=${ok:-unknown} done=${done:-unknown} processed=${processed:-n/a} updated=${updated:-n/a} approved=${approved:-n/a}"
+    log "existing catalog refresh ok=${ok:-unknown} done=${done:-unknown} batch=${batch_size} processed=${processed:-n/a} updated=${updated:-n/a} approved=${approved:-n/a}"
 
     [ "$ok" = "true" ] || fail "existing catalog refresh reported ok=$ok"
     if [ "$done" = "true" ]; then
