@@ -86,13 +86,19 @@ test('resumable stages retry transient HTTP failures from the durable cursor', (
   assert.match(runner, /HTTP request failed \$http_failures consecutive times/)
 })
 
-test('existing catalog refresh keeps full queue capacity while applying DB backpressure', () => {
-  assert.match(runner, /MAX_CATALOG_REFRESH_CALLS=400/)
+test('existing catalog refresh adapts batch size under sustained Free DB pressure', () => {
+  assert.match(runner, /MAX_CATALOG_REFRESH_CALLS=1400/)
+  assert.match(runner, /CATALOG_REFRESH_INITIAL_BATCH_SIZE=300/)
+  assert.match(runner, /CATALOG_REFRESH_MIN_BATCH_SIZE=100/)
   assert.match(runner, /CATALOG_REFRESH_SUCCESS_SLEEP_S=2/)
   assert.match(runner, /CATALOG_REFRESH_RETRY_BASE_SLEEP_S=10/)
   assert.match(runner, /POST_RRP_DB_COOLDOWN_S=30/)
-  assert.match(runner, /\/api\/admin\/cron\/refresh-catalog-existing/)
-  assert.match(runner, /existing catalog refresh HTTP request failed \(\$http_failures\/\$MAX_STAGE_HTTP_FAILURES\)/)
+  assert.match(runner, /batch_size="\$CATALOG_REFRESH_INITIAL_BATCH_SIZE"/)
+  assert.match(runner, /refresh-catalog-existing\?batchSize=\$\{batch_size\}/)
+  assert.match(runner, /next_batch_size=150/)
+  assert.match(runner, /next_batch_size="\$CATALOG_REFRESH_MIN_BATCH_SIZE"/)
+  assert.match(runner, /reducing batch to \$\{next_batch_size\}/)
+  assert.match(runner, /at minimum batch=\$\{batch_size\}/)
   assert.match(runner, /retrying the remaining diff queue/)
   assert.match(runner, /sleep "\$CATALOG_REFRESH_SUCCESS_SLEEP_S"/)
   assert.match(runner, /cooling \$\{POST_RRP_DB_COOLDOWN_S\}s after RRP writes/)
