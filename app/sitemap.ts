@@ -1,4 +1,5 @@
 import type { MetadataRoute } from 'next'
+import { unstable_cache } from 'next/cache'
 import { getAllHoneySlugs, getAllFlowerSlugs, getAllApiaryProductSlugs, getAllBeekeeperSlugs, getAllServiceSlugs } from '@/lib/supabase/queries'
 import { getPublishedCategories } from '@/lib/supabase/catalog'
 import {
@@ -8,19 +9,26 @@ import {
 } from '@/lib/catalog/sitemap-shards'
 import { SCOOTER_GUIDE_SLUGS } from '@/lib/moto/scooter-guides'
 
-const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.dachatv.com'
+// Dacha TV has one canonical public origin. Do not let a stale environment value
+// re-introduce the www/non-www split that Merchant Center already surfaced.
+const BASE_URL = 'https://dachatv.com'
+const PRODUCT_SITEMAP_CACHE_SECONDS = 6 * 60 * 60
 
-// Do not prerender 512 live-catalog shards during `next build`. The production
-// catalog is intentionally large and lives on Supabase Free; making hundreds of
-// database reads concurrently at build time can exhaust its statement budget and
-// block an otherwise healthy release. Keep sitemap generation request-time so a
-// release never depends on walking the whole remote catalog.
+// Do not prerender live-catalog shards during `next build`. The production
+// catalog is intentionally large and lives on Supabase Free. Product shard data
+// is fetched on demand, cached for six hours, and its DB reads are concurrency-
+// limited inside sitemap-shards.ts so crawler bursts cannot starve write syncs.
 export const dynamic = 'force-dynamic'
 
+const getCachedPublishedCatalogSlugsForShard = unstable_cache(
+  async (id: number) => getPublishedCatalogSlugsForShard(id),
+  ['published-product-sitemap-shard-v3'],
+  { revalidate: PRODUCT_SITEMAP_CACHE_SECONDS },
+)
+
 // Deterministic sharding: shard 0 carries static/non-catalog/category URLs;
-// product shards 1..512 each own one equal UUID address-space range. This needs
-// neither a global COUNT nor OFFSET pagination, so the final shard stays as cheap
-// as the first one even when the catalog grows.
+// product shards own equal UUID address-space ranges. The small fixed index does
+// not require a global COUNT and keeps crawler fan-out bounded.
 export async function generateSitemaps(): Promise<{ id: number }[]> {
   return getAllSitemapIds().map((id) => ({ id }))
 }
@@ -93,7 +101,7 @@ export default async function sitemap(props: { id: Promise<string> }): Promise<M
   // Product shard errors are intentionally NOT converted to []: a DB failure or
   // future bucket overflow must be observable, never a misleading HTTP-200 empty
   // sitemap that quietly drops catalog URLs.
-  const slugs = await getPublishedCatalogSlugsForShard(id)
+  const slugs = await getCachedPublishedCatalogSlugsForShard(id)
   return slugs.map(({ category, product }) => ({
     url: `${BASE_URL}/catalog/${category}/${product}`,
     lastModified: new Date(),
