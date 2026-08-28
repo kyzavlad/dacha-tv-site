@@ -7,12 +7,12 @@
 #
 # Why 503: this is explicitly temporary load shedding. It asks crawlers to retry
 # later instead of presenting a permanent block. Googlebot is intentionally NOT
-# matched. Current production access logs identified the four agents below as
+# matched. Current production access logs identified the agents below as
 # concurrent catalog crawlers during the incident.
 #
 # `if` + immediate `return` is the safe Nginx if-use case: no rewrites, proxy
 # mutations or nested location logic are performed.
 
-if ($http_user_agent ~* "(SemrushBot|PetalBot|meta-externalagent|bingbot)") {
+if ($http_user_agent ~* "(SemrushBot|PetalBot|meta-externalagent|bingbot|Bytespider)") {
   return 503;
 }
