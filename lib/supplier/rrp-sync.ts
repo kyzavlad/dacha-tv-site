@@ -1,14 +1,19 @@
+import { readFile } from 'node:fs/promises'
 import { getAdminClient } from '@/lib/supabase/admin'
 import { extractRootCurrency, resolvePriceUah } from '@/lib/supplier/sync'
 
 // The full Personal.cab catalog is ~110k products. Production measurement on
 // 2026-08-28 showed the official rrp=on JSON taking 40.73s for ~29 MiB, so the
-// former 40s timeout rejected a healthy response. Allow measured headroom while
-// still staying below the route's 60s budget and bounding the ENTIRE body read.
+// former 40s timeout rejected a healthy response. Allow measured headroom for
+// direct/fallback fetches while bounding the ENTIRE body read.
 const SUPPLIER_TIMEOUT_MS = 52_000
-const DEFAULT_BATCH_SIZE = 5_000
+// A 5k-row apply_supplier_rrp_batch exceeded its 30s PostgreSQL statement
+// timeout after the ~40s upstream download. Keep database writes deliberately
+// smaller; the self-host runner reuses one local feed snapshot across calls.
+const DEFAULT_BATCH_SIZE = 1_000
 const DEFAULT_MAX_BATCHES = 1_000
-const DEFAULT_MAX_MILLIS = 50_000
+const DEFAULT_MAX_MILLIS = 45_000
+const RRP_CACHE_FILE = process.env.SUPPLIER_RRP_CACHE_FILE?.trim() || '/var/www/dacha-tv/shared/supplier-rrp-cache.json'
 
 interface RpcError {
   message: string
@@ -85,11 +90,44 @@ function parseRpcCounts(data: unknown): { supplierUpdated: number; catalogUpdate
   }
 }
 
+async function loadCachedRrpFeed(): Promise<{
+  products: unknown[]
+  rootCurrency: number | null
+  safeUrl: string
+} | null> {
+  try {
+    const text = await readFile(RRP_CACHE_FILE, 'utf8')
+    const raw = JSON.parse(text) as unknown
+    const products = extractProducts(raw)
+    if (products.length === 0) {
+      throw new Error('cached RRP feed contains 0 products')
+    }
+    return {
+      products,
+      rootCurrency: extractRootCurrency(raw),
+      safeUrl: 'local-rrp-cache',
+    }
+  } catch (error) {
+    const code = (error as { code?: string } | null)?.code
+    if (code === 'ENOENT') return null
+    const message = error instanceof Error ? error.message : String(error)
+    throw new Error(`cached RRP feed could not be read safely: ${message}`)
+  }
+}
+
 async function loadOfficialRrpFeed(): Promise<{
   products: unknown[]
   rootCurrency: number | null
   safeUrl: string
 }> {
+  // On self-host production the shell runner downloads one atomic snapshot and
+  // all resumable calls read that exact same file. This avoids downloading and
+  // parsing a 29 MiB upstream response over the network for every 1k-row slice,
+  // and guarantees offsets are applied to one stable feed ordering.
+  const cached = await loadCachedRrpFeed()
+  if (cached) return cached
+
+  // Local development / non-self-host fallback remains supported.
   const { base, key } = getApiConfig()
   const params = new URLSearchParams({
     key,
@@ -138,10 +176,11 @@ async function loadOfficialRrpFeed(): Promise<{
  *   apply_supplier_rrp_batch SQL RPC;
  * - that RPC also propagates RRP to unlocked supplier-owned catalog rows.
  *
- * The feed has no supplier-side pagination, so every invocation downloads it
- * once and processes a bounded slice. `offset` makes the operation resumable.
- * `maxBatches=1` is intended for the first production pilot so only one small
- * window is changed before the resulting prices are audited.
+ * The supplier feed has no supplier-side pagination. On self-host production
+ * the runner downloads one stable local snapshot once, then each invocation
+ * parses that snapshot and processes a small resumable DB slice. `offset`
+ * therefore advances against one canonical feed ordering without repeated
+ * Personal.cab downloads. The HTTP fallback remains for non-self-host use.
  */
 export async function syncSupplierRrpPrices(options?: {
   offset?: number
