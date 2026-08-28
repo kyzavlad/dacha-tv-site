@@ -19,6 +19,7 @@ ROOT="/var/www/dacha-tv"
 ENV_FILE="$ROOT/shared/.env.production"
 LOCK_FILE="$ROOT/shared/supplier-pipeline.lock"
 APP_ORIGIN="http://127.0.0.1:3030"
+APP_NAME="dacha-tv"
 START_STAGE="${1:-products}"
 # Production feed is currently ~112k rows. Each bounded sync-products request
 # processes roughly 7k-11k rows after downloading/parsing the full supplier JSON,
@@ -27,6 +28,13 @@ START_STAGE="${1:-products}"
 MAX_PRODUCT_CALLS=20
 MAX_RRP_CALLS=30
 MAX_STAGE_HTTP_FAILURES=3
+# The full Personal.cab JSON expands substantially in Node memory. Production
+# showed the Next process reaching ~600 MB after repeated feed calls while PM2's
+# configured safety ceiling is 450 MB. Proactively recycle between heavy calls
+# once RSS reaches 350 MB, when no request is in flight, instead of letting PM2
+# restart the app unpredictably during the next supplier request.
+MEMORY_RECYCLE_KB=350000
+ACTIVE_RUN_RETRY_SLEEP_S=55
 # 112,535 / 300 = 376 calls in the absolute worst case where every supplier
 # row already exists in catalog_products. 400 leaves bounded headroom while the
 # endpoint itself stays memory-safe at the production-proven 300-row batch.
@@ -63,6 +71,8 @@ should_run_stage() {
 command -v curl >/dev/null 2>&1 || fail "curl is required"
 command -v node >/dev/null 2>&1 || fail "node is required"
 command -v flock >/dev/null 2>&1 || fail "flock is required"
+command -v pm2 >/dev/null 2>&1 || fail "pm2 is required"
+command -v ps >/dev/null 2>&1 || fail "ps is required"
 
 [ -r "$ENV_FILE" ] || fail "production env is not readable: $ENV_FILE"
 set -a
@@ -98,7 +108,7 @@ json_field() {
 
 call_api() {
   local path="$1"
-  curl -sS --fail-with-body --max-time 70 \
+  curl -sS --fail-with-body --max-time 90 \
     -H "Authorization: Bearer ${CRON_SECRET}" \
     -H 'Host: dachatv.com' \
     -H 'X-Forwarded-Proto: https' \
@@ -109,14 +119,46 @@ health_check() {
   curl -sS --fail --max-time 15 "${APP_ORIGIN}/api/health" >/dev/null
 }
 
+wait_for_health() {
+  local i
+  for i in $(seq 1 10); do
+    if health_check; then
+      return 0
+    fi
+    sleep 2
+  done
+  return 1
+}
+
+ensure_memory_headroom() {
+  local pid rss_kb
+  pid="$(pm2 pid "$APP_NAME" 2>/dev/null | tail -n 1 | tr -d '[:space:]')"
+  if ! [[ "$pid" =~ ^[0-9]+$ ]] || [ "$pid" -le 0 ]; then
+    fail "cannot resolve PM2 pid for $APP_NAME"
+  fi
+
+  rss_kb="$(ps -o rss= -p "$pid" 2>/dev/null | tr -d '[:space:]')"
+  if ! [[ "$rss_kb" =~ ^[0-9]+$ ]]; then
+    fail "cannot read RSS for $APP_NAME pid=$pid"
+  fi
+
+  if [ "$rss_kb" -ge "$MEMORY_RECYCLE_KB" ]; then
+    log "memory headroom low: ${rss_kb}KB RSS; recycling $APP_NAME before next heavy supplier request"
+    pm2 reload "$APP_NAME" --update-env >/dev/null || fail "PM2 reload failed while restoring memory headroom"
+    wait_for_health || fail "health check failed after PM2 memory-headroom recycle"
+    log "memory headroom restored"
+  fi
+}
+
 run_resumable_stage() {
   local label="$1"
   local path="$2"
   local max_calls="$3"
-  local i body ok complete state_saved resumed next processed
+  local i body ok complete state_saved resumed next processed already_running message
   local http_failures=0
 
   for ((i=1; i<=max_calls; i++)); do
+    ensure_memory_headroom
     log "$label call $i/$max_calls"
     if ! body="$(call_api "$path")"; then
       http_failures=$((http_failures + 1))
@@ -135,10 +177,18 @@ run_resumable_stage() {
     resumed="$(printf '%s' "$body" | json_field resumedFrom)" || true
     next="$(printf '%s' "$body" | json_field persistedNextOffset)" || true
     processed="$(printf '%s' "$body" | json_field processedThisRun)" || true
+    already_running="$(printf '%s' "$body" | json_field alreadyRunning)" || true
+    message="$(printf '%s' "$body" | json_field message)" || true
 
     log "$label ok=${ok:-unknown} complete=${complete:-unknown} resumed=${resumed:-n/a} next=${next:-n/a} processed=${processed:-n/a}"
 
-    [ "$ok" = "true" ] || fail "$label reported ok=$ok"
+    if [ "$ok" != "true" ] && [ "$already_running" = "true" ]; then
+      log "WARNING: $label found an earlier in-flight run; waiting ${ACTIVE_RUN_RETRY_SLEEP_S}s for stale-run recovery"
+      sleep "$ACTIVE_RUN_RETRY_SLEEP_S"
+      continue
+    fi
+
+    [ "$ok" = "true" ] || fail "$label reported ok=$ok${message:+ message=$message}"
     [ "$state_saved" = "true" ] || fail "$label did not persist its durable cursor"
 
     if [ "$complete" = "true" ]; then

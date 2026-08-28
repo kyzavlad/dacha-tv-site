@@ -4,8 +4,27 @@ export const maxDuration = 60
 import { verifyCronAuth, cronUnauthorized } from '../_auth'
 import { syncSupplierProducts } from '@/lib/supplier/sync'
 import { loadSyncState, saveSyncState, planResume, computeNextState, finalizeFields } from '@/lib/supplier/sync-state'
+import { getAdminClient } from '@/lib/supabase/admin'
 
 const SYNC_TYPE = 'products'
+const ABANDONED_RUN_GRACE_MS = 90_000
+
+async function markAbandonedProductRunsStale(): Promise<void> {
+  const client = getAdminClient()
+  const cutoff = new Date(Date.now() - ABANDONED_RUN_GRACE_MS).toISOString()
+  const { error } = await client
+    .from('supplier_sync_log')
+    .update({
+      status: 'stale',
+      error_details: { message: 'Auto-marked stale by scheduled sync recovery after the worker disappeared' },
+      completed_at: new Date().toISOString(),
+    })
+    .eq('sync_type', SYNC_TYPE)
+    .eq('status', 'running')
+    .lt('started_at', cutoff)
+
+  if (error) throw new Error(`stale product-run cleanup failed: ${error.message}`)
+}
 
 // Supplier product sync — BOUNDED + RESUMABLE.
 //
@@ -72,6 +91,7 @@ export async function GET(req: Request) {
     return Response.json({
       mode: 'manual',
       ok: result.ok,
+      alreadyRunning: result.alreadyRunning ?? false,
       totalInFeed: result.totalInFeed ?? null,
       processed: result.processed ?? result.synced,
       inserted: result.inserted ?? null,
@@ -83,6 +103,17 @@ export async function GET(req: Request) {
       message: result.message,
       priceWarning: result.priceWarning,
     })
+  }
+
+  // A PM2 memory recycle can terminate a supplier request after its append-only
+  // log row was created but before it could be finalized. A legitimate product
+  // request is bounded below 60s, so a 90s running row is abandoned. Clear only
+  // those old rows before asking syncSupplierProducts() whether another run is
+  // active; this avoids making the daily cron wait the generic 10-minute guard.
+  try {
+    await markAbandonedProductRunsStale()
+  } catch (e) {
+    return Response.json({ mode: 'auto', ok: false, stage: 'stale-run-cleanup', message: e instanceof Error ? e.message : String(e) }, { status: 500 })
   }
 
   // Automatic resumable mode. A failure loading the cursor is surfaced (500),
@@ -117,6 +148,7 @@ export async function GET(req: Request) {
   return Response.json({
     mode: 'auto',
     ok: result.ok,
+    alreadyRunning: result.alreadyRunning ?? false,
     cycleNew: plan.isNewCycle,
     resumedFrom: plan.offset,
     totalInFeed: result.totalInFeed ?? null,
