@@ -21,11 +21,10 @@ module.exports = {
       script: 'deploy/self-host/start-server.sh',
       interpreter: '/bin/bash',
 
-      // Single process, no cluster — the target server has 2 CPU cores and
-      // ~734 MiB currently available; a second worker would roughly double
-      // memory pressure for marginal throughput gain on a catalog site that
-      // is not CPU-bound. Scale to cluster mode later only after confirming
-      // there is real memory headroom.
+      // Single process, no cluster — the target server has 2 CPU cores and a
+      // 3.7 GiB RAM budget. A second worker would roughly double memory pressure
+      // for marginal throughput gain on a catalog site that is not CPU-bound.
+      // Scale to cluster mode later only after confirming real memory headroom.
       exec_mode: 'fork',
       instances: 1,
 
@@ -43,13 +42,12 @@ module.exports = {
       min_uptime: '30s', // a restart before this counts toward max_restarts
       restart_delay: 4000, // ms — avoid a hot crash-loop hammering the box
 
-      // Memory ceiling for a 3.7 GiB box with ~734 MiB currently free. A
-      // single Next.js standalone process for this catalog typically runs a
-      // few hundred MB RSS; 450M gives headroom above normal operation while
-      // still protecting the rest of the box (Nginx, PM2 itself, OS) from a
-      // leak ballooning until the OOM killer picks an arbitrary victim.
-      // Revisit once real production RSS is observed.
-      max_memory_restart: '450M',
+      // Match the production PM2 safety ceiling actually in force: 750 MiB.
+      // Heavy supplier JSON calls are proactively preceded by a recycle in the
+      // pipeline runner when RSS reaches 350 MB, so normal jobs should never use
+      // this ceiling as their control flow. It remains a final guard against a
+      // leak or an unexpectedly large request exhausting the 3.7 GiB host.
+      max_memory_restart: '750M',
 
       // Timestamps so `pm2 logs` / log files are useful without cross-
       // referencing PM2's internal event timing.
