@@ -1,4 +1,4 @@
-// ─── Supplier feed sync — durable resume cursor ───────────────────────────────
+// ─── Supplier feed sync — durable resume cursor ────────────────────────────────
 // supplier_sync_log is append-only run history; it cannot answer "where should
 // the next scheduled invocation resume?". This module persists a one-row-per-
 // sync_type cursor in supplier_sync_state so the daily cron continues the current
@@ -32,6 +32,19 @@ export async function loadSyncState(syncType: string): Promise<SupplierSyncState
     .maybeSingle()
   assertSupabaseOk(error, `loadSyncState(${syncType})`)
   return (data as SupplierSyncState | null) ?? null
+}
+
+// A newly-created local supplier snapshot has a new ordering boundary. Any
+// cursor from an older snapshot is therefore unsafe to reuse: products may have
+// been inserted, removed or reordered upstream. Delete only this sync type's
+// one-row cursor so planResume() deliberately begins a fresh cycle at offset 0.
+export async function resetSyncState(syncType: string): Promise<void> {
+  const client = getAdminClient()
+  const { error } = await client
+    .from('supplier_sync_state')
+    .delete()
+    .eq('sync_type', syncType)
+  assertSupabaseOk(error, `resetSyncState(${syncType})`)
 }
 
 // Persist the cursor. Returns the offset that was persisted so the caller can
