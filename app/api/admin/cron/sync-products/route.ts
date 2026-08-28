@@ -126,6 +126,36 @@ export async function GET(req: Request) {
   }
   const plan = planResume(state)
   const result = await syncSupplierProducts({ limit, offset: plan.offset, maxPages: 1000, maxMillis })
+
+  // `alreadyRunning` is a transient lock/busy signal, not a failed sync result.
+  // Most importantly, it carries no progress of its own. Persisting it through
+  // computeNextState/finalizeFields would overwrite a valid durable cursor (or
+  // create a bogus failed cycle at offset 0) just because an earlier request is
+  // still active. Return HTTP 200 so the shell runner can inspect the JSON and
+  // retry after its grace delay, while leaving supplier_sync_state untouched.
+  if (result.alreadyRunning) {
+    return Response.json({
+      mode: 'auto',
+      ok: false,
+      alreadyRunning: true,
+      cycleNew: plan.isNewCycle,
+      resumedFrom: plan.offset,
+      totalInFeed: state?.feed_total ?? null,
+      processedThisRun: 0,
+      processedThisCycle: state?.processed ?? 0,
+      inserted: 0,
+      updated: 0,
+      nextOffset: state?.next_offset ?? plan.offset,
+      cycleComplete: false,
+      errors: 0,
+      message: result.message,
+      priceWarning: result.priceWarning,
+      stateSaved: false,
+      stateError: null,
+      persistedNextOffset: state?.next_offset ?? null,
+    })
+  }
+
   const nowIso = new Date().toISOString()
   const base = computeNextState({ prev: state, isNewCycle: plan.isNewCycle, offset: plan.offset, result, nowIso })
   // On failure, mark the cycle failed BUT keep a safe resume offset so the next
