@@ -6,6 +6,8 @@ import {
   getAllSitemapIds,
   getSitemapUuidRange,
   sitemapUuidBoundary,
+  SITEMAP_DB_CONCURRENCY,
+  SITEMAP_MAX_PAGES_PER_SHARD,
   SITEMAP_PRODUCT_SHARD_COUNT,
   SITEMAP_SHARD_ROW_LIMIT,
 } from '../lib/catalog/sitemap-shards.ts'
@@ -71,27 +73,31 @@ test('unknown-total search keeps a Previous path when a requested later page is 
   assert.match(searchPageSrc, /params=\{paginationParams\}/)
 })
 
-test('UUID sitemap partition exposes exactly shard 0 plus 512 product shards', () => {
-  assert.equal(SITEMAP_PRODUCT_SHARD_COUNT, 512)
+test('UUID sitemap partition exposes one static shard plus 16 bounded product shards', () => {
+  assert.equal(SITEMAP_PRODUCT_SHARD_COUNT, 16)
   assert.equal(SITEMAP_SHARD_ROW_LIMIT, 1000)
+  assert.equal(SITEMAP_MAX_PAGES_PER_SHARD, 50)
+  assert.equal(SITEMAP_DB_CONCURRENCY, 2)
   const ids = getAllSitemapIds()
-  assert.equal(ids.length, 513)
+  assert.equal(ids.length, 17)
   assert.equal(ids[0], 0)
-  assert.equal(ids.at(-1), 512)
-  assert.deepEqual(ids, Array.from({ length: 513 }, (_, i) => i))
+  assert.equal(ids.at(-1), 16)
+  assert.deepEqual(ids, Array.from({ length: 17 }, (_, i) => i))
 })
 
-test('sitemap is request-time so releases never prerender 512 remote catalog shards', () => {
+test('sitemap stays request-time but caches product shards instead of rescanning on every crawl', () => {
   assert.match(sitemapSrc, /export const dynamic = 'force-dynamic'/)
-  assert.ok(!sitemapSrc.includes('export const revalidate ='), 'force-dynamic sitemap must not imply build-time or ISR catalog traversal')
+  assert.match(sitemapSrc, /unstable_cache/)
+  assert.match(sitemapSrc, /PRODUCT_SITEMAP_CACHE_SECONDS = 6 \* 60 \* 60/)
+  assert.match(sitemapSrc, /getCachedPublishedCatalogSlugsForShard\(id\)/)
 })
 
 test('UUID range boundaries cover the full space without gaps or overlaps', () => {
   assert.equal(sitemapUuidBoundary(0), '00000000-0000-0000-0000-000000000000')
-  assert.equal(sitemapUuidBoundary(1), '00800000-0000-0000-0000-000000000000')
-  assert.equal(sitemapUuidBoundary(2), '01000000-0000-0000-0000-000000000000')
-  assert.equal(sitemapUuidBoundary(511), 'ff800000-0000-0000-0000-000000000000')
-  assert.equal(sitemapUuidBoundary(512), null)
+  assert.equal(sitemapUuidBoundary(1), '10000000-0000-0000-0000-000000000000')
+  assert.equal(sitemapUuidBoundary(2), '20000000-0000-0000-0000-000000000000')
+  assert.equal(sitemapUuidBoundary(15), 'f0000000-0000-0000-0000-000000000000')
+  assert.equal(sitemapUuidBoundary(16), null)
 
   const ranges = Array.from({ length: SITEMAP_PRODUCT_SHARD_COUNT }, (_, i) => getSitemapUuidRange(i))
   for (let i = 0; i < ranges.length - 1; i += 1) {
@@ -102,25 +108,32 @@ test('UUID range boundaries cover the full space without gaps or overlaps', () =
   assert.equal(ranges.at(-1).upper, null)
 })
 
-test('product sitemap queries stay on the UUID index and filter storefront scope in memory', () => {
+test('product sitemap uses keyset pagination and globally bounded DB concurrency', () => {
   assert.match(shardSrc, /\.gte\('id', range\.lower\)/)
-  assert.match(shardSrc, /\.select\('slug, category_slug, source, lead_type, supplier_sku, supplier_product_id'\)/)
+  assert.match(shardSrc, /\.select\('id, slug, category_slug, source, lead_type, supplier_sku, supplier_product_id'\)/)
   assert.ok(!shardSrc.includes("count: 'exact'"), 'sitemap shards must not run exact counts against the large catalog')
   assert.ok(!shardSrc.includes('.or(STOREFRONT_SCOPE_OR)'), 'nested storefront OR must not be pushed into the hot UUID-range query')
   assert.ok(!shardSrc.includes(".eq('status', 'published')"), 'published visibility is already enforced by anon RLS')
-  assert.match(shardSrc, /\.limit\(SITEMAP_SHARD_ROW_LIMIT \+ 1\)/)
-  assert.match(shardSrc, /rows\.length > SITEMAP_SHARD_ROW_LIMIT/)
+  assert.match(shardSrc, /if \(cursor\) query = query\.gt\('id', cursor\)/)
+  assert.match(shardSrc, /\.limit\(SITEMAP_SHARD_ROW_LIMIT\)/)
+  assert.match(shardSrc, /page <= SITEMAP_MAX_PAGES_PER_SHARD/)
+  assert.match(shardSrc, /withSitemapDbSlot/)
+  assert.match(shardSrc, /sitemapDbSlotsInUse < SITEMAP_DB_CONCURRENCY/)
   assert.match(shardSrc, /rows\.filter\(isStorefrontProduct\)\.map/)
   assert.match(shardSrc, /row\.category_slug \?\? 'all'/)
   assert.ok(!shardSrc.includes('.range(offset'))
 
-  assert.match(sitemapSrc, /getPublishedCatalogSlugsForShard\(id\)/)
+  assert.match(sitemapSrc, /getCachedPublishedCatalogSlugsForShard\(id\)/)
   assert.ok(!sitemapSrc.includes('getPublishedCatalogSlugsPage'))
   assert.ok(!sitemapSrc.includes('getPublishedCatalogProductCount'))
   assert.ok(!sitemapSrc.includes('getPublishedCatalogSlugsForShard(id).catch'))
 })
 
-test('robots and sitemap enumerate the exact same deterministic shard IDs', () => {
+test('robots and sitemap use one canonical non-www origin and enumerate the same shard IDs', () => {
+  assert.match(sitemapSrc, /const BASE_URL = 'https:\/\/dachatv\.com'/)
+  assert.match(robotsSrc, /const BASE_URL = 'https:\/\/dachatv\.com'/)
+  assert.ok(!sitemapSrc.includes('https://www.dachatv.com'))
+  assert.ok(!robotsSrc.includes('https://www.dachatv.com'))
   assert.match(sitemapSrc, /getAllSitemapIds\(\)\.map\(\(id\) => \(\{ id \}\)\)/)
   assert.match(robotsSrc, /getAllSitemapIds\(\)\.map\(\(id\) => `\$\{BASE_URL\}\/sitemap\/\$\{id\}\.xml`\)/)
   assert.ok(!robotsSrc.includes('getPublishedCatalogProductCount'))
