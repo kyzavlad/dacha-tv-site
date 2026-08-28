@@ -39,18 +39,20 @@ test('supplier stages run in the required economic and data-integrity order', ()
 
   const products = orchestration.indexOf('run_resumable_stage "base products"')
   const categories = orchestration.indexOf("call_api '/api/admin/cron/sync-categories'")
-  const rrp = orchestration.indexOf('run_resumable_stage "official RRP"')
+  const rrp = orchestration.indexOf('ensure_rrp_cache')
+  const rrpCall = orchestration.indexOf('"official RRP"', rrp)
   const existing = orchestration.indexOf('\n  run_existing_catalog_refresh_stage\n')
   const imported = orchestration.indexOf('\n  run_import_stage\n')
   const published = orchestration.indexOf("call_api '/api/admin/cron/publish-products'")
 
-  for (const [name, index] of Object.entries({ products, categories, rrp, existing, imported, published })) {
+  for (const [name, index] of Object.entries({ products, categories, rrp, rrpCall, existing, imported, published })) {
     assert.ok(index >= 0, `${name} stage must exist`)
   }
 
   assert.ok(products < categories, 'base products must finish before category reconciliation')
   assert.ok(categories < rrp, 'category reconciliation must precede official RRP')
-  assert.ok(rrp < existing, 'official RRP must finish before existing catalog refresh')
+  assert.ok(rrp < rrpCall, 'RRP snapshot must exist before resumable RRP DB batches')
+  assert.ok(rrpCall < existing, 'official RRP must finish before existing catalog refresh')
   assert.ok(existing < imported, 'existing catalog refresh must drain before new-product finalization')
   assert.ok(imported < published, 'new-product finalization must drain before publish')
 })
@@ -61,7 +63,9 @@ test('resumable product and RRP stages require persisted completion before advan
   assert.match(runner, /\[ "\$state_saved" = "true" \] \|\| fail/)
   assert.match(runner, /\[ "\$complete" = "true" \]/)
   assert.match(runner, /MAX_PRODUCT_CALLS=20/)
-  assert.match(runner, /MAX_RRP_CALLS=30/)
+  assert.match(runner, /MAX_RRP_CALLS=120/)
+  assert.match(runner, /RRP_BATCH_SIZE=1000/)
+  assert.match(runner, /maxBatches=1/)
 })
 
 test('manual recovery can start from RRP without replaying completed product stages', () => {
