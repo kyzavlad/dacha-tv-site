@@ -3,7 +3,7 @@ export const maxDuration = 60
 
 import { verifyCronAuth, cronUnauthorized } from '../_auth'
 import { syncSupplierRrpPrices } from '@/lib/supplier/rrp-sync'
-import { loadSyncState, saveSyncState, planResume, computeNextState, finalizeFields } from '@/lib/supplier/sync-state'
+import { loadSyncState, resetSyncState, saveSyncState, planResume, computeNextState, finalizeFields } from '@/lib/supplier/sync-state'
 
 const SYNC_TYPE = 'rrp'
 
@@ -18,6 +18,25 @@ export async function GET(req: Request) {
   if (!verifyCronAuth(req)) return cronUnauthorized()
 
   const url = new URL(req.url)
+
+  // A durable offset is valid only for the exact supplier snapshot whose
+  // ordering created it. The self-host runner calls reset=1 exactly once after
+  // atomically creating a NEW local RRP snapshot. If a failed run already has a
+  // valid cached snapshot, the runner does not reset and normal resume applies.
+  if (url.searchParams.get('reset') === '1') {
+    try {
+      await resetSyncState(SYNC_TYPE)
+      return Response.json({ mode: 'reset', ok: true, syncType: SYNC_TYPE })
+    } catch (error) {
+      return Response.json({
+        mode: 'reset',
+        ok: false,
+        syncType: SYNC_TYPE,
+        message: error instanceof Error ? error.message : String(error),
+      }, { status: 500 })
+    }
+  }
+
   const explicitOffset = intParam(url, 'offset')
   const batchSize = intParam(url, 'batchSize')
   const maxBatches = intParam(url, 'maxBatches')
@@ -28,7 +47,7 @@ export async function GET(req: Request) {
   // inspect or replay a known feed window without corrupting scheduled progress.
   if (explicitOffset != null) {
     const result = await syncSupplierRrpPrices({
-      offset: intParam(url, 'offset'),
+      offset: explicitOffset,
       batchSize,
       maxBatches,
       maxMillis,
