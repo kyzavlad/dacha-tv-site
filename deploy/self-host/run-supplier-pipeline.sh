@@ -305,6 +305,7 @@ run_existing_catalog_refresh_stage() {
   local next_batch_size
 
   for ((i=1; i<=MAX_CATALOG_REFRESH_CALLS; i++)); do
+    ensure_memory_headroom
     log "existing catalog refresh call $i/$MAX_CATALOG_REFRESH_CALLS batch=${batch_size}"
     if ! body="$(call_api "/api/admin/cron/refresh-catalog-existing?batchSize=${batch_size}")"; then
       http_failures=$((http_failures + 1))

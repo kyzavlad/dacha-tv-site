@@ -18,6 +18,10 @@ test('heavy supplier calls proactively recycle a high-RSS PM2 worker between req
   assert.match(runner, /--max-time 90/)
 })
 
+test('existing catalog refresh also enforces memory headroom before every DB-heavy call', () => {
+  assert.match(runner, /ensure_memory_headroom\n    log "existing catalog refresh call/)
+})
+
 test('scheduled product sync can recover a worker-abandoned running log without waiting ten minutes', () => {
   assert.match(route, /ABANDONED_RUN_GRACE_MS = 90_000/)
   assert.match(route, /markAbandonedProductRunsStale/)
