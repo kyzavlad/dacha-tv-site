@@ -42,10 +42,14 @@ MAX_STAGE_HTTP_FAILURES=3
 # request is in flight, instead of letting PM2 restart the app unpredictably.
 MEMORY_RECYCLE_KB=350000
 ACTIVE_RUN_RETRY_SLEEP_S=55
-# 112,535 / 300 = 376 calls in the absolute worst case where every supplier
-# row already exists in catalog_products. 400 leaves bounded headroom while the
-# endpoint itself stays memory-safe at the production-proven 300-row batch.
+# The existing-catalog RPC is set-based and production normally processes 300
+# rows in only a few seconds. The Free DB can transiently cross its 30s statement
+# timeout during write-heavy checkpoints, however, so preserve the 300-row batch
+# and 400-call capacity while adding pacing/retry backpressure around it.
 MAX_CATALOG_REFRESH_CALLS=400
+CATALOG_REFRESH_SUCCESS_SLEEP_S=2
+CATALOG_REFRESH_RETRY_BASE_SLEEP_S=10
+POST_RRP_DB_COOLDOWN_S=30
 # After the existing queue is drained, import-products is left only with the
 # small genuinely-new-SKU path. 40 remains ample for that bounded batch flow.
 MAX_IMPORT_CALLS=40
@@ -290,12 +294,22 @@ run_resumable_stage() {
 
 run_existing_catalog_refresh_stage() {
   local i body ok done processed updated approved
+  local http_failures=0
+  local retry_sleep
 
   for ((i=1; i<=MAX_CATALOG_REFRESH_CALLS; i++)); do
     log "existing catalog refresh call $i/$MAX_CATALOG_REFRESH_CALLS"
     if ! body="$(call_api '/api/admin/cron/refresh-catalog-existing')"; then
-      fail "existing catalog refresh HTTP request failed"
+      http_failures=$((http_failures + 1))
+      if [ "$http_failures" -ge "$MAX_STAGE_HTTP_FAILURES" ]; then
+        fail "existing catalog refresh HTTP request failed $http_failures consecutive times"
+      fi
+      retry_sleep=$((http_failures * CATALOG_REFRESH_RETRY_BASE_SLEEP_S))
+      log "WARNING: existing catalog refresh HTTP request failed ($http_failures/$MAX_STAGE_HTTP_FAILURES); cooling ${retry_sleep}s before retrying the remaining diff queue"
+      sleep "$retry_sleep"
+      continue
     fi
+    http_failures=0
 
     ok="$(printf '%s' "$body" | json_field ok)" || fail "existing catalog refresh returned invalid JSON"
     done="$(printf '%s' "$body" | json_field done)" || fail "existing catalog refresh returned invalid JSON"
@@ -311,7 +325,7 @@ run_existing_catalog_refresh_stage() {
       return 0
     fi
 
-    sleep 1
+    sleep "$CATALOG_REFRESH_SUCCESS_SLEEP_S"
   done
 
   fail "existing catalog refresh did not drain after $MAX_CATALOG_REFRESH_CALLS calls"
@@ -402,6 +416,11 @@ if should_run_stage "rrp"; then
     "$MAX_RRP_CALLS"
   rm -f "$RRP_CACHE_FILE" "$RRP_CACHE_RESET_MARKER"
   log "official RRP cache removed after completed cycle"
+
+  if should_run_stage "existing"; then
+    log "cooling ${POST_RRP_DB_COOLDOWN_S}s after RRP writes before existing catalog refresh"
+    sleep "$POST_RRP_DB_COOLDOWN_S"
+  fi
 fi
 
 # 4. Drain the large EXISTING supplier -> catalog queue without repeatedly
