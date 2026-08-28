@@ -4,6 +4,8 @@ import { readFile } from 'node:fs/promises'
 
 const runner = await readFile(new URL('../deploy/self-host/run-supplier-pipeline.sh', import.meta.url), 'utf8')
 const route = await readFile(new URL('../app/api/admin/cron/sync-products/route.ts', import.meta.url), 'utf8')
+const rrpRoute = await readFile(new URL('../app/api/admin/cron/refresh-rrp/route.ts', import.meta.url), 'utf8')
+const syncState = await readFile(new URL('../lib/supplier/sync-state.ts', import.meta.url), 'utf8')
 const rrp = await readFile(new URL('../lib/supplier/rrp-sync.ts', import.meta.url), 'utf8')
 const ecosystem = await readFile(new URL('../deploy/self-host/ecosystem.config.js', import.meta.url), 'utf8')
 
@@ -63,6 +65,21 @@ test('RRP recovery downloads one stable snapshot and uses small DB-safe slices',
   assert.match(runner, /prefetching one official RRP feed snapshot/)
   assert.match(runner, /batchSize=\$\{RRP_BATCH_SIZE\}/)
   assert.match(runner, /rm -f "\$RRP_CACHE_FILE"/)
+})
+
+test('a fresh RRP snapshot crash-safely resets any cursor from an older ordering', () => {
+  assert.match(runner, /RRP_CACHE_RESET_MARKER="\$ROOT\/shared\/supplier-rrp-cache\.needs-reset"/)
+  assert.match(runner, /official RRP snapshot requires durable cursor reset/)
+  assert.match(runner, /refresh-rrp\?reset=1/)
+  assert.match(runner, /rm -f "\$RRP_CACHE_RESET_MARKER"/)
+
+  const resetBranch = rrpRoute.indexOf("url.searchParams.get('reset') === '1'")
+  const normalStateLoad = rrpRoute.indexOf('state = await loadSyncState(SYNC_TYPE)')
+  assert.ok(resetBranch >= 0 && normalStateLoad > resetBranch, 'reset must occur before normal cursor planning')
+  assert.match(rrpRoute, /await resetSyncState\(SYNC_TYPE\)/)
+  assert.match(syncState, /export async function resetSyncState/)
+  assert.match(syncState, /\.delete\(\)/)
+  assert.match(syncState, /\.eq\('sync_type', syncType\)/)
 })
 
 test('repository PM2 ceiling matches the production 750 MiB safety limit', () => {
