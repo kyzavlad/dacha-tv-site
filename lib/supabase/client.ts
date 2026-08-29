@@ -40,7 +40,11 @@ function normalizeSupabaseUrl(raw: string): string {
 }
 
 export function getSupabaseClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  // Prefer a server-only runtime URL so self-hosted Supabase can be reached
+  // locally (for example http://127.0.0.1:8000) without baking the endpoint
+  // into the Next.js artifact. Keep NEXT_PUBLIC_SUPABASE_URL as a compatibility
+  // fallback for the current managed deployment and older releases.
+  const url = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
 
   if (!url || !key) {
