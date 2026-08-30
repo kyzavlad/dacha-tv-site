@@ -3,8 +3,8 @@ import type { CatalogCategory, CatalogProduct, CatalogImageMeta } from '@/types'
 import { resolveImageEntries, primaryImageAlt } from '@/lib/catalog/image-metadata'
 
 function getClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  const url = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.SUPABASE_ANON_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
   if (!url || !key) return null
   return createClient(url, key)
 }
@@ -537,12 +537,7 @@ export async function getPublishedProductsByCategory(
   categorySlug: string,
   page: number,
   sort: CatalogSort = 'featured',
-  // Optional "Тільки з ціною" filter: keep only products with a real, non-
-  // suspicious price (mirrors hasDisplayablePrice at the DB level so pagination
-  // counts stay correct). Off by default — behaviour is unchanged.
   buyable = false,
-  // Optional "Тільки з фото" filter: keep only products with an image source
-  // (main_image_url OR the images[] jsonb — the same sources the card resolves).
   withImage = false,
 ): Promise<{ products: CatalogProduct[]; total: number }> {
   const client = getClient()
@@ -569,8 +564,6 @@ const SCOOTER_MATCH_COLUMNS = ['name_ua', 'name'] as const
 const MAX_SCOOTER_FILTER_PREDICATES = 24
 const MAX_SCOOTER_FILTER_LENGTH = 2048
 
-// Config patterns may contain `%` as an intentional separator wildcard. Commas
-// and parentheses are always removed because they are PostgREST OR grammar.
 function sanitizeModelPattern(s: string): string {
   return s.replace(/[(),]/g, ' ').replace(/%+/g, '%').trim()
 }
@@ -594,12 +587,6 @@ function buildScooterOrClause(patterns: string[]): {
   return { clause, predicateCount: predicates.length, filterLength: clause.length }
 }
 
-// ─── Scooter model landing fetch (strict) ────────────────────────────────────
-// Products in the scooter category that (a) pass the buyable rule, (b) have an
-// image, and (c) match at least one compact MODEL pattern in a title field
-// (name_ua / name) — never merely the brand word. `modTokens` narrows further to a
-// specific modification. Paginated with an exact count so a landing paginates
-// like a normal category. Powers /moto/skutery/[model]; no hardcoded id lists.
 export async function getScooterModelProducts(
   categorySlug: string,
   modelTokens: string[],
@@ -612,29 +599,17 @@ export async function getScooterModelProducts(
   const modelFilter = buildScooterOrClause(modelTokens)
   if (!modelFilter.clause) return { products: [], hasNext: false }
 
-  // Fetch one extra row (page size + 1) ONLY to decide hasNext — no exact count.
-  // count:'exact' scanned the whole matching set on every paid-traffic request
-  // and hit the production statement timeout (57014) on a cold DB/cache; the
-  // lookahead keeps the query to a bounded LIMIT.
   const from = (page - 1) * CATALOG_PAGE_SIZE
-  const to = from + CATALOG_PAGE_SIZE // inclusive range → CATALOG_PAGE_SIZE + 1 rows
+  const to = from + CATALOG_PAGE_SIZE
   let base = client
     .from('catalog_products')
     .select('*')
     .eq('status', 'published')
     .eq('category_slug', categorySlug)
-    // buyable rule (mirrors the catalog "Тільки з ціною" filter)
     .gte('price_uah', MIN_VALID_PRICE_UAH)
     .not('is_price_suspicious', 'is', true)
-    // Require a real primary image. `images.not.is.null` (the old check) also
-    // matched an empty jsonb array `[]`, letting image-less products into the
-    // count while the card rendered a placeholder — a count/display mismatch. A
-    // non-empty main_image_url is the always-resolvable primary source and keeps
-    // the DB count equal to what is shown (images[]-only edge cases are excluded
-    // on purpose for landing quality).
     .not('main_image_url', 'is', null)
     .neq('main_image_url', '')
-    // strict model match — separate .or() group AND-combined with the above
     .or(modelFilter.clause)
 
   const modFilter = modTokens?.length ? buildScooterOrClause(modTokens) : null
@@ -645,8 +620,6 @@ export async function getScooterModelProducts(
     .order('display_order', { ascending: true })
     .order('name_ua', { ascending: true })
     .range(from, to)
-  // Never mask a DB/PostgREST failure as a valid empty result — surface it so it
-  // is visible in logs and renders an error state, not a misleading "0 products".
   if (error) {
     console.warn('[scooter-landing] query failed', {
       categorySlug,
@@ -662,14 +635,11 @@ export async function getScooterModelProducts(
     throw new Error(`scooter landing query failed: ${error.message}`)
   }
   const rows = (data ?? []) as CatalogProduct[]
-  // The extra (page size + 1) row only signals a next page — it is never shown.
   const hasNext = rows.length > CATALOG_PAGE_SIZE
   const products = rows.slice(0, CATALOG_PAGE_SIZE).filter(isPublicListableProduct)
   return { products, hasNext }
 }
 
-// Up to `limit` other published products in the same category, for the
-// "схожі товари" rail on a product page. Cheap: single indexed query, no counts.
 export async function getRelatedCatalogProducts(
   categorySlug: string | null,
   excludeSlug: string,
@@ -677,26 +647,17 @@ export async function getRelatedCatalogProducts(
 ): Promise<CatalogProduct[]> {
   const client = getClient()
   if (!client || !categorySlug || NATURAL_CATEGORY_SLUGS.includes(categorySlug)) return []
-  // Over-fetch a bounded pool so the rail stays full after garbage rows are
-  // filtered AND so ads-readiness ranking has enough purchasable candidates to
-  // choose from. Still a small, server-side-limited window — never the full set.
   const { data } = await client
     .from('catalog_products')
     .select('*')
     .eq('status', 'published')
     .eq('category_slug', categorySlug)
     .neq('slug', excludeSlug)
-    .or(STOREFRONT_SCOPE_OR)   // same storefront scope as /catalog/all
+    .or(STOREFRONT_SCOPE_OR)
     .order('is_featured', { ascending: false })
     .order('display_order', { ascending: true })
     .limit(limit * 8)
   const pool = ((data ?? []) as CatalogProduct[]).filter(isPublicListableProduct)
-  // Ads-readiness ranking (see adsReadinessTier): show image + real-price products
-  // first in the related rail (best for ad conversions); "price on request" items
-  // remain eligible, just lower. Related is a single category, so relevance is
-  // uniform — use bucket 1 (a tier-sorted bucket; bucket 0 is reserved for exact
-  // SKU and is intentionally NOT tier-sorted) so the rail orders purely by ads
-  // tier, using the SAME price resolver the card/API use.
   const ranked = rankByRelevanceThenAds(pool.map((product) => ({ product, bucket: 1 })))
   return ranked.slice(0, limit).map((e) => e.product)
 }
@@ -717,8 +678,6 @@ export async function getPublishedProductBySlug(
   return (data ?? null) as CatalogProduct | null
 }
 
-// Slug-only fallback: catalog_products.slug is globally unique, so this resolves
-// products even when their category_slug is null/mismatched (used by /catalog/all).
 export async function getPublishedProductBySlugOnly(productSlug: string): Promise<CatalogProduct | null> {
   const client = getClient()
   if (!client) return null
@@ -731,9 +690,6 @@ export async function getPublishedProductBySlugOnly(productSlug: string): Promis
   return (data ?? null) as CatalogProduct | null
 }
 
-// DEPRECATED for the sitemap: this has no .range()/.limit(), so PostgREST caps
-// it at ~1000 rows — it would silently drop ~99% of a 105k catalog. Kept only
-// for any small/legacy caller. The sitemap uses getPublishedCatalogSlugsPage.
 export async function getPublishedCatalogSlugs(): Promise<{ category: string; product: string }[]> {
   const client = getClient()
   if (!client) return []
@@ -747,12 +703,6 @@ export async function getPublishedCatalogSlugs(): Promise<{ category: string; pr
   return (data ?? []).map((r) => ({ category: r.category_slug as string, product: r.slug as string }))
 }
 
-// One bounded, ordered page of published product slugs for the sharded sitemap.
-// Uses the SAME filter as getPublishedCatalogProductCount (published, non-natural,
-// null-category included) so shard math and pagination line up exactly — no
-// dropped URLs, no empty middle shard. Null-category products map to /catalog/all.
-// `limit` should be <= 1000 (PostgREST's max-rows) so a single request fills it.
-// Ordered by id so range() windows are stable across the whole catalog.
 export async function getPublishedCatalogSlugsPage(
   offset: number,
   limit: number,
@@ -790,12 +740,6 @@ export async function getPublishedCatalogProducts(
   return { products, total: count ?? 0 }
 }
 
-// Public catalog search (?q=) — matches published shop products by Ukrainian or
-// Russian name. Searching the `name` (Russian supplier feed) column as well lets
-// customers find items before a Ukrainian translation is written. Natural food
-// products are excluded (they live under /products), metal stays included.
-// Escape PostgREST ilike wildcards / separators so user input can't broaden the
-// match, and split into up to 6 tokens for AND-combined matching.
 function searchTokens(term: string): string[] {
   return term
     .replace(/[%_,()]/g, ' ')
@@ -805,11 +749,6 @@ function searchTokens(term: string): string[] {
     .slice(0, 6)
 }
 
-// Common Ukrainian/Russian inflectional endings (longest first). Stripping them
-// gives a stem so a CATEGORY-name ilike matches across cases/plurals, e.g.
-// "скутеров"/"скутеры" → "скутер" (matches "На скутери"). Used ONLY for the
-// isolated category-name lookup below — the product text search keeps raw tokens
-// so its proven behaviour is unchanged.
 const SLAVIC_ENDINGS = ['ами', 'ями', 'ах', 'ях', 'ов', 'ів', 'ей', 'ом', 'ем', 'и', 'ы', 'і', 'ї', 'а', 'я', 'у', 'ю', 'е', 'є', 'й', 'ь']
 
 function stemToken(tok: string): string {
@@ -821,14 +760,8 @@ function stemToken(tok: string): string {
   return t
 }
 
-// Strip chars that would break a PostgREST .or() ilike pattern.
 const sanitizeIlike = (s: string) => s.replace(/[%,()]/g, '')
 
-// Resolve a query to published category slugs by matching category name/slug/meta.
-// Isolated + self-guarded: returns [] on ANY error (never throws into the caller),
-// so a category-lookup failure can never take down the product search. Uses only
-// simple .or() ilike clauses (NO nested in.() inside .or) and a plain .in() —
-// the shapes that broke PR #48 are deliberately avoided.
 async function findCategorySlugsForQuery(
   client: NonNullable<ReturnType<typeof getClient>>,
   tokens: string[],
@@ -857,8 +790,6 @@ async function findCategorySlugsForQuery(
     console.warn(`[search] category name lookup threw: ${e instanceof Error ? e.message : String(e)}`)
   }
 
-  // Best-effort: supplier_categories (original, often Russian names) → linked
-  // published catalog slug. Silently skipped if not readable by the anon role.
   try {
     const supOr: string[] = []
     for (const s of stems) supOr.push(`name.ilike.%${s}%`, `name_ua.ilike.%${s}%`)
@@ -888,12 +819,8 @@ async function findCategorySlugsForQuery(
   return [...slugs].slice(0, 30)
 }
 
-// Alphanumeric-normalized code: uppercase, drop hyphens/spaces/punctuation.
-// "N-270997" / "N270997" / "n 270997" → "N270997".
 const normalizeCompactSku = (s: string): string => s.toUpperCase().replace(/[^A-Z0-9]/g, '')
 
-// A query is "SKU-like" when it is a single token whose compact form is a short
-// alphanumeric code containing a digit (N-270997, N270997, A-845, R-4147).
 function looksLikeSku(q: string): boolean {
   const t = q.trim()
   if (!t || /\s/.test(t)) return false
@@ -901,13 +828,6 @@ function looksLikeSku(q: string): boolean {
   return c.length >= 3 && c.length <= 24 && /\d/.test(c)
 }
 
-// Exact-ish SKU/article lookup that is hyphen/space/case-insensitive. The stored
-// supplier_sku may be hyphenated ("N-270997") or compact ("N270997") and the user
-// may type either — plain ilike.%N-270997% can't bridge that. So we fetch a broad
-// candidate set with ilike anchors (compact + raw + longest digit run — the digit
-// run is contiguous in BOTH stored forms) and then keep only rows whose normalized
-// SKU matches the normalized query. Uses only .or() ilike + a top-level filter —
-// never the category_slug.in(...)-in-.or() shape that broke PR #48. Never throws.
 async function findProductsBySku(
   client: NonNullable<ReturnType<typeof getClient>>,
   rawQuery: string,
@@ -915,16 +835,10 @@ async function findProductsBySku(
 ): Promise<CatalogProduct[]> {
   const raw = sanitizeIlike(rawQuery.trim().toUpperCase())
   const compact = normalizeCompactSku(rawQuery)
-  // Every 3+ digit run (not just the longest) — the numeric part of a code is the
-  // most stable anchor across "N-270997" / "N270997" / "N-270-997" storage.
   const digitRuns = compact.match(/\d{3,}/g) ?? []
   const anchors = [...new Set([compact, raw, ...digitRuns].filter((a) => a && a.length >= 3))]
   if (anchors.length === 0) return []
   try {
-    // Reuse the PROVEN suggest/search field shape: match each anchor against
-    // supplier_sku AND name_ua/name. A supplier code very often also lives in the
-    // product name, so a supplier_sku-only query (PR #51) missed rows that the
-    // multi-field suggest query finds. Only .or() ilike — no category_slug.in().
     const orClause = anchors
       .flatMap((a) => [`supplier_sku.ilike.%${a}%`, `name_ua.ilike.%${a}%`, `name.ilike.%${a}%`])
       .join(',')
@@ -940,14 +854,11 @@ async function findProductsBySku(
       return []
     }
     const rows = (data ?? []) as CatalogProduct[]
-    // Precision filter: keep only rows whose NORMALIZED supplier_sku matches the
-    // normalized query — so multi-field candidates are pruned to true SKU hits.
     const results = rows.filter((p) => {
       const skuC = normalizeCompactSku(p.supplier_sku ?? '')
       if (!skuC) return false
       return skuC === compact || skuC.includes(compact) || compact.includes(skuC)
     })
-    // Temporary diagnostics (Vercel logs): shows why a SKU lookup did/didn't hit.
     console.warn(`[sku] q="${rawQuery}" compact="${compact}" anchors=${JSON.stringify(anchors)} candidates=${rows.length} results=${results.length}`)
     return results
   } catch (e) {
@@ -960,12 +871,7 @@ export async function searchPublishedCatalogProducts(
   q: string,
   page = 1,
   sort: CatalogSort = 'featured',
-  // Optional "Тільки з ціною" filter — narrows the text + category matches to
-  // products with a real, non-suspicious price. Exact-SKU matches are left
-  // unfiltered so a precise code always surfaces. Off by default.
   buyable = false,
-  // Optional "Тільки з фото" filter — narrows text + category matches to rows
-  // with an image source (main_image_url OR images[]). SKU matches unfiltered.
   withImage = false,
 ): Promise<{ products: CatalogProduct[]; total: number }> {
   const client = getClient()
@@ -976,22 +882,6 @@ export async function searchPublishedCatalogProducts(
   const from = (page - 1) * CATALOG_PAGE_SIZE
   const to = from + CATALOG_PAGE_SIZE - 1
 
-  // Each token must appear (AND) in at least one of name_ua (Ukrainian), name
-  // (Russian supplier feed) or supplier_sku (product code) — so multi-word and
-  // reordered queries match, across both languages and by SKU. Multiple .or()
-  // calls AND together in PostgREST. NO count:'exact' — the caller paginates by
-  // page length, so a full COUNT over the match set would be pure wasted work.
-  // Requires the pg_trgm GIN indexes (migration 20260630) to stay fast at 105k.
-  // ── (a) Proven product text/SKU search — RAW tokens, UNCHANGED behaviour ─────
-  // Each token must appear (AND) in name_ua / name (RU supplier) / supplier_sku /
-  // category_slug. This is the exact query that worked before; the category-intent
-  // step below is layered on SEPARATELY so it can never break this path.
-  // count:'exact' returns the size of the text-match set in the SAME ranged
-  // request (via the Content-Range header — no extra round-trip). This is the
-  // authoritative "how many products match your search" figure that drives the
-  // result-count + numbered pagination. The merged SKU/category branches below
-  // only re-rank/supplement a page, so a page-full heuristic still governs the
-  // Next link; see the returned `total` note.
   let base = client
     .from('catalog_products')
     .select('*', { count: 'exact' })
@@ -1007,9 +897,6 @@ export async function searchPublishedCatalogProducts(
   const textProducts = (textRes.data ?? []) as CatalogProduct[]
   const textCount = textRes.count ?? null
 
-  // ── (b+c) Category intent — resolved + fetched SEPARATELY via a plain .in() ──
-  // No category_slug.in(...) is ever injected into the .or() groups above (that
-  // was the PR #48 regression). If anything here fails, the text results stand.
   let catProducts: CatalogProduct[] = []
   try {
     const matchedSlugs = await findCategorySlugsForQuery(client, tokens)
@@ -1030,22 +917,11 @@ export async function searchPublishedCatalogProducts(
     console.warn(`[search] category intent failed for "${term}": ${e instanceof Error ? e.message : String(e)}`)
   }
 
-  // ── Exact SKU/article lookup — normalized (hyphen/space/case-insensitive) ────
-  // Only for page 1 and SKU-like queries; separate query, merged FIRST so an
-  // exact code (N-270997) surfaces even when the stored SKU format differs.
   let skuProducts: CatalogProduct[] = []
   if (page === 1 && looksLikeSku(term)) {
     skuProducts = await findProductsBySku(client, term)
   }
 
-  // ── (d) Merge + rank: relevance bucket first, ads tier within bucket ─────────
-  // Dedup by id (SKU → category → text order feeds the stable tiebreaker), assign
-  // each product its BEST relevance bucket, then sort by (bucket, ads tier). This
-  // keeps exact-SKU matches (N-270997) pinned first and direct name/SKU matches
-  // above broad category-only matches, while surfacing purchasable products first
-  // WITHIN each bucket — without hiding "price on request" products. Operates only
-  // on the already-fetched, page-bounded pool (≤ 3× page size); pagination stays
-  // server-side via the range() calls above.
   const skuIds = new Set(skuProducts.map((p) => p.id))
   const catIds = new Set(catProducts.map((p) => p.id))
   const seen = new Set<string>()
@@ -1054,22 +930,17 @@ export async function searchPublishedCatalogProducts(
     if (seen.has(p.id) || !isPublicListableProduct(p)) continue
     seen.add(p.id)
     const bucket: RelevanceBucket = skuIds.has(p.id)
-      ? 0                                   // exact SKU match
+      ? 0
       : directTokenMatch(p, tokens)
-        ? 1                                 // direct name/SKU token match
+        ? 1
         : catIds.has(p.id)
-          ? 2                               // category-intent match
-          : 3                               // broad fallback (e.g. category_slug-only)
+          ? 2
+          : 3
     entries.push({ product: p, bucket })
   }
   const ranked = rankByRelevanceThenAds(entries)
   debugLogRanking('catalog-search', term, ranked)
   const products = ranked.slice(0, CATALOG_PAGE_SIZE).map((e) => e.product)
-  // Report the text-match count as the result total (the meaningful "products
-  // found" number, driving the count line + numbered pagination). Floor it at the
-  // absolute index through this page so "Показано A–B з X" is never inconsistent;
-  // the caller still shows a Next link whenever the page came back full, covering
-  // the rare case where category-intent matches extend results past textCount.
   const total = textCount != null ? Math.max(textCount, from + products.length) : products.length
   return { products, total }
 }
@@ -1083,9 +954,6 @@ export interface CatalogSuggestion {
   sku: string | null
 }
 
-// Lightweight typeahead for the search box. Bounded (limit), no count, minimal
-// columns — safe per keystroke ONLY with the pg_trgm indexes in place. A short
-// query is rejected to avoid matching a huge slice of the catalog.
 export async function suggestCatalogProducts(q: string, limit = 8): Promise<CatalogSuggestion[]> {
   const client = getClient()
   const term = q.trim()
@@ -1095,7 +963,6 @@ export async function suggestCatalogProducts(q: string, limit = 8): Promise<Cata
   const SUGGEST_COLS = 'id, slug, category_slug, name_ua, name, main_image_url, images, price_uah, price_prefix, unit_label, is_price_suspicious, supplier_sku'
   const over = Math.min(Math.max(limit * 3, limit), 30)
 
-  // ── Proven text/SKU suggest — RAW tokens, UNCHANGED behaviour ────────────────
   let base = client
     .from('catalog_products')
     .select(SUGGEST_COLS)
@@ -1108,8 +975,6 @@ export async function suggestCatalogProducts(q: string, limit = 8): Promise<Cata
   if (textRes.error) console.warn(`[suggest] text query failed for "${term}": ${textRes.error.message}`)
   const textRows = (textRes.data ?? []) as unknown as CatalogProduct[]
 
-  // ── Category intent — SEPARATE .in() query, prepended so "скутер" suggests ───
-  // scooter-category products instead of []. Fully guarded — failure = text only.
   let catRows: CatalogProduct[] = []
   try {
     const matchedSlugs = await findCategorySlugsForQuery(client, tokens)
@@ -1129,18 +994,11 @@ export async function suggestCatalogProducts(q: string, limit = 8): Promise<Cata
     console.warn(`[suggest] category intent failed for "${term}": ${e instanceof Error ? e.message : String(e)}`)
   }
 
-  // Exact SKU/article lookup, normalized — so a full code like N-270997 surfaces
-  // in the typeahead even when the stored format differs. Prepended.
   let skuRows: CatalogProduct[] = []
   if (looksLikeSku(term)) {
     skuRows = (await findProductsBySku(client, term, over)) as unknown as CatalogProduct[]
   }
 
-  // Merge + rank exactly like search: relevance bucket first (exact SKU → direct
-  // name/SKU token → category-intent → broad), ads tier within each bucket. So
-  // the typeahead surfaces relevant, purchasable products first instead of
-  // unrelated price-null rows; "price on request" items remain, just lower. Pool
-  // is already bounded (≤ 3× over ≈ 90 rows) so this never loads the full catalog.
   const skuIds = new Set(skuRows.map((p) => p.id))
   const catIds = new Set(catRows.map((p) => p.id))
   const seen = new Set<string>()
@@ -1181,8 +1039,6 @@ export async function getPublishedCatalogProductCount(): Promise<number> {
   return count ?? 0
 }
 
-// Natural/food manual products for /products ("Продукти пасіки"). These live in
-// catalog_products (source='manual') but are excluded from /catalog.
 export async function getNaturalProducts(): Promise<CatalogProduct[]> {
   const client = getClient()
   if (!client) return []
@@ -1208,11 +1064,6 @@ export async function getCategoryProductCount(categorySlug: string): Promise<num
   return count ?? 0
 }
 
-// Derive product counts grouped by category_slug directly from published
-// products — the single source of truth for what /catalog should show. One
-// lightweight column is fetched (paginated past PostgREST's 1000-row cap) and
-// grouped in memory, which stays cheap for a few thousand products and makes
-// the landing page resilient to missing/misaligned category_slug values.
 export async function getPublishedCategorySlugCounts(): Promise<{
   bySlug: Map<string, number>
   nullCount: number
@@ -1235,7 +1086,6 @@ export async function getPublishedCategorySlugCounts(): Promise<{
     if (error || !data || data.length === 0) break
     for (const row of data) {
       const slug = (row as { category_slug: string | null }).category_slug
-      // Skip natural/food products — they belong to /products, not /catalog.
       if (slug && NATURAL_CATEGORY_SLUGS.includes(slug)) continue
       total++
       if (slug) bySlug.set(slug, (bySlug.get(slug) ?? 0) + 1)
@@ -1247,15 +1097,6 @@ export async function getPublishedCategorySlugCounts(): Promise<{
   return { bySlug, nullCount, total }
 }
 
-// ─── Search-demand supply counts (admin / growth readiness) ──────────────────
-// How much SELLABLE inventory backs one internal-search cluster. Uses the SAME
-// token-AND ilike matching + storefront scope as the public search above, so the
-// number an operator sees is the number a shopper can actually reach. Three HEAD
-// count queries (no rows returned), run in parallel:
-//   matched  — published, in-scope products the query matches
-//   inStock  — of those, is_in_stock = true
-//   buyable  — of those, a real non-suspicious price (what an ad click needs)
-// Read-only. Returns zeros on any error — this must never break an admin page.
 export interface SearchSupplyCounts { matched: number; inStock: number; buyable: number }
 
 export async function countSearchSupply(

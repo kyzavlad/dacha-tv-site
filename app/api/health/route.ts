@@ -32,8 +32,8 @@ export async function GET() {
   const startedAt = Date.now()
   const uptimeSeconds = Math.round(process.uptime())
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  const supabaseUrl = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL
+  const anonKey = process.env.SUPABASE_ANON_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
   const env = checkHealthEnv(supabaseUrl, anonKey)
   if (!env.configured) {
