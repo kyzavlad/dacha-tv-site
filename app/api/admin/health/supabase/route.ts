@@ -62,8 +62,8 @@ async function probe(
 export async function GET(req: Request) {
   if (!verifyCronAuth(req)) return cronUnauthorized()
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  const supabaseUrl = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL
+  const anonKey = process.env.SUPABASE_ANON_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
   const serviceRole = process.env.SUPABASE_SERVICE_ROLE_KEY
 
   const env = {
@@ -79,7 +79,7 @@ export async function GET(req: Request) {
   // never hides a table that actually exists.
   const key = serviceRole || anonKey
   if (!supabaseUrl || !key) {
-    errors.push('Supabase env missing: need NEXT_PUBLIC_SUPABASE_URL and a key (service role or anon).')
+    errors.push('Supabase env missing: need SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL) and a key (service role or anon).')
     return Response.json(
       {
         ok: false,
