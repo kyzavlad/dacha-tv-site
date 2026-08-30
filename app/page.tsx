@@ -15,6 +15,7 @@ import {
   getSiteSettings,
 } from '@/lib/supabase/queries'
 import {
+  LAUNCH_PHONE,
   LAUNCH_YOUTUBE_URL,
   LAUNCH_FACEBOOK_URL,
   LAUNCH_INSTAGRAM_URL,
@@ -81,6 +82,7 @@ export default async function HomePage() {
     en: 'A family farm in the Kharkiv region: honey and apiary products, natural goods, flowers, lavender, services, and a shop for home & garden supplies.',
   }
 
+  const phone = siteSettings?.phone || LAUNCH_PHONE
   const socialProfiles = [
     siteSettings?.youtube_url || LAUNCH_YOUTUBE_URL,
     siteSettings?.facebook_url || LAUNCH_FACEBOOK_URL,
@@ -101,9 +103,10 @@ export default async function HomePage() {
     '@type': 'LocalBusiness',
     '@id': `${SITE_URL}/#business`,
     name: 'Дача TV',
+    legalName: 'ФОП Кузьменко Владислав Сергійович',
     description: localBusinessDescription[locale],
     url: SITE_URL,
-    telephone: siteSettings?.phone || '',
+    telephone: phone,
     address: postalAddress,
     sameAs: socialProfiles,
   }
@@ -117,9 +120,10 @@ export default async function HomePage() {
     '@type': 'OnlineStore',
     '@id': `${SITE_URL}/#online-store`,
     name: 'Дача TV',
+    legalName: 'ФОП Кузьменко Владислав Сергійович',
     url: SITE_URL,
     logo: `${SITE_URL}/images/dacha-tv/logo-square.png`,
-    telephone: siteSettings?.phone || '',
+    telephone: phone,
     address: postalAddress,
     sameAs: socialProfiles,
     hasMerchantReturnPolicy: {
