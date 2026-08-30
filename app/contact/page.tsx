@@ -3,6 +3,7 @@ import { GeneralContactForm } from '@/components/forms/GeneralContactForm'
 import { PhoneLink } from '@/components/shared/PhoneLink'
 import { SocialIcons } from '@/components/shared/SocialIcons'
 import { StructuredData } from '@/components/shared/StructuredData'
+import { SellerInfo } from '@/components/shared/SellerInfo'
 import { getSiteSettings } from '@/lib/supabase/queries'
 import {
   LAUNCH_PHONE,
@@ -11,7 +12,7 @@ import {
 } from '@/lib/launch-defaults'
 import { getRequestLocale } from '@/lib/i18n'
 import { pageDict } from '@/lib/i18n/pages'
-import { buildAlternates, buildSocialMetadata } from '@/lib/seo'
+import { buildAlternates, buildSocialMetadata, SITE_URL } from '@/lib/seo'
 
 export async function generateMetadata(): Promise<Metadata> {
   const locale = await getRequestLocale()
@@ -38,7 +39,9 @@ export default async function ContactPage() {
   const localBusinessSchema = {
     '@context': 'https://schema.org',
     '@type': 'LocalBusiness',
+    '@id': `${SITE_URL}/#business`,
     name: 'Дача TV',
+    legalName: 'ФОП Кузьменко Владислав Сергійович',
     telephone: phone,
     address: {
       '@type': 'PostalAddress',
@@ -47,7 +50,7 @@ export default async function ContactPage() {
       addressRegion: 'Харківська область',
       addressCountry: 'UA',
     },
-    url: process.env.NEXT_PUBLIC_SITE_URL || 'https://www.dachatv.com',
+    url: SITE_URL,
   }
 
   return (
@@ -129,6 +132,10 @@ export default async function ContactPage() {
               <p className="text-forest-700 text-sm mt-1">
                 {t.contact.responseBody}
               </p>
+            </div>
+
+            <div className="mb-6">
+              <SellerInfo />
             </div>
 
             {/* Social links */}
