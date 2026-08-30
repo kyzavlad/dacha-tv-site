@@ -1,6 +1,8 @@
 import Link from 'next/link'
+import { PhoneLink } from '@/components/shared/PhoneLink'
 import { getRequestLocale, localizedPath } from '@/lib/i18n'
 import { tr } from '@/lib/i18n/pages'
+import { LAUNCH_PHONE } from '@/lib/launch-defaults'
 
 interface SellerInfoProps {
   compact?: boolean
@@ -8,11 +10,30 @@ interface SellerInfoProps {
 
 export async function SellerInfo({ compact = false }: SellerInfoProps) {
   const locale = await getRequestLocale()
+  const location = tr(
+    {
+      uk: 'Коротич, Пісочинська ОТГ, Харківська область, Україна',
+      ru: 'Коротич, Песочинская ОТГ, Харьковская область, Украина',
+      en: 'Korotych, Pisochyn community, Kharkiv region, Ukraine',
+    },
+    locale,
+  )
+
   if (compact) {
     return (
       <div className="text-xs text-gray-400 space-y-1">
-        <p>{tr({ uk: 'ФОП Кузьменко Владислав Сергійович · Коротич, Харківська обл.', ru: 'ФОП Кузьменко Владислав Сергійович · Коротич, Харківська обл.', en: 'Sole proprietor Vladyslav Kuzmenko · Korotych, Kharkiv region' }, locale)}</p>
         <p>
+          {tr(
+            {
+              uk: `ФОП Кузьменко Владислав Сергійович · ${location}`,
+              ru: `ФОП Кузьменко Владислав Сергійович · ${location}`,
+              en: `Sole proprietor Vladyslav Kuzmenko · ${location}`,
+            },
+            locale,
+          )}
+        </p>
+        <p>
+          <PhoneLink phone={LAUNCH_PHONE} className="underline hover:text-gray-600" /> ·{' '}
           {tr({ uk: 'Оплата після підтвердження замовлення', ru: 'Оплата после подтверждения заказа', en: 'Payment after order confirmation' }, locale)} ·{' '}
           <Link href={localizedPath(locale, '/delivery')} className="underline hover:text-gray-600">
             {tr({ uk: 'Доставка й оплата', ru: 'Доставка и оплата', en: 'Delivery & payment' }, locale)}
@@ -36,7 +57,13 @@ export async function SellerInfo({ compact = false }: SellerInfoProps) {
         </div>
         <div className="grid grid-cols-[120px_1fr] gap-x-4">
           <dt className="text-gray-400">{tr({ uk: 'Місцезнаходження', ru: 'Местонахождение', en: 'Location' }, locale)}</dt>
-          <dd className="text-gray-800">{tr({ uk: 'Коротич, Харківська область, Україна', ru: 'Коротич, Харьковская область, Украина', en: 'Korotych, Kharkiv region, Ukraine' }, locale)}</dd>
+          <dd className="text-gray-800">{location}</dd>
+        </div>
+        <div className="grid grid-cols-[120px_1fr] gap-x-4">
+          <dt className="text-gray-400">{tr({ uk: 'Телефон', ru: 'Телефон', en: 'Phone' }, locale)}</dt>
+          <dd className="text-gray-800">
+            <PhoneLink phone={LAUNCH_PHONE} className="underline decoration-gray-300 underline-offset-4 hover:decoration-gray-700" />
+          </dd>
         </div>
         <div className="grid grid-cols-[120px_1fr] gap-x-4">
           <dt className="text-gray-400">{tr({ uk: 'Оплата', ru: 'Оплата', en: 'Payment' }, locale)}</dt>
