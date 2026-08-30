@@ -56,6 +56,8 @@ export default async function sitemap(props: { id: Promise<string> }): Promise<M
       { url: `${BASE_URL}/about`, lastModified: new Date(), priority: 0.7 },
       { url: `${BASE_URL}/contact`, lastModified: new Date(), priority: 0.7 },
       { url: `${BASE_URL}/delivery`, lastModified: new Date(), priority: 0.6 },
+      { url: `${BASE_URL}/returns`, lastModified: new Date(), priority: 0.65 },
+      { url: `${BASE_URL}/privacy`, lastModified: new Date(), priority: 0.45 },
       { url: `${BASE_URL}/faq`, lastModified: new Date(), priority: 0.6 },
       // Scooter model SEO/Ads landings (canonical uk; ru mirror via hreflang).
       { url: `${BASE_URL}/moto/skutery/honda-dio`, lastModified: new Date(), priority: 0.85 },

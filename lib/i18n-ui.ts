@@ -17,6 +17,7 @@ const NAV_LABELS: Record<string, Partial<Record<Locale, string>>> = {
   '/contact': { uk: 'Контакти', ru: 'Контакты', en: 'Contact' },
   '/delivery': { uk: 'Доставка', ru: 'Доставка', en: 'Delivery' },
   '/delivery#payment': { uk: 'Оплата', ru: 'Оплата', en: 'Payment' },
+  '/returns': { uk: 'Повернення та обмін', ru: 'Возврат и обмен', en: 'Returns & exchanges' },
   '/faq': { uk: 'FAQ', ru: 'FAQ', en: 'FAQ' },
   '/privacy': { uk: 'Політика конфіденційності', ru: 'Политика конфиденциальности', en: 'Privacy policy' },
 }
