@@ -76,6 +76,28 @@ export function safeFilename(name: string): string {
   return base || 'file'
 }
 
+// Storage SDK builds an absolute public URL from the internal Supabase endpoint.
+// When Supabase is self-hosted on localhost, that absolute URL must never be
+// persisted into catalog rows because a shopper's browser cannot reach
+// 127.0.0.1 on the server. Public Storage is exposed read-only through the main
+// Dacha origin, so persist only the same-origin path. Keep external URLs intact
+// for backwards compatibility with managed Supabase or another remote backend.
+export function canonicalStoredPublicUrl(publicUrl: string): string {
+  try {
+    const url = new URL(publicUrl)
+    if (
+      url.hostname === '127.0.0.1' ||
+      url.hostname === 'localhost' ||
+      url.hostname === '::1'
+    ) {
+      return `${url.pathname}${url.search}${url.hash}`
+    }
+  } catch {
+    // Keep the original value if it is not an absolute URL.
+  }
+  return publicUrl
+}
+
 export interface UploadOptions {
   // When provided, images are grouped under catalog/{productId}/… so a product's
   // media is collision-free and easy to locate. Falls back to a generic folder.
@@ -137,9 +159,8 @@ export async function uploadProductFile(
       }
     }
 
-    // ── Post-upload verification: the object must exist AND its public URL must
-    // resolve. On any failure, DELETE the object so no dangling/unreachable path
-    // is ever returned.
+    // ── Post-upload verification: the object must exist AND its internal public
+    // URL must resolve. Persist only a browser-safe canonical URL afterwards.
     const { data: { publicUrl } } = client.storage.from(BUCKET).getPublicUrl(name)
     const verified = await verifyUploaded(client, name, publicUrl)
     if (!verified.ok) {
@@ -148,7 +169,7 @@ export async function uploadProductFile(
       return { error: GENERIC_ERR }
     }
 
-    return { url: publicUrl }
+    return { url: canonicalStoredPublicUrl(publicUrl) }
   } catch (e) {
     console.error(`[upload] unexpected failure — path="${name}" ${e instanceof Error ? e.message : String(e)}`)
     // Attempt cleanup of a possibly-created object.
