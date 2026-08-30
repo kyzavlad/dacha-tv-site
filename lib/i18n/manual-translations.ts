@@ -3,6 +3,7 @@
 // records keep their Ukrainian columns; this is additive enrichment with an
 // intentional Ukrainian fallback. `resolveManualField` is PURE (unit-testable).
 
+import 'server-only'
 import { createClient } from '@supabase/supabase-js'
 import type { Locale } from '@/lib/i18n'
 
