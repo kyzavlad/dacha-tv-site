@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import { PUBLIC_LOCALES, HREFLANG, DEFAULT_LOCALE, localizedPath, type Locale } from '@/lib/i18n'
 
 export const SITE_NAME = 'Дача TV'
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.dachatv.com'
+export const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://dachatv.com'
 
 // Build canonical + hreflang alternates for a page, given the ACTIVE locale and
 // the canonical (uk, prefix-less) path. The canonical self-references the active
