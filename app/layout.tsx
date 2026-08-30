@@ -12,6 +12,7 @@ import { AttributionCapture } from '@/components/analytics/AttributionCapture'
 import { SiteChrome } from '@/components/layout/SiteChrome'
 import { isLocale, DEFAULT_LOCALE } from '@/lib/i18n'
 import { LocaleProvider } from '@/lib/i18n/locale-context'
+import { SITE_URL } from '@/lib/seo'
 
 const inter = Inter({
   variable: '--font-inter',
@@ -26,7 +27,7 @@ const lora = Lora({
 })
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || 'https://www.dachatv.com'),
+  metadataBase: new URL(SITE_URL),
   title: {
     template: '%s | Дача TV',
     default: 'Дача TV: товари, продукти й послуги',
