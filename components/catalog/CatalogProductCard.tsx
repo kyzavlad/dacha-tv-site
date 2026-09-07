@@ -3,6 +3,7 @@ import type { CatalogProduct } from '@/types'
 import { AddToCartButton } from '@/components/cart/AddToCartButton'
 import { SafeImage } from '@/components/shared/SafeImage'
 import { canAddToCart, displayProductName, formatCatalogPrice, getCatalogProductImage, getCatalogPrimaryImageAlt, hasDisplayablePrice } from '@/lib/supabase/catalog'
+import { isDiscoveryVisibleProduct } from '@/lib/catalog/discovery'
 import { stockStatus, stockLabel } from '@/lib/catalog/stock'
 import { DEFAULT_LOCALE, isLocale, localizedPath, type Locale } from '@/lib/i18n'
 import { pageDict } from '@/lib/i18n/pages'
@@ -29,6 +30,10 @@ function inquiryCtaLabel(product: CatalogProduct, loc: Locale, priceOnRequest: s
 }
 
 export function CatalogProductCard({ product, categorySlug, locale }: CatalogProductCardProps) {
+  // Discovery surfaces should lead shoppers to inventory they can actually buy.
+  // The PDP URL itself stays published/indexable for temporary OOS inventory.
+  if (!isDiscoveryVisibleProduct(product)) return null
+
   const loc: Locale = isLocale(locale) ? locale : DEFAULT_LOCALE
   const t = pageDict(loc)
   // Keep the active locale prefix so navigating from /ru/... stays in RU.

@@ -32,8 +32,10 @@ export default async function ContactPage() {
   const locale = await getRequestLocale()
   const t = pageDict(locale)
   const siteSettings = await getSiteSettings().catch(() => null)
-  const phone = siteSettings?.phone || LAUNCH_PHONE
-  const phoneSecondary = siteSettings?.phone_secondary || LAUNCH_PHONE_SECONDARY
+  // Keep the current commercial phone order canonical even if an older
+  // site_settings row has not been updated on the self-hosted database yet.
+  const phone = LAUNCH_PHONE
+  const phoneSecondary = LAUNCH_PHONE_SECONDARY
   const address = siteSettings?.address_full || LAUNCH_ADDRESS
 
   const localBusinessSchema = {
