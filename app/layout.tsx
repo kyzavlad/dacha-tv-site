@@ -13,6 +13,7 @@ import { SiteChrome } from '@/components/layout/SiteChrome'
 import { isLocale, DEFAULT_LOCALE } from '@/lib/i18n'
 import { LocaleProvider } from '@/lib/i18n/locale-context'
 import { SITE_URL } from '@/lib/seo'
+import { LAUNCH_PHONE, LAUNCH_PHONE_SECONDARY } from '@/lib/launch-defaults'
 
 const inter = Inter({
   variable: '--font-inter',
@@ -45,7 +46,17 @@ export const metadata: Metadata = {
 }
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const siteSettings = await getSiteSettings().catch(() => null)
+  const storedSiteSettings = await getSiteSettings().catch(() => null)
+  // Phone order is a launch-level commercial decision. Keep all other editable
+  // site settings, but do not let an older database row silently override the
+  // current primary/secondary support numbers in global chrome.
+  const siteSettings = storedSiteSettings
+    ? {
+        ...storedSiteSettings,
+        phone: LAUNCH_PHONE,
+        phone_secondary: LAUNCH_PHONE_SECONDARY,
+      }
+    : null
 
   // Locale + admin signal come from the proxy (x-dacha-locale on /ru,/en;
   // x-dacha-section=admin on /admin). Reading them here sets <html lang>
