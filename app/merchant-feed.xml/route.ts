@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import {
   MERCHANT_INITIAL_FEED_LIMIT,
+  isMerchantValidationQuarantined,
   renderMerchantRss,
   toMerchantFeedItem,
   type MerchantCatalogRow,
@@ -65,7 +66,14 @@ export async function GET() {
     return new Response('Merchant feed unavailable', { status: 503 })
   }
 
-  const items = ((data ?? []) as unknown as MerchantCatalogRow[])
+  // Apply the temporary validation quarantine only after the deterministic
+  // 500-row selection. This intentionally shrinks the validation batch instead
+  // of backfilling it with new, not-yet-reviewed products.
+  const selectedRows = (data ?? []) as unknown as MerchantCatalogRow[]
+  const validationRows = selectedRows.filter((row) => !isMerchantValidationQuarantined(row.id))
+  const quarantinedCount = selectedRows.length - validationRows.length
+
+  const items = validationRows
     .map((row) => toMerchantFeedItem(row))
     .filter((item) => item !== null)
 
@@ -75,6 +83,7 @@ export async function GET() {
       'Content-Type': 'application/rss+xml; charset=utf-8',
       'Cache-Control': 'public, max-age=0, s-maxage=3600, stale-while-revalidate=300',
       'X-Merchant-Feed-Items': String(items.length),
+      'X-Merchant-Feed-Quarantined': String(quarantinedCount),
     },
   })
 }
