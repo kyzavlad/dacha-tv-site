@@ -3,9 +3,10 @@ export const dynamic = 'force-dynamic'
 import { displayProductName, formatCatalogPrice, getCatalogProductImage } from '@/lib/supabase/catalog'
 import { searchPublishedCatalogProductsFast } from '@/lib/catalog/public-search'
 
-// Public typeahead shares the same discovery policy as the full search page:
+// Public typeahead shares the same bounded/indexed discovery path as full search:
 // temporary out-of-stock supplier products keep their PDP URLs for SEO/direct
-// traffic but are not suggested to shoppers. Bounded to the first 8 results.
+// traffic but are not suggested to shoppers. The search reader is page-bounded
+// and backed by the indexed public-catalog RPC, then this route keeps only 8.
 //   GET /api/catalog/suggest?q=мед
 export async function GET(req: Request) {
   const url = new URL(req.url)
