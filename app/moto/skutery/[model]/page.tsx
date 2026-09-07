@@ -3,7 +3,8 @@ export const dynamic = 'force-dynamic'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
-import { getScooterModelProducts, CATALOG_PAGE_SIZE, displayProductName, hasValidPrice } from '@/lib/supabase/catalog'
+import { CATALOG_PAGE_SIZE, displayProductName, hasValidPrice } from '@/lib/supabase/catalog'
+import { getInStockScooterModelProducts } from '@/lib/catalog/scooter-discovery'
 import { CatalogProductCard } from '@/components/catalog/CatalogProductCard'
 import { Breadcrumb } from '@/components/catalog/Breadcrumb'
 import { StructuredData } from '@/components/shared/StructuredData'
@@ -83,7 +84,7 @@ const STR: Record<L, {
     benefits: ['Подбор по модели и раме', 'Актуальные позиции из каталога', 'Доставка Новой Почтой по Украине', 'Консультация по совместимости'],
     deliveryTitle: 'Доставка и оплата',
     delivery: 'Отправляем Новой Почтой по всей Украине — на отделение или в почтомат.',
-    payment: 'Оплата: наложенный платёж (при получении) или предоплата на карту/ФОП по договорённости.',
+    payment: 'Оплата: наложенный платёж (при получении) або передоплата на картку/ФОП по договорённости.',
     findPart: 'Найти нужную деталь', order: 'Заказать', callUs: 'Позвонить',
     empty: 'Сейчас нет доступных позиций для этой модели. Оставьте заявку или позвоните — найдём нужную деталь.',
     faqHeading: 'Частые вопросы',
@@ -129,9 +130,9 @@ export default async function ScooterModelPage({ params, searchParams }: Props) 
   const page = Math.max(1, parseInt(pageStr ?? '1', 10) || 1)
   const activeMod = m.mods.find((x) => x.slug === modStr) ?? null
 
-  // No silent catch: a real DB/PostgREST failure must surface (500 + logs), not
-  // masquerade as a valid empty product page.
-  const { products, hasNext } = await getScooterModelProducts(
+  // Paid/model discovery must only render sellable inventory. Temporary OOS PDPs
+  // stay published for SEO/direct traffic but never consume a slot in this grid.
+  const { products, hasNext } = await getInStockScooterModelProducts(
     SCOOTER_CATEGORY_SLUG,
     m.tokens,
     page,
