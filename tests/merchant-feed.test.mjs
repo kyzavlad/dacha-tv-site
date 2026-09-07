@@ -3,7 +3,9 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import {
   MERCHANT_INITIAL_FEED_LIMIT,
+  MERCHANT_VALIDATION_QUARANTINE_IDS,
   absoluteMerchantUrl,
+  isMerchantValidationQuarantined,
   renderMerchantRss,
   toMerchantFeedItem,
 } from '../lib/catalog/merchant-feed.ts'
@@ -29,6 +31,15 @@ const good = {
 
 test('initial Merchant rollout is deliberately bounded', () => {
   assert.equal(MERCHANT_INITIAL_FEED_LIMIT, 500)
+})
+
+test('Merchant validation quarantine is exact, unique, and does not catch clean products', () => {
+  assert.equal(MERCHANT_VALIDATION_QUARANTINE_IDS.length, 30)
+  assert.equal(new Set(MERCHANT_VALIDATION_QUARANTINE_IDS).size, 30)
+  assert.equal(isMerchantValidationQuarantined('009240d2-614b-4b18-bc58-63c510592ddf'), true)
+  assert.equal(isMerchantValidationQuarantined('0308d489-c79b-42a0-a429-3be21e4751c0'), true)
+  assert.equal(isMerchantValidationQuarantined('04a34394-3cea-4272-972c-cec3e1bd40cc'), true)
+  assert.equal(isMerchantValidationQuarantined(good.id), false)
 })
 
 test('a clean supplier product becomes a Merchant item with canonical Dacha URL', () => {
@@ -71,6 +82,15 @@ test('RSS output escapes XML and contains required core product fields', () => {
     assert.match(xml, new RegExp(`<${field}>`))
   }
   assert.match(xml, /Компресор &amp; набір/)
+})
+
+test('feed route applies quarantine after the bounded selection', () => {
+  const route = readFileSync(new URL('../app/merchant-feed.xml/route.ts', import.meta.url), 'utf8')
+  const limitIndex = route.indexOf('.limit(MERCHANT_INITIAL_FEED_LIMIT)')
+  const quarantineIndex = route.indexOf('filter((row) => !isMerchantValidationQuarantined(row.id))')
+  assert.ok(limitIndex >= 0)
+  assert.ok(quarantineIndex > limitIndex)
+  assert.match(route, /X-Merchant-Feed-Quarantined/)
 })
 
 test('feed code never fabricates product identifiers', () => {
