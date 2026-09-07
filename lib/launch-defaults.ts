@@ -1,5 +1,5 @@
-export const LAUNCH_PHONE = '+380967657772'
-export const LAUNCH_PHONE_SECONDARY = '+380934665801'
+export const LAUNCH_PHONE = '+380951444853'
+export const LAUNCH_PHONE_SECONDARY = '+380967657772'
 export const LAUNCH_YOUTUBE_URL = 'https://www.youtube.com/@dacha_tv'
 export const LAUNCH_YOUTUBE_VIDEO_ID = 'Qwmi6Igjp4I'
 export const LAUNCH_INSTAGRAM_URL = 'https://www.instagram.com/dachatv.store'
