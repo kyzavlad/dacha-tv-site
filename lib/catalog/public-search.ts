@@ -12,6 +12,7 @@ import {
   type CatalogSort,
   type RelevanceBucket,
 } from '@/lib/supabase/catalog'
+import { isDiscoveryVisibleProduct } from '@/lib/catalog/discovery'
 
 function getClient() {
   const url = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -289,7 +290,7 @@ export async function searchPublishedCatalogProductsFast(
   const entries: RankEntry[] = []
 
   for (const p of [...skuProducts, ...catProducts, ...textPage.rows]) {
-    if (seen.has(p.id) || !isPublicListableProduct(p)) continue
+    if (seen.has(p.id) || !isPublicListableProduct(p) || !isDiscoveryVisibleProduct(p)) continue
     seen.add(p.id)
     const bucket: RelevanceBucket = skuIds.has(p.id)
       ? 0
