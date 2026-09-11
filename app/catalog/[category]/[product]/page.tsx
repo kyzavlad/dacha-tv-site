@@ -31,6 +31,7 @@ import { BuyNowButton } from '@/components/cart/BuyNowButton'
 import { StickyBuyBar } from '@/components/catalog/StickyBuyBar'
 import { TrackViewItem } from '@/components/analytics/TrackEvent'
 import { TrackedPhoneLink } from '@/components/shared/TrackedPhoneLink'
+import { ProductFitmentNote } from '@/components/catalog/ProductFitmentNote'
 import { ProductOptions } from '@/components/catalog/ProductOptions'
 import { ManualLeadForm } from '@/components/catalog/ManualLeadForm'
 import type { ManualLeadType } from '@/types'
@@ -299,6 +300,8 @@ export default async function ProductPage({ params }: Props) {
                 </div>
               )}
             </div>
+
+            <ProductFitmentNote sku={product.supplier_sku} locale={locale} />
 
             {/* Metal products: always surface the direct order phone + delivery
                 terms, regardless of buyable/inquiry state. */}
