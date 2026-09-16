@@ -10,17 +10,17 @@ import { manualDict } from '@/lib/i18n/sections/manual'
 
 const PRODUCTS_META: Record<'uk' | 'ru' | 'en', { title: string; description: string; ogDescription: string }> = {
   uk: {
-    title: 'Продукти',
+    title: 'Натуральні продукти та продукти пасіки',
     description: 'Натуральні продукти, продукти пасіки та сезонні товари господарства з Харківщини: мед, пилок, прополіс, жимолость, живі олії, Іван-чай, часник, саджанці та інше.',
     ogDescription: 'Натуральні продукти, продукти пасіки та сезонні товари господарства з Харківщини.',
   },
   ru: {
-    title: 'Продукты',
+    title: 'Натуральные продукты и продукты пасеки',
     description: 'Натуральные продукты, продукты пасеки и сезонные товары хозяйства с Харьковщины: мёд, пыльца, прополис, жимолость, живые масла, Иван-чай, чеснок, саженцы и другое.',
     ogDescription: 'Натуральные продукты, продукты пасеки и сезонные товары хозяйства с Харьковщины.',
   },
   en: {
-    title: 'Products',
+    title: 'Natural farm and apiary products',
     description: 'Natural products, apiary products and seasonal farm goods from the Kharkiv region: honey, pollen, propolis, honeysuckle, cold-pressed oils, Ivan tea, garlic, seedlings and more.',
     ogDescription: 'Natural products, apiary products and seasonal farm goods from the Kharkiv region.',
   },

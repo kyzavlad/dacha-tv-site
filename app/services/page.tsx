@@ -14,19 +14,19 @@ const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://www.dachatv.com'
 
 const SERVICES_META: Record<'uk' | 'ru' | 'en', { title: string; description: string; ogTitle: string; ogDescription: string }> = {
   uk: {
-    title: 'Послуги',
+    title: 'Послуги Dacha TV на Харківщині',
     description: 'Послуги садиби Дача TV на Харківщині: фотосесія у лаванді, оренда альтанки на воді, відпочинок на природі та консультації пасічника.',
     ogTitle: 'Послуги садиби',
     ogDescription: 'Фотосесії у лаванді, відпочинок над ставком, оренда альтанки та консультації пасічника — усе на одній садибі під Харковом.',
   },
   ru: {
-    title: 'Услуги',
+    title: 'Услуги Dacha TV на Харьковщине',
     description: 'Услуги усадьбы Дача TV на Харьковщине: фотосессия в лаванде, аренда беседки на воде, отдых на природе и консультации пчеловода.',
     ogTitle: 'Услуги усадьбы',
     ogDescription: 'Фотосессии в лаванде, отдых у пруда, аренда беседки и консультации пчеловода — всё на одной усадьбе под Харьковом.',
   },
   en: {
-    title: 'Services',
+    title: 'Dacha TV services in the Kharkiv region',
     description: 'Dacha TV homestead services in the Kharkiv region: lavender photo shoots, waterside gazebo rental, outdoor recreation and beekeeper consultations.',
     ogTitle: 'Homestead services',
     ogDescription: 'Lavender photo shoots, rest by the pond, gazebo rental and beekeeper consultations — all on one homestead near Kharkiv.',

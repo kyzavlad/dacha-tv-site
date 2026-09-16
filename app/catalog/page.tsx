@@ -21,24 +21,24 @@ import { catalogDict } from '@/lib/i18n/sections/catalog'
 
 const META: Record<'uk' | 'ru' | 'en', { title: string; description: string; ogTitle: string; ogDescription: string; ogAlt: string }> = {
   uk: {
-    title: 'Магазин',
-    description: 'Магазин товарів для дому, саду та господарства: квіти, металопрофіль, покрівля та широкий асортимент від постачальників. Доставка по Україні.',
-    ogTitle: 'Магазин товарів',
-    ogDescription: 'Товари для дому, саду та господарства: квіти, металопрофіль, покрівля та широкий асортимент від постачальників.',
+    title: 'Інтернет-магазин: авто, скутери, інструменти, дім і сад',
+    description: 'Каталог Dacha TV: запчастини для скутерів і мото, автоаксесуари, інструменти, товари для дому, саду, господарства та інші категорії. Доставка по Україні.',
+    ogTitle: 'Інтернет-магазин Dacha TV',
+    ogDescription: 'Широкий каталог: запчастини для скутерів і мото, автоаксесуари, інструменти, товари для дому, саду та господарства.',
     ogAlt: 'Дача TV: магазин товарів',
   },
   ru: {
-    title: 'Магазин',
-    description: 'Магазин товаров для дома, сада и хозяйства: цветы, металлопрофиль, кровля и широкий ассортимент от поставщиков. Доставка по Украине.',
-    ogTitle: 'Магазин товаров',
-    ogDescription: 'Товары для дома, сада и хозяйства: цветы, металлопрофиль, кровля и широкий ассортимент от поставщиков.',
+    title: 'Интернет-магазин: авто, скутеры, инструменты, дом и сад',
+    description: 'Каталог Dacha TV: запчасти для скутеров и мото, автоаксессуары, инструменты, товары для дома, сада, хозяйства и другие категории. Доставка по Украине.',
+    ogTitle: 'Интернет-магазин Dacha TV',
+    ogDescription: 'Широкий каталог: запчасти для скутеров и мото, автоаксессуары, инструменты, товары для дома, сада и хозяйства.',
     ogAlt: 'Дача TV: магазин товаров',
   },
   en: {
-    title: 'Shop',
-    description: 'A shop for home, garden and farm goods: flowers, metal profile, roofing and a wide supplier assortment. Delivery across Ukraine.',
-    ogTitle: 'Goods shop',
-    ogDescription: 'Home, garden and farm goods: flowers, metal profile, roofing and a wide supplier assortment.',
+    title: 'Online store: auto, scooters, tools, home & garden',
+    description: 'Dacha TV catalog: scooter and motorcycle parts, auto accessories, tools, home, garden, household goods and more. Delivery across Ukraine.',
+    ogTitle: 'Dacha TV online store',
+    ogDescription: 'A broad catalog of scooter and motorcycle parts, auto accessories, tools, home, garden and household goods.',
     ogAlt: 'Dacha TV: goods shop',
   },
 }

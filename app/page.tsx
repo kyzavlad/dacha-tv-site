@@ -1,7 +1,6 @@
 import type { Metadata } from 'next'
 import { buildAlternates, SITE_URL } from '@/lib/seo'
 import { Hero } from '@/components/home/Hero'
-import { AvailableNow } from '@/components/home/AvailableNow'
 import { EcosystemSections } from '@/components/home/EcosystemSections'
 import { BrandStory } from '@/components/home/BrandStory'
 import { YouTubeSection } from '@/components/home/YouTubeSection'
@@ -25,21 +24,21 @@ import { getRequestLocale } from '@/lib/i18n'
 
 const HOME_META: Record<'uk' | 'ru' | 'en', { title: string; description: string; ogAlt: string }> = {
   uk: {
-    title: 'Дача TV: товари, продукти й послуги',
+    title: 'Dacha TV — інтернет-магазин товарів з доставкою по Україні',
     description:
-      'Мед, продукти пасіки, натуральні продукти, квіти, лаванда, металопрофіль і товари для господарства. Сімейне господарство на Харківщині із зручним замовленням онлайн.',
+      'Dacha TV — інтернет-магазин широкого асортименту: запчастини для скутерів і мото, автоаксесуари, інструменти, товари для дому, саду та господарства. Власні продукти й локальні напрямки — окремими розділами.',
     ogAlt: 'Дача TV',
   },
   ru: {
-    title: 'Дача TV: товары, продукты и услуги',
+    title: 'Dacha TV — интернет-магазин товаров с доставкой по Украине',
     description:
-      'Мёд, продукты пасеки, натуральные продукты, цветы, лаванда, металлопрофиль и товары для хозяйства. Семейное хозяйство в Харьковской области с удобным заказом онлайн.',
+      'Dacha TV — интернет-магазин широкого ассортимента: запчасти для скутеров и мото, автоаксессуары, инструменты, товары для дома, сада и хозяйства. Собственные продукты и локальные направления — в отдельных разделах.',
     ogAlt: 'Дача TV',
   },
   en: {
-    title: 'Dacha TV: goods, products, and services',
+    title: 'Dacha TV — online store with delivery across Ukraine',
     description:
-      'Honey, apiary products, natural goods, flowers, lavender, metal roofing profiles, and home & garden supplies. A family farm in the Kharkiv region with convenient online ordering.',
+      'Dacha TV is a broad online store for scooter and motorcycle parts, auto accessories, tools, home, garden and household goods. Our own products and local services live in dedicated sections.',
     ogAlt: 'Dacha TV',
   },
 }
@@ -77,9 +76,9 @@ export default async function HomePage() {
   const locale = await getRequestLocale()
 
   const localBusinessDescription: Record<'uk' | 'ru' | 'en', string> = {
-    uk: 'Сімейне господарство на Харківщині: мед і продукти пасіки, натуральні продукти, квіти, лаванда, послуги та магазин товарів для дому й господарства.',
-    ru: 'Семейное хозяйство в Харьковской области: мёд и продукты пасеки, натуральные продукты, цветы, лаванда, услуги и магазин товаров для дома и хозяйства.',
-    en: 'A family farm in the Kharkiv region: honey and apiary products, natural goods, flowers, lavender, services, and a shop for home & garden supplies.',
+    uk: 'Український інтернет-магазин широкого асортименту з доставкою по Україні. Окремі власні напрямки Dacha TV — продукти господарства, квіти, лаванда, пасіка та локальні послуги.',
+    ru: 'Украинский интернет-магазин широкого ассортимента с доставкой по Украине. Отдельные собственные направления Dacha TV — продукты хозяйства, цветы, лаванда, пасека и локальные услуги.',
+    en: 'A Ukrainian online store with a broad assortment and delivery across Ukraine. Dacha TV also has separate own-product and local-service sections for farm goods, flowers, lavender and the apiary.',
   }
 
   const phone = siteSettings?.phone || LAUNCH_PHONE
@@ -98,19 +97,6 @@ export default async function HomePage() {
     addressCountry: 'UA',
   }
 
-  const localBusinessSchema = {
-    '@context': 'https://schema.org',
-    '@type': 'LocalBusiness',
-    '@id': `${SITE_URL}/#business`,
-    name: 'Дача TV',
-    legalName: 'ФОП Кузьменко Владислав Сергійович',
-    description: localBusinessDescription[locale],
-    url: SITE_URL,
-    telephone: phone,
-    address: postalAddress,
-    sameAs: socialProfiles,
-  }
-
   // Merchant-level returns markup intentionally uses Google's link-only option:
   // the storefront mixes food and non-food goods, so product/category exceptions
   // remain on the human-readable policy rather than being flattened into an
@@ -123,6 +109,8 @@ export default async function HomePage() {
     legalName: 'ФОП Кузьменко Владислав Сергійович',
     url: SITE_URL,
     logo: `${SITE_URL}/images/dacha-tv/logo-square.png`,
+    description: localBusinessDescription[locale],
+    areaServed: 'UA',
     telephone: phone,
     address: postalAddress,
     sameAs: socialProfiles,
@@ -134,7 +122,6 @@ export default async function HomePage() {
 
   return (
     <>
-      <StructuredData data={localBusinessSchema} />
       <StructuredData data={onlineStoreSchema} />
 
       <Hero
@@ -145,7 +132,6 @@ export default async function HomePage() {
 
       <EcosystemSections />
 
-      <AvailableNow />
 
       <BrandStory />
 

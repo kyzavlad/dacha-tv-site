@@ -11,7 +11,7 @@ import { tr, type Tr } from '@/lib/i18n/pages'
 const D = {
   // ── /honey ─────────────────────────────────────────────────────────────
   honeyEyebrow: { uk: 'Каталог', ru: 'Каталог', en: 'Catalog' },
-  honeyH1: { uk: 'Наш мед', ru: 'Наш мёд', en: 'Our honey' },
+  honeyH1: { uk: 'Натуральний мед з пасіки на Харківщині', ru: 'Натуральный мёд с пасеки на Харьковщине', en: 'Natural honey from a Kharkiv-region apiary' },
   honeyIntro: {
     uk: 'Сезонний мед без домішок. Акація, Липа, Сонях: кожен сорт зібраний у свій час і відповідає природному циклу цвітіння.',
     ru: 'Сезонный мёд без примесей. Акация, Липа, Подсолнух: каждый сорт собран в своё время и соответствует природному циклу цветения.',
@@ -45,7 +45,7 @@ const D = {
 
   // ── /products ──────────────────────────────────────────────────────────
   productsEyebrow: { uk: 'Продукти', ru: 'Продукты', en: 'Products' },
-  productsH1: { uk: 'Продукти господарства', ru: 'Продукты хозяйства', en: 'Farm products' },
+  productsH1: { uk: 'Натуральні продукти та продукти пасіки', ru: 'Натуральные продукты и продукты пасеки', en: 'Natural farm and apiary products' },
   productsIntro: {
     uk: 'Натуральні продукти, продукти пасіки та сезонні товари господарства з Харківщини.',
     ru: 'Натуральные продукты, продукты пасеки и сезонные товары хозяйства с Харьковщины.',
@@ -63,7 +63,7 @@ const D = {
   flowersBreadcrumbHome: { uk: 'Головна', ru: 'Главная', en: 'Home' },
   flowersBreadcrumbCurrent: { uk: 'Квіти', ru: 'Цветы', en: 'Flowers' },
   flowersEyebrow: { uk: 'Домашній розсадник · Харківщина', ru: 'Домашний питомник · Харьковщина', en: 'Home nursery · Kharkiv region' },
-  flowersH1: { uk: 'Хризантеми', ru: 'Хризантемы', en: 'Chrysanthemums' },
+  flowersH1: { uk: 'Хризантеми з розсадника на Харківщині', ru: 'Хризантемы из питомника на Харьковщине', en: 'Chrysanthemums from a Kharkiv-region nursery' },
   flowersIntro: {
     uk: 'Понад {count} сортів. Помпонові, кущові, великоквіткові і рідкісні. Вирощуємо вдома: для букетів, подарунків і саду.',
     ru: 'Более {count} сортов. Помпонные, кустовые, крупноцветковые и редкие. Выращиваем дома: для букетов, подарков и сада.',
@@ -203,7 +203,7 @@ const D = {
   // ── /services ──────────────────────────────────────────────────────────
   servicesBreadcrumbHome: { uk: 'Головна', ru: 'Главная', en: 'Home' },
   servicesBreadcrumbCurrent: { uk: 'Послуги', ru: 'Услуги', en: 'Services' },
-  servicesH1: { uk: 'Послуги садиби', ru: 'Услуги усадьбы', en: 'Homestead services' },
+  servicesH1: { uk: 'Послуги Dacha TV на Харківщині', ru: 'Услуги Dacha TV на Харьковщине', en: 'Dacha TV services in the Kharkiv region' },
   servicesIntro: {
     uk: 'Фотосесії у лаванді, відпочинок над ставком та консультації пасічника: все на одній садибі.',
     ru: 'Фотосессии в лаванде, отдых у пруда и консультации пчеловода: всё на одной усадьбе.',
@@ -223,7 +223,7 @@ const D = {
   lavenderBreadcrumbHome: { uk: 'Головна', ru: 'Главная', en: 'Home' },
   lavenderBreadcrumbCurrent: { uk: 'Лаванда', ru: 'Лаванда', en: 'Lavender' },
   lavenderEyebrow: { uk: 'Садиба Дача TV · Харківщина', ru: 'Усадьба Дача TV · Харьковщина', en: 'Dacha TV homestead · Kharkiv region' },
-  lavenderH1: { uk: 'Лавандове поле', ru: 'Лавандовое поле', en: 'Lavender field' },
+  lavenderH1: { uk: 'Лавандове поле на Харківщині', ru: 'Лавандовое поле на Харьковщине', en: 'Lavender field in the Kharkiv region' },
   lavenderHeroIntro: {
     uk: 'Сезон цвітіння: червень–липень. Оренда поля для фотосесій і відпочинку. Букети лаванди під замовлення.',
     ru: 'Сезон цветения: июнь–июль. Аренда поля для фотосессий и отдыха. Букеты лаванды под заказ.',

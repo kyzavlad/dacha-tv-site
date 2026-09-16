@@ -28,14 +28,14 @@ const D = {
   // ── Landing (app/catalog/page.tsx) ──
   eyebrowShop: { uk: 'Магазин', ru: 'Магазин', en: 'Shop' },
   landingTitle: {
-    uk: 'Товари для дому, саду та господарства',
-    ru: 'Товары для дома, сада и хозяйства',
-    en: 'Goods for home, garden and household',
+    uk: 'Інтернет-магазин Dacha TV: широкий каталог товарів',
+    ru: 'Интернет-магазин Dacha TV: широкий каталог товаров',
+    en: 'Dacha TV online store: a broad product catalog',
   },
   landingSubtitle: {
-    uk: 'Товари для дому, саду та дачного господарства. Якість перевірена: доставка по Україні.',
-    ru: 'Товары для дома, сада и дачного хозяйства. Качество проверено: доставка по Украине.',
-    en: 'Goods for the home, garden and country house. Quality checked: delivery across Ukraine.',
+    uk: 'Запчастини для скутерів і мото, автоаксесуари, інструменти, товари для дому, саду, господарства та інші категорії. Доставка по Україні.',
+    ru: 'Запчасти для скутеров и мото, автоаксессуары, инструменты, товары для дома, сада, хозяйства и другие категории. Доставка по Украине.',
+    en: 'Scooter and motorcycle parts, auto accessories, tools, home, garden, household goods and more. Delivery across Ukraine.',
   },
   allAssortmentTitle: { uk: 'Весь асортимент', ru: 'Весь ассортимент', en: 'The full range' },
   allAssortmentBody: {
