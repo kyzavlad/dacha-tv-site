@@ -2,7 +2,6 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import {
-  MERCHANT_INITIAL_FEED_LIMIT,
   MERCHANT_VALIDATION_QUARANTINE_IDS,
   absoluteMerchantUrl,
   isMerchantValidationQuarantined,
@@ -28,10 +27,6 @@ const good = {
   source: 'supplier',
   lead_type: null,
 }
-
-test('initial Merchant rollout is deliberately bounded', () => {
-  assert.equal(MERCHANT_INITIAL_FEED_LIMIT, 500)
-})
 
 test('Merchant validation quarantine is exact, unique, and does not catch clean products', () => {
   assert.equal(MERCHANT_VALIDATION_QUARANTINE_IDS.length, 30)
@@ -84,12 +79,17 @@ test('RSS output escapes XML and contains required core product fields', () => {
   assert.match(xml, /Компресор &amp; набір/)
 })
 
-test('feed route applies quarantine after the bounded selection', () => {
+test('feed route walks the complete safe catalog with keyset pagination', () => {
   const route = readFileSync(new URL('../app/merchant-feed.xml/route.ts', import.meta.url), 'utf8')
-  const limitIndex = route.indexOf('.limit(MERCHANT_INITIAL_FEED_LIMIT)')
+  const pageSizeIndex = route.indexOf('MERCHANT_FEED_PAGE_SIZE = 1000')
+  const cursorIndex = route.indexOf("query = query.gt('id', cursor)")
   const quarantineIndex = route.indexOf('filter((row) => !isMerchantValidationQuarantined(row.id))')
-  assert.ok(limitIndex >= 0)
-  assert.ok(quarantineIndex > limitIndex)
+  assert.ok(pageSizeIndex >= 0)
+  assert.ok(cursorIndex > pageSizeIndex)
+  assert.ok(quarantineIndex > cursorIndex)
+  assert.ok(!route.includes('MERCHANT_INITIAL_FEED_LIMIT'))
+  assert.match(route, /MERCHANT_FEED_MAX_PAGES = 100/)
+  assert.match(route, /X-Merchant-Feed-Selected/)
   assert.match(route, /X-Merchant-Feed-Quarantined/)
 })
 
