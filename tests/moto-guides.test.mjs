@@ -9,6 +9,17 @@ import {
 const EXPECTED = [
   'honda-dio-yak-vyznachyty-ramu',
   'honda-dio-zadniy-variator-af35-48-51-56',
+  'honda-dio-karbiurator-af27-af34-af35',
+  'honda-dio-kolenval-af27-af34-af35',
+  'honda-dio-peredniy-variator-af27-af34',
+  'suzuki-lets-2-karbiurator',
+  'suzuki-lets-2-variator',
+  'suzuki-lets-2-kolenval',
+  'yamaha-jog-3kj-karbiurator',
+  'yamaha-jog-variator-50-3kj',
+  'yak-pidibraty-amortyzator-skutera',
+  'yak-pidibraty-hlushnyk-skutera',
+  'yak-pidibraty-zamok-zapaliuvannia-skutera',
   'yamaha-jog-3kj-sa36-sa39',
   'suzuki-lets-2-4-5',
   'yak-pidibraty-remin-variatora',
@@ -21,7 +32,7 @@ const sitemapSrc = readFileSync(new URL('../app/sitemap.ts', import.meta.url), '
 
 test('the P1 guide queue stays intentionally small and explicit', () => {
   assert.deepEqual(SCOOTER_GUIDE_SLUGS, EXPECTED)
-  assert.equal(new Set(SCOOTER_GUIDE_SLUGS).size, 6)
+  assert.equal(new Set(SCOOTER_GUIDE_SLUGS).size, 17)
 })
 
 test('every guide has complete UA/RU metadata, useful content, FAQ and a commerce CTA', () => {

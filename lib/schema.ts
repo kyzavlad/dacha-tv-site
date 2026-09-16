@@ -65,3 +65,54 @@ export function faqSchema(items: FaqItem[]): Record<string, unknown> {
     })),
   }
 }
+
+
+export function organizationSchema(phone?: string): Record<string, unknown> {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'Organization',
+    '@id': `${BASE_URL}/#organization`,
+    name: 'Дача TV',
+    url: BASE_URL,
+    logo: abs('/images/dacha-tv/logo-square.png'),
+    ...(phone ? { contactPoint: { '@type': 'ContactPoint', telephone: phone, contactType: 'customer service', areaServed: 'UA' } } : {}),
+  }
+}
+
+export function websiteSchema(locale: 'uk' | 'ru' | 'en' = 'uk'): Record<string, unknown> {
+  const prefix = locale === 'uk' ? '' : `/${locale}`
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'WebSite',
+    '@id': `${BASE_URL}/#website`,
+    url: BASE_URL,
+    name: 'Дача TV',
+    publisher: { '@id': `${BASE_URL}/#organization` },
+    inLanguage: locale === 'uk' ? 'uk-UA' : locale === 'ru' ? 'ru-UA' : 'en',
+    potentialAction: {
+      '@type': 'SearchAction',
+      target: { '@type': 'EntryPoint', urlTemplate: `${BASE_URL}${prefix}/search?q={search_term_string}` },
+      'query-input': 'required name=search_term_string',
+    },
+  }
+}
+
+export function articleSchema(input: {
+  headline: string
+  description: string
+  path: string
+  locale: 'uk' | 'ru'
+  about?: string
+}): Record<string, unknown> {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'Article',
+    headline: input.headline,
+    description: input.description,
+    mainEntityOfPage: abs(input.path),
+    url: abs(input.path),
+    inLanguage: input.locale === 'uk' ? 'uk-UA' : 'ru-UA',
+    publisher: { '@id': `${BASE_URL}/#organization` },
+    ...(input.about ? { about: input.about } : {}),
+  }
+}

@@ -6,7 +6,7 @@ import { notFound } from 'next/navigation'
 import { Breadcrumb } from '@/components/catalog/Breadcrumb'
 import { FaqBlock } from '@/components/shared/FaqBlock'
 import { StructuredData } from '@/components/shared/StructuredData'
-import { breadcrumbSchema } from '@/lib/schema'
+import { articleSchema, breadcrumbSchema } from '@/lib/schema'
 import { buildAlternates, buildSocialMetadata } from '@/lib/seo'
 import { getRequestLocale, localizedPath } from '@/lib/i18n'
 import {
@@ -80,10 +80,19 @@ export default async function ScooterGuidePage({ params }: Props) {
     { label: t.guides, href: localizedPath(locale, '/moto/guides') },
     { label: copy.title },
   ]
+  const articlePath = localizedPath(locale, `/moto/guides/${guide.slug}`)
+  const articleLd = articleSchema({
+    headline: copy.title,
+    description: copy.metaDescription,
+    path: articlePath,
+    locale: l,
+    about: guide.modelLabel ?? (l === 'uk' ? 'Запчастини для скутера' : 'Запчасти для скутера'),
+  })
 
   return (
     <main className="min-h-screen bg-cream">
       <StructuredData data={breadcrumbSchema(crumbs)} />
+      <StructuredData data={articleLd} />
       <article className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8 py-8 md:py-12">
         <Breadcrumb crumbs={crumbs} />
 

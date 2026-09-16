@@ -14,6 +14,8 @@ import { isLocale, DEFAULT_LOCALE } from '@/lib/i18n'
 import { LocaleProvider } from '@/lib/i18n/locale-context'
 import { SITE_URL } from '@/lib/seo'
 import { LAUNCH_PHONE, LAUNCH_PHONE_SECONDARY } from '@/lib/launch-defaults'
+import { StructuredData } from '@/components/shared/StructuredData'
+import { organizationSchema, websiteSchema } from '@/lib/schema'
 
 const inter = Inter({
   variable: '--font-inter',
@@ -72,6 +74,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <Analytics />
       </head>
       <body className="min-h-full flex flex-col bg-cream text-bark overflow-x-hidden">
+        <StructuredData data={organizationSchema(LAUNCH_PHONE)} />
+        <StructuredData data={websiteSchema(lang)} />
         <LocaleProvider locale={lang}>
           <CartProvider>
             <SiteChrome
