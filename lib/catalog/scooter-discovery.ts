@@ -50,6 +50,7 @@ export async function getInStockScooterModelProducts(
   modelTokens: string[],
   page: number,
   modTokens?: string[],
+  partTokens?: string[],
 ): Promise<{ products: CatalogProduct[]; hasNext: boolean }> {
   const client = getClient()
   if (!client) return { products: [], hasNext: false }
@@ -75,6 +76,12 @@ export async function getInStockScooterModelProducts(
   const modFilter = modTokens?.length ? buildScooterOrClause(modTokens) : null
   if (modFilter?.clause) base = base.or(modFilter.clause)
 
+  // Optional third AND-group for commercial topic pages (e.g. Honda Dio +
+  // carburetor). Each group is OR-within itself, while chained .or() filters are
+  // ANDed by PostgREST. This keeps topic guides tied to real sellable inventory.
+  const partFilter = partTokens?.length ? buildScooterOrClause(partTokens) : null
+  if (partFilter?.clause) base = base.or(partFilter.clause)
+
   const { data, error } = await base
     .order('is_featured', { ascending: false })
     .order('display_order', { ascending: true })
@@ -92,6 +99,8 @@ export async function getInStockScooterModelProducts(
       modelFilterLength: modelFilter.filterLength,
       modPredicateCount: modFilter?.predicateCount ?? 0,
       modFilterLength: modFilter?.filterLength ?? 0,
+      partPredicateCount: partFilter?.predicateCount ?? 0,
+      partFilterLength: partFilter?.filterLength ?? 0,
     })
     throw new Error(`scooter discovery query failed: ${error.message}`)
   }

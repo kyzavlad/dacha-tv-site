@@ -1,4 +1,5 @@
 import type { FaqItem } from '@/lib/schema'
+import type { ModelSlug } from '@/lib/moto/scooter-models'
 
 export type ScooterGuideSlug =
   | 'honda-dio-yak-vyznachyty-ramu'
@@ -40,6 +41,7 @@ export interface ScooterGuideCopy {
 export interface ScooterGuide {
   slug: ScooterGuideSlug
   modelLabel?: string
+  productDiscovery?: { modelSlug: ModelSlug; partTokens: string[]; modSlug?: string }
   primaryHref: string
   relatedHrefs: { label: Record<GuideLocale, string>; href: string }[]
   copy: Record<GuideLocale, ScooterGuideCopy>
@@ -138,6 +140,7 @@ export const SCOOTER_GUIDES: Record<ScooterGuideSlug, ScooterGuide> = {
   'honda-dio-zadniy-variator-af35-48-51-56': {
     slug: 'honda-dio-zadniy-variator-af35-48-51-56',
     modelLabel: 'Honda Dio',
+    productDiscovery: { modelSlug: 'honda-dio', partTokens: ['varyator%zadnyy', 'варіатор%задній', 'вариатор%задний'] },
     primaryHref: '/catalog/na-skuter-1782704758752/varyator-zadnyy-honda-dio-af35-48-51-56-alyumynyy-vdk',
     relatedHrefs: [
       { label: { uk: 'Усі запчастини Honda Dio', ru: 'Все запчасти Honda Dio' }, href: '/moto/skutery/honda-dio' },
@@ -216,6 +219,7 @@ export const SCOOTER_GUIDES: Record<ScooterGuideSlug, ScooterGuide> = {
   'honda-dio-karbiurator-af27-af34-af35': {
     slug: 'honda-dio-karbiurator-af27-af34-af35',
     modelLabel: 'Honda Dio',
+    productDiscovery: { modelSlug: 'honda-dio', partTokens: ['karbyurator', 'карбюратор'] },
     primaryHref: '/moto/skutery/honda-dio',
     relatedHrefs: [
       { label: { uk: 'Honda Dio AF27', ru: 'Honda Dio AF27' }, href: '/moto/skutery/honda-dio?mod=af27' },
@@ -266,7 +270,7 @@ export const SCOOTER_GUIDES: Record<ScooterGuideSlug, ScooterGuide> = {
   },
 
   'honda-dio-kolenval-af27-af34-af35': {
-    slug: 'honda-dio-kolenval-af27-af34-af35', modelLabel: 'Honda Dio', primaryHref: '/moto/skutery/honda-dio',
+    slug: 'honda-dio-kolenval-af27-af34-af35', modelLabel: 'Honda Dio', productDiscovery: { modelSlug: 'honda-dio', partTokens: ['kolenval', 'колінвал', 'коленвал'] }, primaryHref: '/moto/skutery/honda-dio',
     relatedHrefs: [
       { label: { uk: 'Honda Dio AF27', ru: 'Honda Dio AF27' }, href: '/moto/skutery/honda-dio?mod=af27' },
       { label: { uk: 'Honda Dio AF34', ru: 'Honda Dio AF34' }, href: '/moto/skutery/honda-dio?mod=af34' },
@@ -311,7 +315,7 @@ export const SCOOTER_GUIDES: Record<ScooterGuideSlug, ScooterGuide> = {
   },
 
   'honda-dio-peredniy-variator-af27-af34': {
-    slug: 'honda-dio-peredniy-variator-af27-af34', modelLabel: 'Honda Dio', primaryHref: '/moto/skutery/honda-dio',
+    slug: 'honda-dio-peredniy-variator-af27-af34', modelLabel: 'Honda Dio', productDiscovery: { modelSlug: 'honda-dio', partTokens: ['varyator%perednyy', 'варіатор%передній', 'вариатор%передний'] }, primaryHref: '/moto/skutery/honda-dio',
     relatedHrefs: [
       { label: { uk: 'Honda Dio AF27', ru: 'Honda Dio AF27' }, href: '/moto/skutery/honda-dio?mod=af27' },
       { label: { uk: 'Honda Dio AF34', ru: 'Honda Dio AF34' }, href: '/moto/skutery/honda-dio?mod=af34' },
@@ -356,7 +360,7 @@ export const SCOOTER_GUIDES: Record<ScooterGuideSlug, ScooterGuide> = {
   },
 
   'suzuki-lets-2-karbiurator': {
-    slug: 'suzuki-lets-2-karbiurator', modelLabel: 'Suzuki Lets', primaryHref: '/moto/skutery/suzuki-lets',
+    slug: 'suzuki-lets-2-karbiurator', modelLabel: 'Suzuki Lets', productDiscovery: { modelSlug: 'suzuki-lets', partTokens: ['karbyurator', 'карбюратор'] }, primaryHref: '/moto/skutery/suzuki-lets',
     relatedHrefs: [
       { label: { uk: 'Suzuki Lets 2', ru: 'Suzuki Lets 2' }, href: '/moto/skutery/suzuki-lets?mod=lets-2' },
       { label: { uk: 'Варіатор Suzuki Lets 2', ru: 'Вариатор Suzuki Lets 2' }, href: '/moto/guides/suzuki-lets-2-variator' },
@@ -401,7 +405,7 @@ export const SCOOTER_GUIDES: Record<ScooterGuideSlug, ScooterGuide> = {
   },
 
   'suzuki-lets-2-variator': {
-    slug: 'suzuki-lets-2-variator', modelLabel: 'Suzuki Lets', primaryHref: '/moto/skutery/suzuki-lets',
+    slug: 'suzuki-lets-2-variator', modelLabel: 'Suzuki Lets', productDiscovery: { modelSlug: 'suzuki-lets', partTokens: ['varyator', 'варіатор', 'вариатор'] }, primaryHref: '/moto/skutery/suzuki-lets',
     relatedHrefs: [
       { label: { uk: 'Suzuki Lets 2', ru: 'Suzuki Lets 2' }, href: '/moto/skutery/suzuki-lets?mod=lets-2' },
       { label: { uk: 'Карбюратор Suzuki Lets 2', ru: 'Карбюратор Suzuki Lets 2' }, href: '/moto/guides/suzuki-lets-2-karbiurator' },
@@ -446,7 +450,7 @@ export const SCOOTER_GUIDES: Record<ScooterGuideSlug, ScooterGuide> = {
   },
 
   'suzuki-lets-2-kolenval': {
-    slug: 'suzuki-lets-2-kolenval', modelLabel: 'Suzuki Lets', primaryHref: '/moto/skutery/suzuki-lets',
+    slug: 'suzuki-lets-2-kolenval', modelLabel: 'Suzuki Lets', productDiscovery: { modelSlug: 'suzuki-lets', partTokens: ['kolenval', 'колінвал', 'коленвал'] }, primaryHref: '/moto/skutery/suzuki-lets',
     relatedHrefs: [
       { label: { uk: 'Suzuki Lets 2', ru: 'Suzuki Lets 2' }, href: '/moto/skutery/suzuki-lets?mod=lets-2' },
       { label: { uk: 'Карбюратор Suzuki Lets 2', ru: 'Карбюратор Suzuki Lets 2' }, href: '/moto/guides/suzuki-lets-2-karbiurator' },
@@ -491,7 +495,7 @@ export const SCOOTER_GUIDES: Record<ScooterGuideSlug, ScooterGuide> = {
   },
 
   'yamaha-jog-3kj-karbiurator': {
-    slug: 'yamaha-jog-3kj-karbiurator', modelLabel: 'Yamaha Jog', primaryHref: '/moto/skutery/yamaha-jog?mod=3kj',
+    slug: 'yamaha-jog-3kj-karbiurator', modelLabel: 'Yamaha Jog', productDiscovery: { modelSlug: 'yamaha-jog', partTokens: ['karbyurator', 'карбюратор'], modSlug: '3kj' }, primaryHref: '/moto/skutery/yamaha-jog?mod=3kj',
     relatedHrefs: [
       { label: { uk: 'Усі Yamaha Jog', ru: 'Все Yamaha Jog' }, href: '/moto/skutery/yamaha-jog' },
       { label: { uk: 'Yamaha Jog 3KJ', ru: 'Yamaha Jog 3KJ' }, href: '/moto/skutery/yamaha-jog?mod=3kj' },
@@ -536,7 +540,7 @@ export const SCOOTER_GUIDES: Record<ScooterGuideSlug, ScooterGuide> = {
   },
 
   'yamaha-jog-variator-50-3kj': {
-    slug: 'yamaha-jog-variator-50-3kj', modelLabel: 'Yamaha Jog', primaryHref: '/moto/skutery/yamaha-jog',
+    slug: 'yamaha-jog-variator-50-3kj', modelLabel: 'Yamaha Jog', productDiscovery: { modelSlug: 'yamaha-jog', partTokens: ['varyator', 'варіатор', 'вариатор'] }, primaryHref: '/moto/skutery/yamaha-jog',
     relatedHrefs: [
       { label: { uk: 'Yamaha Jog 3KJ', ru: 'Yamaha Jog 3KJ' }, href: '/moto/skutery/yamaha-jog?mod=3kj' },
       { label: { uk: 'Карбюратор Yamaha Jog 3KJ', ru: 'Карбюратор Yamaha Jog 3KJ' }, href: '/moto/guides/yamaha-jog-3kj-karbiurator' },
