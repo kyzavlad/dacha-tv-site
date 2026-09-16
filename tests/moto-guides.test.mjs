@@ -8,6 +8,7 @@ import {
 
 const EXPECTED = [
   'honda-dio-yak-vyznachyty-ramu',
+  'honda-dio-zadniy-variator-af35-48-51-56',
   'yamaha-jog-3kj-sa36-sa39',
   'suzuki-lets-2-4-5',
   'yak-pidibraty-remin-variatora',
@@ -20,7 +21,7 @@ const sitemapSrc = readFileSync(new URL('../app/sitemap.ts', import.meta.url), '
 
 test('the P1 guide queue stays intentionally small and explicit', () => {
   assert.deepEqual(SCOOTER_GUIDE_SLUGS, EXPECTED)
-  assert.equal(new Set(SCOOTER_GUIDE_SLUGS).size, 5)
+  assert.equal(new Set(SCOOTER_GUIDE_SLUGS).size, 6)
 })
 
 test('every guide has complete UA/RU metadata, useful content, FAQ and a commerce CTA', () => {
