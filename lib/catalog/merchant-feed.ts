@@ -1,12 +1,11 @@
 export const MERCHANT_FEED_ORIGIN = 'https://dachatv.com'
-export const MERCHANT_INITIAL_FEED_LIMIT = 500
 
-// Temporary Merchant-only validation quarantine.
+// Temporary Merchant-only quarantine.
 // These are the 30 catalog IDs Google Merchant Center reported as disapproved
 // on 2026-09-07 (28 image-quality/retrieval issues + 2 vehicle-policy flags).
-// The storefront/catalog rows remain untouched. Keeping this list after the
-// deterministic 500-row DB selection prevents unreviewed replacement products
-// from silently entering the current validation batch.
+// The storefront/catalog rows remain untouched. Keep the exact known cases out
+// of the expanded feed until they are explicitly re-verified instead of
+// allowing historical Merchant problems back into the live catalog silently.
 export const MERCHANT_VALIDATION_QUARANTINE_IDS = [
   '009240d2-614b-4b18-bc58-63c510592ddf',
   '009ac0ff-7d73-44d5-87ae-1807d6644be6',
@@ -158,9 +157,9 @@ export function renderMerchantRss(items: MerchantFeedItem[], origin = MERCHANT_F
   return `<?xml version="1.0" encoding="UTF-8"?>
 <rss xmlns:g="http://base.google.com/ns/1.0" version="2.0">
   <channel>
-    <title>Dacha TV</title>
+    <title>Дача TV</title>
     <link>${xmlEscape(origin)}</link>
-    <description>Dacha TV product feed for Google Merchant Center</description>
+    <description>Дача TV product feed for Google Merchant Center</description>
 ${xmlItems}
   </channel>
 </rss>\n`
