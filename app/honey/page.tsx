@@ -10,21 +10,21 @@ import { manualDict } from '@/lib/i18n/sections/manual'
 
 const HONEY_META: Record<'uk' | 'ru' | 'en', { title: string; description: string; ogDescription: string; ogAlt: string; twitterDescription: string }> = {
   uk: {
-    title: 'Наш мед',
+    title: 'Натуральний мед з пасіки на Харківщині',
     description: "Натуральний мед від сімейної пасіки на Харківщині: Акація, Липа, Сонях, Різнотрав'я, Сади, Ліс. Упаковка 1L пластик або скло. Замовляйте напряму від пасічника без посередників.",
     ogDescription: "Сезонний мед без домішок: Акація, Липа, Сонях, Різнотрав'я від пасіки на Харківщині",
     ogAlt: 'Дача TV: Натуральний мед',
     twitterDescription: "Натуральний мед від сімейної пасіки на Харківщині: Акація, Липа, Сонях та інші сорти. Напряму від пасічника.",
   },
   ru: {
-    title: 'Наш мёд',
+    title: 'Натуральный мёд с пасеки на Харьковщине',
     description: 'Натуральный мёд от семейной пасеки на Харьковщине: Акация, Липа, Подсолнух, Разнотравье, Сады, Лес. Упаковка 1L пластик или стекло. Заказывайте напрямую от пасечника без посредников.',
     ogDescription: 'Сезонный мёд без примесей: Акация, Липа, Подсолнух, Разнотравье от пасеки на Харьковщине',
     ogAlt: 'Дача TV: Натуральный мёд',
     twitterDescription: 'Натуральный мёд от семейной пасеки на Харьковщине: Акация, Липа, Подсолнух и другие сорта. Напрямую от пасечника.',
   },
   en: {
-    title: 'Our honey',
+    title: 'Natural honey from a Kharkiv-region apiary',
     description: 'Natural honey from a family apiary in the Kharkiv region: Acacia, Linden, Sunflower, Wildflower, Orchard, Forest. Packed in 1L plastic or glass. Order directly from the beekeeper, no middlemen.',
     ogDescription: 'Seasonal, additive-free honey: Acacia, Linden, Sunflower, Wildflower from our Kharkiv-region apiary',
     ogAlt: 'Dacha TV: Natural honey',

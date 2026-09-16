@@ -11,21 +11,21 @@ import { manualDict } from '@/lib/i18n/sections/manual'
 
 const CATALOG_META: Record<'uk' | 'ru' | 'en', { title: string; description: string; ogDescription: string; ogAlt: string; twitterDescription: string }> = {
   uk: {
-    title: 'Каталог хризантем',
+    title: 'Каталог хризантем — понад 50 сортів',
     description: 'Колекція хризантем від домашнього розсадника. Понад 50 сортів: помпонові, кущові, великоквіткові, рідкісні. Харківщина.',
     ogDescription: 'Понад 50 сортів хризантем від домашнього розсадника на Харківщині: помпонові, кущові, великоквіткові.',
     ogAlt: 'Дача TV: Хризантеми',
     twitterDescription: 'Понад 50 сортів хризантем від домашнього розсадника на Харківщині.',
   },
   ru: {
-    title: 'Каталог хризантем',
+    title: 'Каталог хризантем — более 50 сортов',
     description: 'Коллекция хризантем от домашнего питомника. Более 50 сортов: помпонные, кустовые, крупноцветковые, редкие. Харьковщина.',
     ogDescription: 'Более 50 сортов хризантем от домашнего питомника на Харьковщине: помпонные, кустовые, крупноцветковые.',
     ogAlt: 'Дача TV: Хризантемы',
     twitterDescription: 'Более 50 сортов хризантем от домашнего питомника на Харьковщине.',
   },
   en: {
-    title: 'Chrysanthemum catalog',
+    title: 'Chrysanthemum catalog — 50+ varieties',
     description: 'A chrysanthemum collection from a home nursery. Over 50 varieties: pompon, spray, exhibition, rare. Kharkiv region.',
     ogDescription: 'Over 50 chrysanthemum varieties from a home nursery in the Kharkiv region: pompon, spray, exhibition.',
     ogAlt: 'Dacha TV: Chrysanthemums',

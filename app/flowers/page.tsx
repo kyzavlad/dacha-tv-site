@@ -13,21 +13,21 @@ import { localizeFlowerVariety } from '@/lib/i18n/manual-attributes'
 
 const FLOWERS_META: Record<'uk' | 'ru' | 'en', { title: string; description: string; ogDescription: string; ogAlt: string; twitterDescription: string }> = {
   uk: {
-    title: 'Хризантеми',
+    title: 'Хризантеми з розсадника на Харківщині',
     description: 'Хризантеми від домашнього розсадника на Харківщині: помпонові, кущові, великоквіткові та рідкісні сорти. Вирощуємо для букетів, подарунків і саду.',
     ogDescription: 'Понад 20 сортів хризантем від домашнього розсадника на Харківщині. Помпонові, кущові, великоквіткові.',
     ogAlt: 'Дача TV: Хризантеми',
     twitterDescription: 'Хризантеми від домашнього розсадника на Харківщині: помпонові, кущові та великоквіткові сорти.',
   },
   ru: {
-    title: 'Хризантемы',
+    title: 'Хризантемы из питомника на Харьковщине',
     description: 'Хризантемы от домашнего питомника на Харьковщине: помпонные, кустовые, крупноцветковые и редкие сорта. Выращиваем для букетов, подарков и сада.',
     ogDescription: 'Более 20 сортов хризантем от домашнего питомника на Харьковщине. Помпонные, кустовые, крупноцветковые.',
     ogAlt: 'Дача TV: Хризантемы',
     twitterDescription: 'Хризантемы от домашнего питомника на Харьковщине: помпонные, кустовые и крупноцветковые сорта.',
   },
   en: {
-    title: 'Chrysanthemums',
+    title: 'Chrysanthemums from a Kharkiv-region nursery',
     description: 'Chrysanthemums from a home nursery in the Kharkiv region: pompon, spray, exhibition and rare varieties. Grown for bouquets, gifts and the garden.',
     ogDescription: 'Over 20 chrysanthemum varieties from a home nursery in the Kharkiv region. Pompon, spray, exhibition.',
     ogAlt: 'Dacha TV: Chrysanthemums',

@@ -157,7 +157,7 @@ export default async function AboutPage() {
             {t.about.ctaTitle}
           </h2>
           <p className="text-bark/70 mb-6">{t.about.ctaBody}</p>
-          <CTAButton href={localizedPath(locale, '/honey')} size="lg">{t.about.ctaButton}</CTAButton>
+          <CTAButton href={localizedPath(locale, '/catalog')} size="lg">{t.about.ctaButton}</CTAButton>
         </section>
       </div>
     </div>

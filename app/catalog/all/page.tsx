@@ -14,9 +14,9 @@ interface Props {
 }
 
 const META: Record<'uk' | 'ru' | 'en', { title: string; description: string }> = {
-  uk: { title: 'Усі товари', description: 'Повний асортимент товарів для дому, саду та дачі з доставкою по Україні.' },
-  ru: { title: 'Все товары', description: 'Полный ассортимент товаров для дома, сада и дачи с доставкой по Украине.' },
-  en: { title: 'All products', description: 'The full assortment of home, garden and dacha goods, delivered across Ukraine.' },
+  uk: { title: 'Усі товари Dacha TV — повний каталог', description: 'Повний каталог Dacha TV: запчастини, автоаксесуари, інструменти, товари для дому, саду, господарства та інші категорії з доставкою по Україні.' },
+  ru: { title: 'Все товары Dacha TV — полный каталог', description: 'Полный каталог Dacha TV: запчасти, автоаксессуары, инструменты, товары для дома, сада, хозяйства и другие категории с доставкой по Украине.' },
+  en: { title: 'All Dacha TV products — full catalog', description: 'The full Dacha TV catalog: parts, auto accessories, tools, home, garden, household goods and more with delivery across Ukraine.' },
 }
 
 export async function generateMetadata(): Promise<Metadata> {

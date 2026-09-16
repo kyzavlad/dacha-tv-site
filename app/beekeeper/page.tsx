@@ -13,21 +13,21 @@ import { manualDict, type ManualDict } from '@/lib/i18n/sections/manual'
 
 const BEEKEEPER_META: Record<'uk' | 'ru' | 'en', { title: string; description: string; ogDescription: string; ogAlt: string; twitterDescription: string }> = {
   uk: {
-    title: 'Для пасічників',
+    title: 'Бджолопакети, бджолосім’ї та вулики',
     description: "Бджолопакети (Buckfast, Карніка), бджолосім'ї, вулики та товари пасічника від власної пасіки на Харківщині. Без посередників: напряму від пасічника.",
     ogDescription: "Бджолопакети, бджолосім'ї, вулики та товари пасічника від пасіки Дача TV на Харківщині",
     ogAlt: 'Дача TV: Для пасічників',
     twitterDescription: "Бджолопакети Buckfast та Карніка, бджолосім'ї, вулики: напряму від пасічника на Харківщині.",
   },
   ru: {
-    title: 'Для пчеловодов',
+    title: 'Пчелопакеты, пчелосемьи и ульи',
     description: 'Пчелопакеты (Buckfast, Карника), пчелосемьи, ульи и товары пчеловода от собственной пасеки на Харьковщине. Без посредников: напрямую от пчеловода.',
     ogDescription: 'Пчелопакеты, пчелосемьи, ульи и товары пчеловода от пасеки Дача TV на Харьковщине',
     ogAlt: 'Дача TV: Для пчеловодов',
     twitterDescription: 'Пчелопакеты Buckfast и Карника, пчелосемьи, ульи: напрямую от пчеловода на Харьковщине.',
   },
   en: {
-    title: 'For beekeepers',
+    title: 'Bee packages, bee colonies and hives',
     description: 'Bee packages (Buckfast, Carnica), bee colonies, hives and beekeeping supplies from our own apiary in the Kharkiv region. No middlemen — direct from the beekeeper.',
     ogDescription: 'Bee packages, bee colonies, hives and beekeeping supplies from the Dacha TV apiary in the Kharkiv region',
     ogAlt: 'Dacha TV: For beekeepers',

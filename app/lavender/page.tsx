@@ -41,19 +41,19 @@ const LAVENDER = {
 
 const LAVENDER_META: Record<'uk' | 'ru' | 'en', { title: string; description: string; ogDescription: string; ogAlt: string }> = {
   uk: {
-    title: 'Лавандове поле',
+    title: 'Лавандове поле на Харківщині — оренда для фотосесій',
     description: 'Оренда лавандового поля на Харківщині для фотосесій і відпочинку: від 1000 ₴/год. Букети лаванди під замовлення. Сезон: червень–липень.',
     ogDescription: 'Оренда лавандового поля для фотосесій і відпочинку на Харківщині. Букети лаванди під замовлення.',
     ogAlt: 'Дача TV: лавандове поле',
   },
   ru: {
-    title: 'Лавандовое поле',
+    title: 'Лавандовое поле на Харьковщине — аренда для фотосессий',
     description: 'Аренда лавандового поля на Харьковщине для фотосессий и отдыха: от 1000 ₴/час. Букеты лаванды под заказ. Сезон: июнь–июль.',
     ogDescription: 'Аренда лавандового поля для фотосессий и отдыха на Харьковщине. Букеты лаванды под заказ.',
     ogAlt: 'Дача TV: лавандовое поле',
   },
   en: {
-    title: 'Lavender field',
+    title: 'Lavender field in the Kharkiv region — photo-shoot rental',
     description: 'Rent a lavender field in the Kharkiv region for photo shoots and relaxation: from 1000 UAH/hour. Lavender bouquets to order. Season: June–July.',
     ogDescription: 'Rent a lavender field for photo shoots and relaxation in the Kharkiv region. Lavender bouquets to order.',
     ogAlt: 'Dacha TV: lavender field',
