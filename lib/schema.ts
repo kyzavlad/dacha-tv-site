@@ -1,7 +1,7 @@
 // Shared Schema.org JSON-LD builders. Pure functions — render the result with
 // <StructuredData data={...} />. Kept dependency-free and render-time only.
 
-const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.dachatv.com'
+const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://dachatv.com'
 
 function abs(path: string): string {
   if (!path) return BASE_URL

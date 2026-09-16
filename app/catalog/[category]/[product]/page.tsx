@@ -16,7 +16,7 @@ import {
   categoryDisplayName,
   getProductTranslation,
 } from '@/lib/supabase/catalog'
-import { buildSocialMetadata, buildAlternates, stripBrand } from '@/lib/seo'
+import { buildSocialMetadata, buildAlternates, stripBrand, SITE_URL } from '@/lib/seo'
 import { getRequestLocale } from '@/lib/i18n'
 import { tr } from '@/lib/i18n/pages'
 import { stockStatus, stockLabel } from '@/lib/catalog/stock'
@@ -118,12 +118,15 @@ export default async function ProductPage({ params }: Props) {
     priceOk && product.compare_price_uah != null && product.price_uah != null && product.compare_price_uah > product.price_uah
 
   // JSON-LD structured data: only advertise an offer when the price is valid.
+  const productCanonicalUrl = `${SITE_URL}/catalog/${product.category_slug ?? categorySlug}/${product.slug}`
   const jsonLd = {
     '@context': 'https://schema.org',
     '@type': 'Product',
     name: displayProductName(product),
     description: product.short_description ?? product.description ?? undefined,
     image: images[0] ?? undefined,
+    url: productCanonicalUrl,
+    ...(product.supplier_sku ? { sku: product.supplier_sku } : {}),
     ...(priceOk
       ? {
           offers: {
@@ -131,7 +134,7 @@ export default async function ProductPage({ params }: Props) {
             priceCurrency: 'UAH',
             price: product.price_uah,
             availability: stockIsOut ? 'https://schema.org/OutOfStock' : 'https://schema.org/InStock',
-            url: `${process.env.NEXT_PUBLIC_SITE_URL ?? 'https://www.dachatv.com'}/catalog/${categorySlug}/${productSlug}`,
+            url: productCanonicalUrl,
           },
         }
       : {}),

@@ -328,6 +328,33 @@ export default async function ScooterModelPage({ params, searchParams }: Props) 
           </div>
         </section>
 
+        {m.slug === 'honda-dio' && (
+          <section className="mt-14 rounded-2xl border border-honey-100 bg-white p-6">
+            <h2 className="font-serif text-xl font-bold text-bark">
+              {l === 'uk' ? 'Поради для Honda Dio' : 'Советы для Honda Dio'}
+            </h2>
+            <p className="mt-2 text-sm text-bark/65">
+              {l === 'uk'
+                ? 'Короткі практичні матеріали, щоб точніше визначити модифікацію та не переплутати вузол перед замовленням.'
+                : 'Короткие практические материалы, чтобы точнее определить модификацию и не перепутать узел перед заказом.'}
+            </p>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <Link
+                href={localizedPath(locale, '/moto/guides/honda-dio-yak-vyznachyty-ramu')}
+                className="rounded-xl border border-honey-100 px-4 py-3 text-sm font-semibold text-honey-700 hover:bg-honey-50 transition-colors"
+              >
+                {l === 'uk' ? 'Як визначити раму Honda Dio →' : 'Как определить раму Honda Dio →'}
+              </Link>
+              <Link
+                href={localizedPath(locale, '/moto/guides/honda-dio-zadniy-variator-af35-48-51-56')}
+                className="rounded-xl border border-honey-100 px-4 py-3 text-sm font-semibold text-honey-700 hover:bg-honey-50 transition-colors"
+              >
+                {l === 'uk' ? 'Як підібрати задній варіатор →' : 'Как подобрать задний вариатор →'}
+              </Link>
+            </div>
+          </section>
+        )}
+
         <FaqBlock items={m.faq[l]} heading={t.faqHeading} />
       </div>
     </div>
