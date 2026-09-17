@@ -108,9 +108,9 @@ test('UUID range boundaries cover the full space without gaps or overlaps', () =
   assert.equal(ranges.at(-1).upper, null)
 })
 
-test('product sitemap uses keyset pagination and globally bounded DB concurrency', () => {
+test('product sitemap uses keyset pagination, bounded DB concurrency, and current supplier stock', () => {
   assert.match(shardSrc, /\.gte\('id', range\.lower\)/)
-  assert.match(shardSrc, /\.select\('id, slug, category_slug, source, lead_type, supplier_sku, supplier_product_id'\)/)
+  assert.match(shardSrc, /\.select\('id, slug, category_slug, source, lead_type, supplier_sku, supplier_product_id, stock_quantity, is_in_stock'\)/)
   assert.ok(!shardSrc.includes("count: 'exact'"), 'sitemap shards must not run exact counts against the large catalog')
   assert.ok(!shardSrc.includes('.or(STOREFRONT_SCOPE_OR)'), 'nested storefront OR must not be pushed into the hot UUID-range query')
   assert.ok(!shardSrc.includes(".eq('status', 'published')"), 'published visibility is already enforced by anon RLS')
@@ -119,7 +119,8 @@ test('product sitemap uses keyset pagination and globally bounded DB concurrency
   assert.match(shardSrc, /page <= SITEMAP_MAX_PAGES_PER_SHARD/)
   assert.match(shardSrc, /withSitemapDbSlot/)
   assert.match(shardSrc, /sitemapDbSlotsInUse < SITEMAP_DB_CONCURRENCY/)
-  assert.match(shardSrc, /rows\.filter\(isStorefrontProduct\)\.map/)
+  assert.match(shardSrc, /\.filter\(isStorefrontProduct\)/)
+  assert.match(shardSrc, /row\.source !== 'supplier' \|\| \(row\.is_in_stock === true && Number\(row\.stock_quantity \?\? 0\) > 0\)/)
   assert.match(shardSrc, /row\.category_slug \?\? 'all'/)
   assert.ok(!shardSrc.includes('.range(offset'))
 
