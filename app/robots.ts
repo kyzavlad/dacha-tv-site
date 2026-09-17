@@ -17,8 +17,10 @@ export default function robots(): MetadataRoute.Robots {
       {
         userAgent: '*',
         allow: '/',
-        // Thin / private / per-user routes have no SEO value and waste crawl budget.
-        disallow: ['/admin', '/api/', '/checkout', '/cart'],
+        // Keep private/API surfaces out of crawl. Checkout/cart stay crawlable so
+        // Merchant quality review can inspect the real purchase path; checkout
+        // itself is marked noindex in app/checkout/layout.tsx.
+        disallow: ['/admin', '/api/'],
       },
     ],
     sitemap: sitemaps,
