@@ -91,7 +91,6 @@ export default async function HomePage() {
 
   const postalAddress = {
     '@type': 'PostalAddress',
-    streetAddress: 'Коротич',
     addressLocality: 'Коротич',
     addressRegion: 'Харківська область',
     addressCountry: 'UA',
