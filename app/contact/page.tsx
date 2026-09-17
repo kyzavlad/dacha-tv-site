@@ -47,7 +47,6 @@ export default async function ContactPage() {
     telephone: phone,
     address: {
       '@type': 'PostalAddress',
-      streetAddress: 'Коротич',
       addressLocality: 'Коротич',
       addressRegion: 'Харківська область',
       addressCountry: 'UA',
