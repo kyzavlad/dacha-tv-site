@@ -54,7 +54,7 @@ export interface SitemapUuidRange {
 
 export function getSitemapUuidRange(bucketIndex: number): SitemapUuidRange {
   if (!Number.isInteger(bucketIndex) || bucketIndex < 0 || bucketIndex >= SITEMAP_PRODUCT_SHARD_COUNT) {
-    throw new RangeError(`invalid sitemap product bucket: ${bucketIndex}`)
+    throw new RangeError(`invalid sitemap UUID boundary index: ${bucketIndex}`)
   }
   const lower = sitemapUuidBoundary(bucketIndex)
   if (!lower) throw new Error(`missing lower UUID boundary for bucket ${bucketIndex}`)
@@ -67,7 +67,7 @@ export function getSitemapUuidRange(bucketIndex: number): SitemapUuidRange {
 
 export function getAllSitemapIds(): number[] {
   // id 0 is static/categories; ids 1..16 are product UUID buckets.
-  return Array.from({ length: SITEMAP_PRODUCT_SHARD_COUNT + 1 }, (_, id) => id)
+  return Array.from({ length: SITEMAP_PRODUCT_SHARD_COUNT + 1 }, (_, id) => ({ id })).map((x) => x.id)
 }
 
 interface SitemapCatalogRow {
@@ -78,6 +78,8 @@ interface SitemapCatalogRow {
   lead_type: string | null
   supplier_sku: string | null
   supplier_product_id: string | null
+  stock_quantity: number | null
+  is_in_stock: boolean | null
 }
 
 let sitemapDbSlotsInUse = 0
@@ -94,8 +96,6 @@ async function acquireSitemapDbSlot(): Promise<void> {
 function releaseSitemapDbSlot(): void {
   const next = sitemapDbWaiters.shift()
   if (next) {
-    // Transfer the slot directly to the oldest waiter. Keeping the in-use count
-    // unchanged avoids a race where a newly arriving request could steal it.
     next()
     return
   }
@@ -111,19 +111,6 @@ async function withSitemapDbSlot<T>(task: () => Promise<T>): Promise<T> {
   }
 }
 
-/**
- * Read one product sitemap shard by UUID range with bounded keyset pagination.
- *
- * The public RLS policy already restricts anon reads to status='published'. Keep
- * the database predicate deliberately limited to the UUID primary-key range so
- * PostgreSQL can use the id index even while the Free-plan catalog is oversized.
- * The rows are then filtered in memory with the exact same pure storefront
- * predicate used elsewhere. No OFFSET and no exact COUNT are used.
- *
- * A crawler can request all sitemap files concurrently, so every individual DB
- * page also passes through the small process-wide semaphore above. This keeps
- * sitemap reads from starving the supplier write pipeline under Free-plan I/O.
- */
 export async function getPublishedCatalogSlugsForShard(
   shardId: number,
 ): Promise<{ category: string; product: string }[]> {
@@ -142,7 +129,7 @@ export async function getPublishedCatalogSlugsForShard(
     const { data, error } = await withSitemapDbSlot(async () => {
       let query = client
         .from('catalog_products')
-        .select('id, slug, category_slug, source, lead_type, supplier_sku, supplier_product_id')
+        .select('id, slug, category_slug, source, lead_type, supplier_sku, supplier_product_id, stock_quantity, is_in_stock')
         .gte('id', range.lower)
       if (range.upper) query = query.lt('id', range.upper)
       if (cursor) query = query.gt('id', cursor)
@@ -175,11 +162,18 @@ export async function getPublishedCatalogSlugsForShard(
     }
   }
 
-  return rows.filter(isStorefrontProduct).map((row) => {
-    if (!row.slug) throw new Error(`sitemap shard ${shardId} contains a published storefront row without a slug`)
-    return {
-      category: row.category_slug ?? 'all',
-      product: row.slug,
-    }
-  })
+  // Keep temporary supplier stock-outs live and indexable, but do not advertise
+  // them as crawl-priority URLs in the sitemap. When stock returns, the next
+  // cached sitemap refresh includes them again automatically. Manual/inquiry
+  // products are preserved because they intentionally do not use supplier stock.
+  return rows
+    .filter(isStorefrontProduct)
+    .filter((row) => row.source !== 'supplier' || (row.is_in_stock === true && Number(row.stock_quantity ?? 0) > 0))
+    .map((row) => {
+      if (!row.slug) throw new Error(`sitemap shard ${shardId} contains a published storefront row without a slug`)
+      return {
+        category: row.category_slug ?? 'all',
+        product: row.slug,
+      }
+    })
 }
