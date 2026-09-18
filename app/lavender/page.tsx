@@ -361,8 +361,6 @@ export default async function LavenderPage() {
                     <div className={`absolute inset-0 bg-gradient-to-br ${card.gradient} transition-transform duration-500 group-hover:scale-[1.06]`} />
                     {/* Radial accent glow — top-left */}
                     <div className={`pointer-events-none absolute -top-6 -left-6 w-2/3 h-2/3 rounded-full bg-gradient-radial ${card.accent} blur-2xl`} aria-hidden="true" />
-                    {/* Subtle noise overlay for depth */}
-                    <div className="absolute inset-0 opacity-[0.04] mix-blend-overlay bg-[url('/noise.png')] bg-repeat" aria-hidden="true" />
                     {/* Center emoji */}
                     <div className="absolute inset-0 flex items-center justify-center">
                       <span className="text-4xl md:text-5xl filter drop-shadow-lg select-none group-hover:scale-110 transition-transform duration-300">{card.emoji}</span>
