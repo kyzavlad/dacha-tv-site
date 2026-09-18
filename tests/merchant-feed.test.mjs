@@ -29,11 +29,13 @@ const good = {
 }
 
 test('Merchant validation quarantine is exact, unique, and does not catch clean products', () => {
-  assert.equal(MERCHANT_VALIDATION_QUARANTINE_IDS.length, 30)
-  assert.equal(new Set(MERCHANT_VALIDATION_QUARANTINE_IDS).size, 30)
-  assert.equal(isMerchantValidationQuarantined('009240d2-614b-4b18-bc58-63c510592ddf'), true)
-  assert.equal(isMerchantValidationQuarantined('0308d489-c79b-42a0-a429-3be21e4751c0'), true)
-  assert.equal(isMerchantValidationQuarantined('04a34394-3cea-4272-972c-cec3e1bd40cc'), true)
+  assert.equal(MERCHANT_VALIDATION_QUARANTINE_IDS.length, 1263)
+  assert.equal(new Set(MERCHANT_VALIDATION_QUARANTINE_IDS).size, 1263)
+  assert.equal(isMerchantValidationQuarantined('04eedbb3-ec18-4624-8c7c-3c06e1cef73f'), true)
+  assert.equal(isMerchantValidationQuarantined('858d15db-951a-4f94-96bf-7a6bb4768aa2'), true)
+  assert.equal(isMerchantValidationQuarantined('ffa8d7bb-8ca4-476b-b1a6-ef614b023b52'), true)
+  // Pending crawl is processing, not a merchant-action defect: do not suppress it.
+  assert.equal(isMerchantValidationQuarantined('051dfd66-26a5-4478-b2f2-a525fc41cdf6'), false)
   assert.equal(isMerchantValidationQuarantined(good.id), false)
 })
 
