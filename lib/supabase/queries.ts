@@ -9,6 +9,25 @@ function getClient() {
   return createClient(url, key)
 }
 
+// Retired pre-production Storage host. Some manual-product rows still reference
+// this hostname; DNS now returns NXDOMAIN, which makes Next/Image return 500.
+// Suppress only this proven-dead legacy host and leave all other media intact.
+const DEAD_LEGACY_MEDIA_HOSTS = new Set(['ytkmauftztqelwwnidti.supabase.co'])
+
+function isKnownDeadLegacyMediaUrl(url: unknown): boolean {
+  if (typeof url !== 'string' || !url.trim()) return false
+  try {
+    return DEAD_LEGACY_MEDIA_HOSTS.has(new URL(url).hostname.toLowerCase())
+  } catch {
+    return false
+  }
+}
+
+function withoutKnownDeadImageUrl<T extends { image_url?: string | null }>(product: T): T {
+  if (!isKnownDeadLegacyMediaUrl(product.image_url)) return product
+  return { ...product, image_url: null }
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function fetchMedia(section: ProductSection, productId: string, client: any) {
   const { data } = await client
@@ -18,7 +37,7 @@ async function fetchMedia(section: ProductSection, productId: string, client: an
     .eq('product_id', productId)
     .order('media_type', { ascending: true })
     .order('position', { ascending: true })
-  return (data ?? [])
+  return (data ?? []).filter((m: { url?: unknown }) => !isKnownDeadLegacyMediaUrl(m.url))
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -33,6 +52,7 @@ async function batchFetchMedia(section: ProductSection, ids: string[], client: a
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const byProduct: Record<string, any[]> = {}
   for (const m of (mediaData ?? [])) {
+    if (isKnownDeadLegacyMediaUrl(m.url)) continue
     if (!byProduct[m.product_id]) byProduct[m.product_id] = []
     byProduct[m.product_id].push(m)
   }
@@ -136,7 +156,7 @@ export async function getAllBeekeeperProducts(): Promise<BeekeeperProduct[]> {
 
   const ids = data.map((p: { id: string }) => p.id)
   const mediaByProduct = await batchFetchMedia('beekeeper', ids, client)
-  return data.map((p: BeekeeperProduct) => ({ ...p, media: mediaByProduct[p.id] ?? [] }))
+  return data.map((p: BeekeeperProduct) => ({ ...withoutKnownDeadImageUrl(p), media: mediaByProduct[p.id] ?? [] }))
 }
 
 export async function getBeekeeperProductBySlug(slug: string): Promise<BeekeeperProduct | null> {
@@ -145,7 +165,7 @@ export async function getBeekeeperProductBySlug(slug: string): Promise<Beekeeper
   const { data } = await client.from('beekeeper_products').select('*').eq('slug', slug).single()
   if (!data) return null
   const media = await fetchMedia('beekeeper', data.id, client).catch(() => [])
-  return { ...data, media }
+  return { ...withoutKnownDeadImageUrl(data as BeekeeperProduct), media }
 }
 
 export async function getAllBeekeeperSlugs(): Promise<string[]> {
