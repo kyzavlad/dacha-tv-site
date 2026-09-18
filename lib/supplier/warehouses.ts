@@ -55,21 +55,50 @@ export async function fetchNovaPoshtaWarehouses(city?: string): Promise<NovaPosh
 }
 
 // ─── Server-side cache ────────────────────────────────────────────────────────
-// Full list is large (~10k rows) and changes infrequently.
-// Cache per server instance; no secrets stored, only public warehouse data.
+// Never fetch/cache the nationwide Nova Poshta dataset on a checkout request.
+// On the self-hosted 3.7 GiB production box, parsing that response on a cold
+// process can exhaust the app's PM2 memory budget and restart Next mid-request.
+// Query the supplier by city and cache only those bounded city result sets.
 
-const CACHE_TTL_MS = 6 * 60 * 60 * 1000 // 6 hours — NP warehouse list changes rarely
-let _cache: { at: number; rows: NovaPoshtaWarehouse[] } | null = null
-let _inflight: Promise<NovaPoshtaWarehouse[]> | null = null
+const CITY_CACHE_TTL_MS = 60 * 60 * 1000 // 1 hour
+const CITY_CACHE_MAX_ENTRIES = 100
+const _cityCache = new Map<string, { at: number; rows: NovaPoshtaWarehouse[] }>()
+const _cityInflight = new Map<string, Promise<NovaPoshtaWarehouse[]>>()
 
-async function getAllWarehouses(): Promise<NovaPoshtaWarehouse[]> {
+function supplierCityQuery(query: string): string {
+  const trimmed = query.trim()
+  const normalized = normalizeSearch(trimmed)
+  for (const [alias, canonical] of Object.entries(RAW_ALIASES)) {
+    if (normalizeSearch(alias) === normalized) return canonical
+  }
+  return trimmed
+}
+
+async function getWarehousesForCityQuery(query: string): Promise<NovaPoshtaWarehouse[]> {
+  const supplierCity = supplierCityQuery(query)
+  const key = normalizeSearch(supplierCity)
   const now = Date.now()
-  if (_cache && now - _cache.at < CACHE_TTL_MS) return _cache.rows
-  if (_inflight) return _inflight
-  _inflight = fetchNovaPoshtaWarehouses()
-    .then((rows) => { _cache = { at: Date.now(), rows }; return rows })
-    .finally(() => { _inflight = null })
-  return _inflight
+  const cached = _cityCache.get(key)
+  if (cached && now - cached.at < CITY_CACHE_TTL_MS) return cached.rows
+
+  const inflight = _cityInflight.get(key)
+  if (inflight) return inflight
+
+  const request = fetchNovaPoshtaWarehouses(supplierCity)
+    .then((rows) => {
+      if (_cityCache.size >= CITY_CACHE_MAX_ENTRIES && !_cityCache.has(key)) {
+        const oldestKey = _cityCache.keys().next().value
+        if (oldestKey) _cityCache.delete(oldestKey)
+      }
+      _cityCache.set(key, { at: Date.now(), rows })
+      return rows
+    })
+    .finally(() => {
+      _cityInflight.delete(key)
+    })
+
+  _cityInflight.set(key, request)
+  return request
 }
 
 // ─── Normalization ────────────────────────────────────────────────────────────
@@ -155,7 +184,9 @@ export function searchWarehouses(rows: NovaPoshtaWarehouse[], query: string, lim
   const scored: Scored[] = []
 
   for (const row of rows) {
-    const city = normalizeSearch(row.city_name)
+    // Fold city aliases on both sides so supplier rows returned in Russian
+    // still match a Ukrainian query (and vice versa).
+    const city = applyAlias(normalizeSearch(row.city_name))
     const name = normalizeSearch(row.name)
     const addr = normalizeSearch(row.address)
 
@@ -194,9 +225,11 @@ export function searchWarehouses(rows: NovaPoshtaWarehouse[], query: string, lim
   })
 }
 
-// Top-level entry point used by the API route: cached fetch + filter + cap.
+// Top-level entry point used by the API route: bounded city fetch + filter + cap.
+// Critical production invariant: never call fetchNovaPoshtaWarehouses() without
+// a city here; the nationwide payload is too large for a cold checkout request.
 export async function searchNovaPoshtaWarehouses(query: string, limit = 30): Promise<WarehouseResult[]> {
   if (normalizeSearch(query).length < 2) return []
-  const rows = await getAllWarehouses()
+  const rows = await getWarehousesForCityQuery(query)
   return searchWarehouses(rows, query, limit)
 }
