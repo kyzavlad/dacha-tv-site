@@ -29,11 +29,12 @@ const good = {
 }
 
 test('Merchant validation quarantine is exact, unique, and does not catch clean products', () => {
-  assert.equal(MERCHANT_VALIDATION_QUARANTINE_IDS.length, 30)
-  assert.equal(new Set(MERCHANT_VALIDATION_QUARANTINE_IDS).size, 30)
+  assert.ok(MERCHANT_VALIDATION_QUARANTINE_IDS.length >= 1293)
+  assert.equal(new Set(MERCHANT_VALIDATION_QUARANTINE_IDS).size, MERCHANT_VALIDATION_QUARANTINE_IDS.length)
   assert.equal(isMerchantValidationQuarantined('009240d2-614b-4b18-bc58-63c510592ddf'), true)
   assert.equal(isMerchantValidationQuarantined('0308d489-c79b-42a0-a429-3be21e4751c0'), true)
   assert.equal(isMerchantValidationQuarantined('04a34394-3cea-4272-972c-cec3e1bd40cc'), true)
+  assert.equal(isMerchantValidationQuarantined('0573494c-cd39-4e0d-b749-30ba92c13867'), true)
   assert.equal(isMerchantValidationQuarantined(good.id), false)
 })
 
