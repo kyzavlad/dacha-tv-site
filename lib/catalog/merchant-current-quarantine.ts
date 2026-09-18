@@ -1,13 +1,45 @@
 // AUTO-GENERATED Merchant Center quarantine snapshot.
-// Source: live Google Merchant Center account 5387747740 diagnostics, 2026-09-18.
-// Scope: product-level MERCHANT_ACTION issues only (broken/undecodable/too-small/
-// overlay/single-color images plus current policy/non-product disapprovals).
+// Sources: 30 historical IDs already quarantined on 2026-09-07 (not reverified
+// because they are no longer submitted) + live Merchant Center diagnostics on
+// 2026-09-18.
+// Live scope: product-level MERCHANT_ACTION issues only (broken/undecodable/
+// too-small/overlay/single-color images plus current policy/non-product flags).
 // Intentionally EXCLUDES pending-crawl and transient internal-image errors so
 // Google can finish processing those products instead of silently suppressing them.
 //
-// Refresh deliberately from live Merchant diagnostics before removing IDs.
-// This affects Merchant feed eligibility only; storefront rows are untouched.
+// Historical IDs must stay quarantined until explicitly reverified with a clean
+// replacement image/policy state. Storefront/database rows are untouched.
 export const MERCHANT_CURRENT_QUARANTINE_IDS = [
+  '009240d2-614b-4b18-bc58-63c510592ddf',
+  '009ac0ff-7d73-44d5-87ae-1807d6644be6',
+  '00cd03ad-337b-484f-88ff-6f458728e46f',
+  '00cf4758-37ec-4ff8-8635-5f89835297d5',
+  '010a7a8a-f8bb-4b32-83ee-1031fedeb722',
+  '0111152c-daf1-48ff-a8e2-d95e00c42be8',
+  '01120f06-97b4-4b06-8401-f674a5f61fb8',
+  '0137f4af-1475-4c61-8364-b2a96ed1832e',
+  '015399bd-4fb8-4526-b426-bcfb28145722',
+  '01b4d96c-fbdd-434e-9676-15bc74f65aa6',
+  '01bc5b27-850c-4efc-9a43-ddd8f487ce33',
+  '0254ff2d-0de4-4f26-92ea-fbf003ee181a',
+  '029cb767-958f-4fde-94b2-9b42a8197357',
+  '02c06a25-4ef0-47c3-b06a-bc99723e8019',
+  '02d065ec-f88f-471a-abfa-0554dc4dffa0',
+  '0308d489-c79b-42a0-a429-3be21e4751c0',
+  '031bf552-bfaa-4208-80e1-47b1a90fc9c6',
+  '036823f9-f619-4f80-a038-5dcc9a78c1f7',
+  '0389e264-adea-47cb-ad24-d0341e71eb0b',
+  '039cdd96-3210-46ba-ba78-517b85a9d148',
+  '03b7357c-7b35-4381-9eee-c786ae360cc1',
+  '03d58ccd-d768-4170-87a7-394e75dd7454',
+  '0410c11d-d4c7-4470-b8c6-7b36ccedc715',
+  '04588cf6-0e84-41b4-947e-d202d06698d6',
+  '0462103c-fa28-4276-b32d-6f4ac0a0270c',
+  '048007db-31ab-4b15-b441-bf0a8a3c0b11',
+  '04853be4-67fb-428c-b339-a1312598057b',
+  '0488fd69-5b9f-43bd-9d14-915d9b4936ac',
+  '04a34394-3cea-4272-972c-cec3e1bd40cc',
+  '04ada85e-9b52-407b-a63f-6182a67b2df5',
   '04eedbb3-ec18-4624-8c7c-3c06e1cef73f',
   '0573494c-cd39-4e0d-b749-30ba92c13867',
   '05cb30bd-1b8b-4c07-be5d-f1f767375cb4',
