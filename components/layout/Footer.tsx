@@ -11,7 +11,8 @@ import { navLabel } from '@/lib/i18n-ui'
 import {
   LAUNCH_PHONE,
   LAUNCH_PHONE_SECONDARY,
-  LAUNCH_ADDRESS,
+  LAUNCH_SUPPORT_EMAIL,
+  LAUNCH_LEGAL_ADDRESS,
   LAUNCH_YOUTUBE_URL,
   LAUNCH_FACEBOOK_URL,
   LAUNCH_INSTAGRAM_URL,
@@ -71,7 +72,7 @@ export async function Footer({ siteSettings }: FooterProps) {
   const t = pageDict(locale)
   const phone = siteSettings?.phone || LAUNCH_PHONE
   const phoneSecondary = siteSettings?.phone_secondary || LAUNCH_PHONE_SECONDARY
-  const address = siteSettings?.address_full || LAUNCH_ADDRESS
+  const address = LAUNCH_LEGAL_ADDRESS
   const currentYear = new Date().getFullYear()
   const hasLogo = existsSync(join(process.cwd(), 'public', LOGO_PATH))
 
@@ -181,6 +182,12 @@ export async function Footer({ siteSettings }: FooterProps) {
                   className="text-bark font-semibold text-base hover:text-honey-700 transition-colors"
                 />
               </div>
+              <a
+                href={`mailto:${LAUNCH_SUPPORT_EMAIL}`}
+                className="text-sm text-gray-600 underline decoration-gray-300 underline-offset-4 hover:text-bark hover:decoration-bark transition-colors"
+              >
+                {LAUNCH_SUPPORT_EMAIL}
+              </a>
               <address className="text-sm text-gray-500 not-italic leading-relaxed">
                 {address}
               </address>

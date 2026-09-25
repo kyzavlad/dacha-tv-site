@@ -8,7 +8,8 @@ import { getSiteSettings } from '@/lib/supabase/queries'
 import {
   LAUNCH_PHONE,
   LAUNCH_PHONE_SECONDARY,
-  LAUNCH_ADDRESS,
+  LAUNCH_SUPPORT_EMAIL,
+  LAUNCH_LEGAL_ADDRESS,
 } from '@/lib/launch-defaults'
 import { getRequestLocale } from '@/lib/i18n'
 import { pageDict } from '@/lib/i18n/pages'
@@ -36,7 +37,7 @@ export default async function ContactPage() {
   // site_settings row has not been updated on the self-hosted database yet.
   const phone = LAUNCH_PHONE
   const phoneSecondary = LAUNCH_PHONE_SECONDARY
-  const address = siteSettings?.address_full || LAUNCH_ADDRESS
+  const address = LAUNCH_LEGAL_ADDRESS
 
   const localBusinessSchema = {
     '@context': 'https://schema.org',
@@ -45,9 +46,12 @@ export default async function ContactPage() {
     name: 'Дача TV',
     legalName: 'ФОП Кузьменко Владислав Сергійович',
     telephone: phone,
+    email: LAUNCH_SUPPORT_EMAIL,
     address: {
       '@type': 'PostalAddress',
-      addressLocality: 'Коротич',
+      streetAddress: 'просп. Героїв Харкова, 300, кв. 156',
+      postalCode: '61032',
+      addressLocality: 'Харків',
       addressRegion: 'Харківська область',
       addressCountry: 'UA',
     },
@@ -97,6 +101,17 @@ export default async function ContactPage() {
                 showIcon
                 className="text-2xl font-bold"
               />
+            </div>
+
+            {/* Customer support email */}
+            <div className="bg-white rounded-2xl p-5 border border-gray-200 mb-6">
+              <p className="text-bark/60 text-sm mb-2">Email</p>
+              <a
+                href={`mailto:${LAUNCH_SUPPORT_EMAIL}`}
+                className="text-bark font-semibold text-lg underline decoration-gray-300 underline-offset-4 hover:decoration-bark"
+              >
+                {LAUNCH_SUPPORT_EMAIL}
+              </a>
             </div>
 
             {/* Telegram */}

@@ -15,6 +15,7 @@ import {
 } from '@/lib/supabase/queries'
 import {
   LAUNCH_PHONE,
+  LAUNCH_SUPPORT_EMAIL,
   LAUNCH_YOUTUBE_URL,
   LAUNCH_FACEBOOK_URL,
   LAUNCH_INSTAGRAM_URL,
@@ -91,7 +92,9 @@ export default async function HomePage() {
 
   const postalAddress = {
     '@type': 'PostalAddress',
-    addressLocality: 'Коротич',
+    streetAddress: 'просп. Героїв Харкова, 300, кв. 156',
+    postalCode: '61032',
+    addressLocality: 'Харків',
     addressRegion: 'Харківська область',
     addressCountry: 'UA',
   }
@@ -111,6 +114,7 @@ export default async function HomePage() {
     description: localBusinessDescription[locale],
     areaServed: 'UA',
     telephone: phone,
+    email: LAUNCH_SUPPORT_EMAIL,
     address: postalAddress,
     sameAs: socialProfiles,
     hasMerchantReturnPolicy: {

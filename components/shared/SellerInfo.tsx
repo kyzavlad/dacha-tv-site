@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { PhoneLink } from '@/components/shared/PhoneLink'
 import { getRequestLocale, localizedPath } from '@/lib/i18n'
 import { tr } from '@/lib/i18n/pages'
-import { LAUNCH_PHONE } from '@/lib/launch-defaults'
+import { LAUNCH_PHONE, LAUNCH_SUPPORT_EMAIL } from '@/lib/launch-defaults'
 
 interface SellerInfoProps {
   compact?: boolean
@@ -12,9 +12,9 @@ export async function SellerInfo({ compact = false }: SellerInfoProps) {
   const locale = await getRequestLocale()
   const location = tr(
     {
-      uk: 'Коротич, Пісочинська ОТГ, Харківська область, Україна',
-      ru: 'Коротич, Песочинская ОТГ, Харьковская область, Украина',
-      en: 'Korotych, Pisochyn community, Kharkiv region, Ukraine',
+      uk: '61032, м. Харків, просп. Героїв Харкова, буд. 300, кв. 156, Україна',
+      ru: '61032, г. Харьков, просп. Героев Харькова, д. 300, кв. 156, Украина',
+      en: '61032, Kharkiv, 300 Heroiv Kharkova Ave, apt. 156, Ukraine',
     },
     locale,
   )
@@ -63,6 +63,14 @@ export async function SellerInfo({ compact = false }: SellerInfoProps) {
           <dt className="text-gray-400">{tr({ uk: 'Телефон', ru: 'Телефон', en: 'Phone' }, locale)}</dt>
           <dd className="text-gray-800">
             <PhoneLink phone={LAUNCH_PHONE} className="underline decoration-gray-300 underline-offset-4 hover:decoration-gray-700" />
+          </dd>
+        </div>
+        <div className="grid grid-cols-[120px_1fr] gap-x-4">
+          <dt className="text-gray-400">Email</dt>
+          <dd className="text-gray-800">
+            <a href={`mailto:${LAUNCH_SUPPORT_EMAIL}`} className="underline decoration-gray-300 underline-offset-4 hover:decoration-gray-700">
+              {LAUNCH_SUPPORT_EMAIL}
+            </a>
           </dd>
         </div>
         <div className="grid grid-cols-[120px_1fr] gap-x-4">
