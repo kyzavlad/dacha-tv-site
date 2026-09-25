@@ -1,5 +1,7 @@
 export const LAUNCH_PHONE = '+380951444853'
 export const LAUNCH_PHONE_SECONDARY = '+380967657772'
+export const LAUNCH_SUPPORT_EMAIL = 'ai@vladkuzmenko.com'
+export const LAUNCH_LEGAL_ADDRESS = '61032, м. Харків, просп. Героїв Харкова, буд. 300, кв. 156, Україна'
 export const LAUNCH_YOUTUBE_URL = 'https://www.youtube.com/@dacha_tv'
 export const LAUNCH_YOUTUBE_VIDEO_ID = 'Qwmi6Igjp4I'
 export const LAUNCH_INSTAGRAM_URL = 'https://www.instagram.com/dachatv.store'
