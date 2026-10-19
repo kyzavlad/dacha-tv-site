@@ -90,8 +90,9 @@ export type BuildPayloadResult =
 
 export interface OrderResult {
   ok: boolean
-  // confirmed = the API returned a real order id/number → the order is actually
-  // registered in Personal.cab. ok=true + confirmed=false means HTTP 200 with no
+  // confirmed = the API returned an order id/number, including an explicitly
+  // accepted temporary lookup id. This proves registration, not fulfillment.
+  // ok=true + confirmed=false means HTTP 200 with no
   // explicit error but also no order id: we MUST NOT report this as a successful
   // live send (it is the exact case where orders silently never appear in the
   // supplier journal). Checkout maps this to the 'sent_unconfirmed' status.
@@ -258,10 +259,18 @@ export async function sendPersonalCabOrder(
       }
     }
 
-    // confirmed = a real order id/number is present. This is the ONLY positive
-    // proof the order was registered. Empty JSON, empty text, or HTTP 200 with no
-    // id do NOT count as confirmed.
-    const orderId = String(raw.order_id ?? raw.id ?? raw.number ?? '').trim()
+    // Personal.cab add_order returns order_temporary_id before a final MC number
+    // exists. get_order_details accepts that same numeric lookup id. Retain it
+    // so a registered order is not mistaken
+    // for an ambiguous send or submitted again. An arbitrary temporary value
+    // without explicit success:1 still does NOT confirm acceptance.
+    const temporaryId = String(raw.order_temporary_id ?? '').trim()
+    const acceptedTemporaryId =
+      (raw.success === 1 || raw.success === '1') &&
+      /^[1-9]\d*$/.test(temporaryId) && Number.isSafeInteger(Number(temporaryId))
+        ? temporaryId
+        : ''
+    const orderId = String(raw.order_id ?? raw.id ?? raw.number ?? '').trim() || acceptedTemporaryId
     const confirmed = orderId.length > 0
 
     // ok=true only when the API did not return an explicit error. Do NOT use
