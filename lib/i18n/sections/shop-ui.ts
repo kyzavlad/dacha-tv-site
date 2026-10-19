@@ -229,6 +229,12 @@ const D = {
     ru: 'Добавьте товары, чтобы продолжить',
     en: 'Add products to continue',
   },
+  quantityLabel: { uk: 'Кількість', ru: 'Количество', en: 'Quantity' },
+  quantityUnitHint: {
+    uk: 'Пара чи комплект у назві товару рахується як одна одиниця.',
+    ru: 'Пара или комплект в названии товара считается одной единицей.',
+    en: 'A pair or set in the product name counts as one unit.',
+  },
   qtyDecrease: { uk: 'Зменшити кількість', ru: 'Уменьшить количество', en: 'Decrease quantity' },
   qtyIncrease: { uk: 'Збільшити кількість', ru: 'Увеличить количество', en: 'Increase quantity' },
   remove: { uk: 'Видалити', ru: 'Удалить', en: 'Remove' },

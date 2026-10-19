@@ -218,7 +218,7 @@ function WarehousePicker({
 export default function CheckoutPage() {
   const locale = useLocale()
   const t = shopUiDict(locale)
-  const { items, totalPrice, clearCart, hydrated } = useCart()
+  const { items, totalPrice, clearCart, updateQty, hydrated } = useCart()
   const homeHref = localizedPath(locale, '/')
 
   const [firstName, setFirstName] = useState('')
@@ -376,7 +376,83 @@ export default function CheckoutPage() {
         <h1 className="font-serif text-3xl font-bold text-bark mb-8">{t.checkoutTitle}</h1>
 
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-8 items-start">
-          <div className="lg:col-span-3">
+          <div className="lg:col-span-2 lg:order-2">
+            <div className="bg-white rounded-2xl p-6 border border-honey-100 shadow-sm sticky top-24">
+              <h2 className="font-serif text-xl font-bold text-bark mb-4">{t.orderSummaryTitle}</h2>
+
+              <div className="space-y-3 mb-4">
+                {items.map((item) => (
+                  <div key={item.id} className="flex items-start gap-3">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-bark leading-snug">{item.name}</p>
+                      {item.variant && <p className="text-xs text-bark/50">{item.variant}</p>}
+                      <div className="mt-3">
+                        <p className="text-xs font-medium text-bark/70">{t.quantityLabel}</p>
+                        <div className="mt-1 flex items-center gap-2">
+                          <button
+                            type="button"
+                            disabled={submitting || item.quantity <= 1}
+                            onClick={() => updateQty(item.id, item.quantity - 1)}
+                            aria-label={`${t.qtyDecrease}: ${item.name}`}
+                            className="h-11 w-11 rounded-xl bg-honey-100 text-bark text-xl font-semibold hover:bg-honey-200 disabled:opacity-40 disabled:cursor-not-allowed"
+                          >−</button>
+                          <input
+                            type="number"
+                            inputMode="numeric"
+                            min="1"
+                            step="1"
+                            value={item.quantity}
+                            disabled={submitting}
+                            onChange={(event) => {
+                              const quantity = Number(event.currentTarget.value)
+                              if (event.currentTarget.value !== '' && Number.isSafeInteger(quantity) && quantity >= 1) {
+                                updateQty(item.id, quantity)
+                              }
+                            }}
+                            aria-label={`${t.quantityLabel}: ${item.name}`}
+                            className="h-11 w-16 rounded-xl border border-honey-200 bg-white text-center font-semibold text-bark focus:outline-none focus:ring-2 focus:ring-honey-400 disabled:opacity-60"
+                          />
+                          <button
+                            type="button"
+                            disabled={submitting || !Number.isSafeInteger(item.quantity + 1)}
+                            onClick={() => updateQty(item.id, item.quantity + 1)}
+                            aria-label={`${t.qtyIncrease}: ${item.name}`}
+                            className="h-11 w-11 rounded-xl bg-honey-100 text-bark text-xl font-semibold hover:bg-honey-200 disabled:opacity-40 disabled:cursor-not-allowed"
+                          >+</button>
+                        </div>
+                        <p className="mt-1 text-xs text-bark/60">{t.quantityUnitHint}</p>
+                      </div>
+                    </div>
+                    <span className="text-sm font-semibold text-bark flex-shrink-0">
+                      {(item.price * item.quantity).toLocaleString('uk-UA')} ₴
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="border-t border-honey-100 pt-3 flex items-center justify-between">
+                <span className="font-bold text-bark">{t.total}</span>
+                <span className="text-xl font-bold text-bark">
+                  {totalPrice.toLocaleString('uk-UA')} ₴
+                </span>
+              </div>
+
+              <p className="text-xs text-bark/40 mt-3">{t.summaryNote}</p>
+            </div>
+
+            <div className="mt-4 space-y-2.5 text-xs text-bark/60">
+              {[t.infoDelivery, t.infoPayment, t.infoCall].map((text) => (
+                <div key={text} className="flex items-start gap-2">
+                  <svg className="w-4 h-4 text-green-500 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                  <span>{text}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="lg:col-span-3 lg:order-1">
             <div className="bg-white rounded-2xl p-6 border border-honey-100 shadow-sm">
               <form onSubmit={handleSubmit} className="space-y-5">
                 <h2 className="font-serif text-xl font-bold text-bark">{t.recipientTitle}</h2>
@@ -518,47 +594,6 @@ export default function CheckoutPage() {
 
                 <p className="text-xs text-bark/40 text-center">{t.afterSubmitNote}</p>
               </form>
-            </div>
-          </div>
-
-          <div className="lg:col-span-2">
-            <div className="bg-white rounded-2xl p-6 border border-honey-100 shadow-sm sticky top-24">
-              <h2 className="font-serif text-xl font-bold text-bark mb-4">{t.orderSummaryTitle}</h2>
-
-              <div className="space-y-3 mb-4">
-                {items.map((item) => (
-                  <div key={item.id} className="flex items-start gap-3">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-bark leading-snug">{item.name}</p>
-                      {item.variant && <p className="text-xs text-bark/50">{item.variant}</p>}
-                      <p className="text-xs text-bark/50 mt-0.5">× {item.quantity}</p>
-                    </div>
-                    <span className="text-sm font-semibold text-bark flex-shrink-0">
-                      {(item.price * item.quantity).toLocaleString('uk-UA')} ₴
-                    </span>
-                  </div>
-                ))}
-              </div>
-
-              <div className="border-t border-honey-100 pt-3 flex items-center justify-between">
-                <span className="font-bold text-bark">{t.total}</span>
-                <span className="text-xl font-bold text-bark">
-                  {totalPrice.toLocaleString('uk-UA')} ₴
-                </span>
-              </div>
-
-              <p className="text-xs text-bark/40 mt-3">{t.summaryNote}</p>
-            </div>
-
-            <div className="mt-4 space-y-2.5 text-xs text-bark/60">
-              {[t.infoDelivery, t.infoPayment, t.infoCall].map((text) => (
-                <div key={text} className="flex items-start gap-2">
-                  <svg className="w-4 h-4 text-green-500 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                  </svg>
-                  <span>{text}</span>
-                </div>
-              ))}
             </div>
           </div>
         </div>
