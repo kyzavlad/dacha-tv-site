@@ -175,13 +175,13 @@ export async function Footer({ siteSettings }: FooterProps) {
                   className="text-bark font-semibold text-base hover:text-honey-700 transition-colors"
                 />
               </div>
-              <div>
+              {phoneSecondary && <div>
                 <PhoneLink
                   phone={phoneSecondary}
                   showIcon
                   className="text-bark font-semibold text-base hover:text-honey-700 transition-colors"
                 />
-              </div>
+              </div>}
               <a
                 href={`mailto:${LAUNCH_SUPPORT_EMAIL}`}
                 className="text-sm text-gray-600 underline decoration-gray-300 underline-offset-4 hover:text-bark hover:decoration-bark transition-colors"

@@ -94,14 +94,14 @@ export default async function ContactPage() {
             </div>
 
             {/* Secondary phone */}
-            <div className="bg-honey-50 rounded-2xl p-6 border border-honey-200 mb-6">
+            {phoneSecondary && <div className="bg-honey-50 rounded-2xl p-6 border border-honey-200 mb-6">
               <p className="text-bark/60 text-sm mb-2">{t.contact.phoneSecondary}</p>
               <PhoneLink
                 phone={phoneSecondary}
                 showIcon
                 className="text-2xl font-bold"
               />
-            </div>
+            </div>}
 
             {/* Customer support email */}
             <div className="bg-white rounded-2xl p-5 border border-gray-200 mb-6">

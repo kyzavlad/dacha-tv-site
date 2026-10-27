@@ -3,9 +3,9 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { LAUNCH_PHONE, LAUNCH_PHONE_SECONDARY } from '../lib/launch-defaults.ts'
 
-test('canonical storefront phone order matches current commercial decision', () => {
+test('storefront keeps only the owner phone', () => {
   assert.equal(LAUNCH_PHONE, '+380951444853')
-  assert.equal(LAUNCH_PHONE_SECONDARY, '+380967657772')
+  assert.equal(LAUNCH_PHONE_SECONDARY, '')
 })
 
 test('global chrome overrides stale site_settings phone values', () => {
