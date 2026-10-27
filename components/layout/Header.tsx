@@ -60,13 +60,12 @@ export function Header({ siteSettings, locale }: HeaderProps) {
           {/* Right actions — logo left, actions right. On mobile the burger is
               grouped with the cart; desktop adds the phone link. */}
           <div className="flex items-center gap-1 sm:gap-2">
-            <div className="hidden md:flex items-center gap-2">
+            <div className="hidden md:block">
               <PhoneLink
                 phone={phone}
                 showIcon
-                className="text-sm font-semibold text-bark/80 hover:text-honey-700 transition-colors"
+                className="whitespace-nowrap text-sm font-semibold text-bark/80 hover:text-honey-700 transition-colors"
               />
-              <ContactMessengers locale={loc} iconOnly className="hidden xl:flex" />
             </div>
             <div className="hidden md:block">
               <LanguageSwitcher align="right" />
@@ -84,8 +83,11 @@ export function Header({ siteSettings, locale }: HeaderProps) {
         {/* Global product search — a second row so it is always visible on every
             page (home, catalog, category, product, content) on desktop AND
             mobile, like a real e-commerce store. */}
-        <div className="pb-3">
-          <HeaderSearch />
+        <div className="flex items-center gap-3 pb-3">
+          <div className="min-w-0 flex-1">
+            <HeaderSearch />
+          </div>
+          <ContactMessengers locale={loc} iconOnly className="hidden shrink-0 md:flex" />
         </div>
       </div>
     </header>

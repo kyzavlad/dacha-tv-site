@@ -21,7 +21,7 @@ export function ContactMessengers({
   const linkClass = 'inline-flex min-h-11 min-w-11 items-center justify-center gap-2 rounded-xl border px-3 py-2 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2'
 
   return (
-    <div className={cn('flex flex-wrap items-center gap-2', className)} role="group" aria-label={labels.group}>
+    <div className={cn('flex items-center gap-2', iconOnly ? 'shrink-0 flex-nowrap' : 'flex-wrap', className)} role="group" aria-label={labels.group}>
       <a href={LAUNCH_TELEGRAM_URL} target="_blank" rel="noopener noreferrer" aria-label={labels.telegram} title={labels.telegram}
         className={cn(linkClass, 'border-sky-200 bg-sky-50 text-sky-800 hover:bg-sky-100 focus-visible:outline-sky-700')}>
         <svg className="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
