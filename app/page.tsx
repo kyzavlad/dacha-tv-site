@@ -15,6 +15,7 @@ import {
 } from '@/lib/supabase/queries'
 import {
   LAUNCH_PHONE,
+  LAUNCH_PHONE_SECONDARY,
   LAUNCH_SUPPORT_EMAIL,
   LAUNCH_YOUTUBE_URL,
   LAUNCH_FACEBOOK_URL,
@@ -67,10 +68,13 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function HomePage() {
-  const [reviews, siteSettings] = await Promise.all([
+  const [reviews, storedSiteSettings] = await Promise.all([
     getVisibleReviews().catch(() => []),
     getSiteSettings().catch(() => null),
   ])
+  const siteSettings = storedSiteSettings
+    ? { ...storedSiteSettings, phone: LAUNCH_PHONE, phone_secondary: LAUNCH_PHONE_SECONDARY }
+    : null
 
   // Locale is read once here and passed to client sections (which can't call
   // getRequestLocale). Server sections read the request locale themselves.
