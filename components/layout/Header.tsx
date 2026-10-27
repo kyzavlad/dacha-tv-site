@@ -6,6 +6,7 @@ import { Navigation } from './Navigation'
 import { MobileMenu } from './MobileMenu'
 import { HeaderSearch } from './HeaderSearch'
 import { PhoneLink } from '@/components/shared/PhoneLink'
+import { ContactMessengers } from '@/components/shared/ContactMessengers'
 import { CartButton } from '@/components/cart/CartButton'
 import { LanguageSwitcher } from '@/components/shared/LanguageSwitcher'
 import { LAUNCH_PHONE, LAUNCH_PHONE_SECONDARY, LAUNCH_LOGO_PATH } from '@/lib/launch-defaults'
@@ -59,12 +60,13 @@ export function Header({ siteSettings, locale }: HeaderProps) {
           {/* Right actions — logo left, actions right. On mobile the burger is
               grouped with the cart; desktop adds the phone link. */}
           <div className="flex items-center gap-1 sm:gap-2">
-            <div className="hidden md:block">
+            <div className="hidden md:flex items-center gap-2">
               <PhoneLink
                 phone={phone}
                 showIcon
                 className="text-sm font-semibold text-bark/80 hover:text-honey-700 transition-colors"
               />
+              <ContactMessengers locale={loc} iconOnly className="hidden xl:flex" />
             </div>
             <div className="hidden md:block">
               <LanguageSwitcher align="right" />

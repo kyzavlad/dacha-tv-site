@@ -1,5 +1,7 @@
 export const LAUNCH_PHONE = '+380951444853'
 export const LAUNCH_PHONE_SECONDARY = ''
+export const LAUNCH_TELEGRAM_URL = `https://t.me/${LAUNCH_PHONE}`
+export const LAUNCH_WHATSAPP_URL = `https://wa.me/${LAUNCH_PHONE.replace(/\D/g, '')}`
 export const LAUNCH_SUPPORT_EMAIL = 'ai@vladkuzmenko.com'
 export const LAUNCH_LEGAL_ADDRESS = '61032, м. Харків, просп. Героїв Харкова, буд. 300, кв. 156, Україна'
 export const LAUNCH_YOUTUBE_URL = 'https://www.youtube.com/@dacha_tv'
