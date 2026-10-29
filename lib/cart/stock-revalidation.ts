@@ -4,6 +4,8 @@
 // FAILS CLOSED — a lookup failure or a missing row blocks the order (temporary),
 // never a silent pass. Manual + metal (inquiry) products are never blocked here.
 
+import { isSupplierStockStale } from '../catalog/stock-freshness'
+
 export interface RevalItem {
   productType: string      // only 'catalog' items are stock-checked
   productSlug: string
@@ -29,6 +31,7 @@ export type RevalResult =
   | { ok: false; reason: 'missing'; names: string[] }
   // Synced supplier row explicitly out of stock — block with the item names.
   | { ok: false; reason: 'out_of_stock'; names: string[] }
+  | { ok: false; reason: 'stock_stale'; names: string[] }
 
 // Decide whether an order may proceed. `lookupFailed` is true when the catalog
 // lookup query itself errored (fail closed). `rows` are the catalog rows found
@@ -38,6 +41,7 @@ export function revalidateSupplierStock(opts: {
   items: RevalItem[]
   rows: RevalRow[]
   lookupFailed: boolean
+  nowMs?: number
 }): RevalResult {
   const catalogItems = opts.items.filter((i) => i.productType === 'catalog')
   if (catalogItems.length === 0) return { ok: true }
@@ -65,6 +69,9 @@ export function revalidateSupplierStock(opts: {
     }
   }
   if (out.length > 0) return { ok: false, reason: 'out_of_stock', names: out }
+
+  const stale = catalogItems.filter(i => isSupplierStockStale(bySlug.get(i.productSlug)!, opts.nowMs))
+  if (stale.length > 0) return { ok: false, reason: 'stock_stale', names: stale.map(i => String(bySlug.get(i.productSlug)!.name_ua || i.name || i.productSlug)) }
 
   return { ok: true }
 }

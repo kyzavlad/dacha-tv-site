@@ -7,6 +7,7 @@
 
 import { autoSlug } from '@/lib/catalog/csv-utils'
 import { normalizeStock } from '@/lib/catalog/stock'
+import { supplierStockObservedAt } from './stock-freshness'
 import type { RefreshExistingResult } from '@/lib/catalog/existing-product-refresh'
 
 export interface NewProductCandidate {
@@ -21,6 +22,7 @@ export interface NewProductCandidate {
   images: unknown
   stock_quantity: unknown
   is_in_stock: unknown
+  last_synced_at?: unknown
 }
 
 // Builds the catalog_products insert row for one genuinely-new supplier
@@ -34,6 +36,9 @@ export function buildNewProductRow(
   usedSlugs: Set<string>,
   nowIso: string,
 ): Record<string, unknown> {
+  // Keep the import-time argument compatible with existing callers, but never
+  // treat copying a row as a new supplier stock observation.
+  void nowIso
   const sku = sp.supplier_sku
   const name = (sp.name_ua || sp.name || '') as string
 
@@ -67,7 +72,7 @@ export function buildNewProductRow(
     images: sp.images ?? null,
     stock_quantity: stock.stock_quantity,
     is_in_stock: stock.is_in_stock,
-    stock_synced_at: nowIso,
+    stock_synced_at: supplierStockObservedAt(sp.last_synced_at),
     status: 'draft',
     is_featured: false,
     display_order: 0,

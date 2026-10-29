@@ -21,7 +21,7 @@ test('normalizeStock: supplier flag can keep a 0-qty row in stock', () => {
 })
 
 test('stockStatus: manual/metal rows are always unknown', () => {
-  assert.equal(stockStatus({ source: 'manual', lead_type: 'metal', is_in_stock: false, stock_synced_at: '2026-07-20' }), 'unknown')
+  assert.equal(stockStatus({ source: 'manual', lead_type: 'metal', is_in_stock: false, stock_synced_at: new Date().toISOString() }), 'unknown')
   assert.equal(stockStatus({ source: 'manual', lead_type: 'natural_products', is_in_stock: true }), 'unknown')
 })
 
@@ -30,8 +30,8 @@ test('stockStatus: unsynced supplier row is unknown', () => {
 })
 
 test('stockStatus: synced supplier row reflects is_in_stock', () => {
-  assert.equal(stockStatus({ source: 'supplier', is_in_stock: true, stock_synced_at: '2026-07-20' }), 'in_stock')
-  assert.equal(stockStatus({ source: 'supplier', is_in_stock: false, stock_synced_at: '2026-07-20' }), 'out_of_stock')
+  assert.equal(stockStatus({ source: 'supplier', is_in_stock: true, stock_synced_at: new Date().toISOString() }), 'in_stock')
+  assert.equal(stockStatus({ source: 'supplier', is_in_stock: false, stock_synced_at: new Date().toISOString() }), 'out_of_stock')
 })
 
 test('stockLabel is localized', () => {
@@ -43,11 +43,11 @@ test('stockLabel is localized', () => {
 })
 
 test('isPurchasableForStock blocks only synced out-of-stock supplier rows', () => {
-  assert.equal(isPurchasableForStock({ source: 'supplier', is_in_stock: false, stock_synced_at: '2026-07-20' }), false)
-  assert.equal(isPurchasableForStock({ source: 'supplier', is_in_stock: true, stock_synced_at: '2026-07-20' }), true)
+  assert.equal(isPurchasableForStock({ source: 'supplier', is_in_stock: false, stock_synced_at: new Date().toISOString() }), false)
+  assert.equal(isPurchasableForStock({ source: 'supplier', is_in_stock: true, stock_synced_at: new Date().toISOString() }), true)
   // Unknown (manual/metal or unsynced) is never blocked here.
   assert.equal(isPurchasableForStock({ source: 'manual', lead_type: 'metal' }), true)
-  assert.equal(isPurchasableForStock({ source: 'supplier', is_in_stock: null, stock_synced_at: null }), true)
+  assert.equal(isPurchasableForStock({ source: 'supplier', is_in_stock: null, stock_synced_at: null }), false)
 })
 
 test('buildSupplierUpdatePayload propagates supplier stock for supplier rows', () => {

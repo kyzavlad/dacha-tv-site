@@ -9,6 +9,7 @@ const supplier = {
   supplier_sku: 'B-1194',
   supplier_product_id: '1194',
   is_in_stock: true,
+  stock_synced_at: new Date().toISOString(),
   stock_quantity: 5,
 }
 

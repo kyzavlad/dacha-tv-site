@@ -1,3 +1,5 @@
+import { isSupplierStockStale } from './stock-freshness'
+
 export const MERCHANT_FEED_ORIGIN = 'https://dachatv.com'
 
 // Merchant-only quarantine. Storefront/catalog rows remain untouched.
@@ -1323,6 +1325,7 @@ export interface MerchantCatalogRow {
   price_uah?: number | string | null
   main_image_url?: string | null
   stock_quantity?: number | null
+  stock_synced_at?: string | null
   is_in_stock?: boolean | null
   inquiry_only?: boolean | null
   is_price_suspicious?: boolean | null
@@ -1375,6 +1378,7 @@ export function absoluteMerchantUrl(value: string | null | undefined, origin = M
 export function toMerchantFeedItem(row: MerchantCatalogRow, origin = MERCHANT_FEED_ORIGIN): MerchantFeedItem | null {
   if (row.status !== 'published') return null
   if (row.source !== 'supplier') return null
+  if (isSupplierStockStale(row)) return null
   if (row.is_in_stock !== true || Number(row.stock_quantity ?? 0) <= 0) return null
   if (row.inquiry_only === true || row.lead_type === 'metal' || row.is_price_suspicious === true) return null
 

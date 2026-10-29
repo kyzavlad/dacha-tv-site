@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { revalidateSupplierStock } from '../lib/cart/stock-revalidation.ts'
 
-const supplierRow = (slug, over = {}) => ({ slug, source: 'supplier', is_in_stock: true, stock_synced_at: '2026-07-21', name_ua: slug, supplier_sku: 'SKU-' + slug, ...over })
+const supplierRow = (slug, over = {}) => ({ slug, source: 'supplier', is_in_stock: true, stock_synced_at: new Date().toISOString(), name_ua: slug, supplier_sku: 'SKU-' + slug, ...over })
 
 test('no catalog items → always ok (honey/flowers pass through)', () => {
   const r = revalidateSupplierStock({ items: [{ productType: 'honey', productSlug: 'med' }], rows: [], lookupFailed: true })
@@ -50,19 +50,19 @@ test('in-stock supplier row → ok', () => {
 test('manual/metal rows are never blocked, even out of stock flags', () => {
   const r = revalidateSupplierStock({
     items: [{ productType: 'catalog', productSlug: 'metal-1' }],
-    rows: [{ slug: 'metal-1', source: 'manual', lead_type: 'metal', is_in_stock: false, stock_synced_at: '2026-07-21', name_ua: 'Metal' }],
+    rows: [{ slug: 'metal-1', source: 'manual', lead_type: 'metal', is_in_stock: false, stock_synced_at: new Date().toISOString(), name_ua: 'Metal' }],
     lookupFailed: false,
   })
   assert.deepEqual(r, { ok: true })
 })
 
-test('unsynced supplier row (no stock signal) → ok (unknown, not blocked)', () => {
+test('unsynced supplier row needs confirmation instead of automatic forwarding)', () => {
   const r = revalidateSupplierStock({
     items: [{ productType: 'catalog', productSlug: 'a' }],
     rows: [{ slug: 'a', source: 'supplier', is_in_stock: null, stock_synced_at: null }],
     lookupFailed: false,
   })
-  assert.deepEqual(r, { ok: true })
+  assert.deepEqual(r, { ok: false, reason: 'stock_stale', names: ['a'] })
 })
 
 test('missing takes precedence over out-of-stock when both present', () => {

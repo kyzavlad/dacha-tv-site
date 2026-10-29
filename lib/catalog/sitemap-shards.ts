@@ -1,3 +1,4 @@
+import { isSupplierStockStale } from './stock-freshness'
 import { createClient } from '@supabase/supabase-js'
 import { isStorefrontProduct } from '@/lib/supabase/catalog'
 
@@ -80,6 +81,7 @@ interface SitemapCatalogRow {
   supplier_product_id: string | null
   stock_quantity: number | null
   is_in_stock: boolean | null
+  stock_synced_at: string | null
 }
 
 let sitemapDbSlotsInUse = 0
@@ -129,7 +131,7 @@ export async function getPublishedCatalogSlugsForShard(
     const { data, error } = await withSitemapDbSlot(async () => {
       let query = client
         .from('catalog_products')
-        .select('id, slug, category_slug, source, lead_type, supplier_sku, supplier_product_id, stock_quantity, is_in_stock')
+        .select('id, slug, category_slug, source, lead_type, supplier_sku, supplier_product_id, stock_quantity, is_in_stock, stock_synced_at')
         .gte('id', range.lower)
       if (range.upper) query = query.lt('id', range.upper)
       if (cursor) query = query.gt('id', cursor)
@@ -168,6 +170,7 @@ export async function getPublishedCatalogSlugsForShard(
   // products are preserved because they intentionally do not use supplier stock.
   return rows
     .filter(isStorefrontProduct)
+    .filter(row => !isSupplierStockStale(row))
     .filter((row) => row.source !== 'supplier' || (row.is_in_stock === true && Number(row.stock_quantity ?? 0) > 0))
     .map((row) => {
       if (!row.slug) throw new Error(`sitemap shard ${shardId} contains a published storefront row without a slug`)

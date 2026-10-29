@@ -412,6 +412,11 @@ const DICT = {
       ru: 'Некоторые товары закончились: {names}. Удалите их из корзины, чтобы оформить заказ.',
       en: 'Some items are out of stock: {names}. Remove them from the cart to place your order.',
     },
+    errStockNeedsConfirmation: {
+      uk: 'Наявність товарів {names} потребує уточнення. Зв’яжіться з нами через розділ «Контакти».',
+      ru: 'Наличие товаров {names} нужно уточнить. Свяжитесь с нами через раздел «Контакты».',
+      en: 'Availability needs confirmation for {names}. Please use the Contact page before ordering.',
+    },
     errStockCheckFailed: {
       uk: 'Не вдалося перевірити наявність. Спробуйте ще раз за хвилину.',
       ru: 'Не удалось проверить наличие. Попробуйте ещё раз через минуту.',

@@ -1,4 +1,5 @@
 import type { CatalogProduct } from '@/types'
+import { isSupplierStockStale } from './stock-freshness'
 
 /**
  * Public discovery surfaces (category grids, search, recommendations, model hubs)
@@ -15,7 +16,7 @@ import type { CatalogProduct } from '@/types'
 export function isDiscoveryVisibleProduct(
   product: Pick<
     CatalogProduct,
-    'source' | 'lead_type' | 'supplier_sku' | 'supplier_product_id' | 'is_in_stock' | 'stock_quantity'
+    'source' | 'lead_type' | 'supplier_sku' | 'supplier_product_id' | 'is_in_stock' | 'stock_quantity' | 'stock_synced_at'
   >,
 ): boolean {
   if (product.source === 'manual' || product.lead_type === 'metal') return true
@@ -27,5 +28,5 @@ export function isDiscoveryVisibleProduct(
 
   if (!isSupplier) return false
 
-  return product.is_in_stock === true && Number(product.stock_quantity ?? 0) > 0
+  return !isSupplierStockStale(product) && product.is_in_stock === true && Number(product.stock_quantity ?? 0) > 0
 }

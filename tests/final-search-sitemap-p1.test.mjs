@@ -110,7 +110,7 @@ test('UUID range boundaries cover the full space without gaps or overlaps', () =
 
 test('product sitemap uses keyset pagination, bounded DB concurrency, and current supplier stock', () => {
   assert.match(shardSrc, /\.gte\('id', range\.lower\)/)
-  assert.match(shardSrc, /\.select\('id, slug, category_slug, source, lead_type, supplier_sku, supplier_product_id, stock_quantity, is_in_stock'\)/)
+  assert.match(shardSrc, /\.select\('id, slug, category_slug, source, lead_type, supplier_sku, supplier_product_id, stock_quantity, is_in_stock, stock_synced_at'\)/)
   assert.ok(!shardSrc.includes("count: 'exact'"), 'sitemap shards must not run exact counts against the large catalog')
   assert.ok(!shardSrc.includes('.or(STOREFRONT_SCOPE_OR)'), 'nested storefront OR must not be pushed into the hot UUID-range query')
   assert.ok(!shardSrc.includes(".eq('status', 'published')"), 'published visibility is already enforced by anon RLS')

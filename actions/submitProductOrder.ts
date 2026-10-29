@@ -235,9 +235,9 @@ export async function submitProductOrder(
     `[checkout-submit ${trace}] validated — payment=${d.methodPayment} warehouse=${d.warehouseId} total=${totalUah} phone=${d.phone}${isTestOrder ? ` TEST-ORDER(blocked from supplier; marker="${testMarker}")` : ''}`,
   )
 
-  // ── Step 2: primary notification — fires before ANY DB or supplier logic ─────
-  // This is the only notification that must survive a PGRST205 Supabase failure
-  // or a Personal.cab rejection: it depends only on the validated form data.
+  // ── Step 2: prepare the notification; send only after stock validation ───────
+  // An unverified/stale cart must not produce a false new-order notification.
+  // For validated inventory the alert still precedes order insertion/forwarding.
   const PAYMENT_LABELS: Record<string, string> = {
     cashondelivery: 'Накладний платіж',
     prepayment: 'Передоплата',
@@ -275,24 +275,6 @@ export async function submitProductOrder(
     attributionLine ? `📊 ${attributionLine}` : null,
   ].filter(Boolean).join('\n')
 
-  console.info(`[checkout-submit ${trace}] primary order notification queued`)
-  await notifyProductOrder({
-    trace,
-    message: primaryNotifyText,
-    payload: {
-      type: 'product_order_received',
-      name: customerName,
-      phone: d.phone,
-      product: productSummary,
-      items_text: itemLines,
-      total: totalUah,
-      payment_method: d.methodPayment,
-      warehouse: d.warehouseName ?? d.warehouseId,
-      warehouse_id: d.warehouseId,
-      comment: d.comment ?? null,
-      page_url: d.source ?? null,
-    },
-  })
 
   try {
     // getAdminClient() throws when Supabase env vars are missing. Keep it inside
@@ -334,6 +316,7 @@ export async function submitProductOrder(
           return { success: false, error: t.errStockCheckFailed }
         }
         const list = reval.names.slice(0, 5).join(', ')
+        if (reval.reason === 'stock_stale') return { success: false, error: t.errStockNeedsConfirmation.replace('{names}', list) }
         if (reval.reason === 'missing') {
           console.error(`[checkout-submit ${trace}] blocked — missing catalog rows: ${list}`)
           return { success: false, error: t.errItemUnavailable.replace('{names}', list) }
@@ -342,6 +325,25 @@ export async function submitProductOrder(
         return { success: false, error: t.errOutOfStock.replace('{names}', list) }
       }
     }
+
+    console.info(`[checkout-submit ${trace}] primary order notification queued`)
+    await notifyProductOrder({
+      trace,
+      message: primaryNotifyText,
+      payload: {
+        type: 'product_order_received',
+        name: customerName,
+        phone: d.phone,
+        product: productSummary,
+        items_text: itemLines,
+        total: totalUah,
+        payment_method: d.methodPayment,
+        warehouse: d.warehouseName ?? d.warehouseId,
+        warehouse_id: d.warehouseId,
+        comment: d.comment ?? null,
+        page_url: d.source ?? null,
+      },
+    })
 
     // Supplier line items = catalog items with a known supplier SKU. Everything
     // else (catalog items without a SKU, honey/apiary/flower/custom) is a manual
