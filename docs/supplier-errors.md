@@ -60,3 +60,31 @@ creation — the upsert is idempotent on `supplier_sku`).
 hard-vs-diagnostic accounting (a run with only diagnostic issues has
 `completed_with_errors = false`; a single hard error flips it). This proves the
 new categorization on bounded synthetic inputs — no uncontrolled feed run.
+# Recipient autofill rejected as "Only Cyrillic" (29 October 2026)
+
+The supplier can return this message even when every letter is Cyrillic: a
+browser can fill `firstName` with `given-name surname` while also filling the
+separate surname field. The supplier rejects the space in the first-name field.
+
+Checkout, its Server Action and the supplier payload builder share
+`normaliseRecipientNames`. It normalises Unicode/typographic whitespace and
+apostrophes, and removes an exact duplicated surname suffix only when the
+remaining first name is one valid Cyrillic token. Visual Latin lookalikes are
+converted only inside a word that already contains Cyrillic; a fully Latin name,
+unknown Latin letters, ambiguous extra words and invisible controls produce a
+field error before notifications or order creation. Names are never translated.
+Checkout displays the normalised fields when submitted.
+
+Regression: `pnpm exec tsx --test tests/recipient-name.test.mjs
+tests/checkout-quantity.test.mjs tests/supplier-temporary-order-id.test.mjs`.
+Fixtures are synthetic. Keep the quantity/COD and accepted temporary-ID guards.
+
+For an existing failed order, inspect structured fields and Unicode codepoints,
+fresh vendor stock, the supplier journal and any accepted ID before recovery.
+Preserve the original record and request in a private keeper. After one live
+attempt, durably save its receipt before updating the SAME local order using a
+failed/null-ID compare-and-set. A timeout or missing receipt is an UNKNOWN state,
+not permission to retry. Test-mode acceptance is not a real shipment. Confirm
+the final vendor order/TTN independently; acceptance alone is not dispatch,
+payment or margin. Roll back a defective application release without undoing
+an already accepted supplier order or deleting its receipt.

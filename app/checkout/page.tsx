@@ -12,6 +12,7 @@ import { trackBeginCheckout, trackPurchase, type AnalyticsItem } from '@/lib/ana
 import { localizedPath, DEFAULT_LOCALE, type Locale } from '@/lib/i18n'
 import { useLocale } from '@/lib/i18n/locale-context'
 import { shopUiDict } from '@/lib/i18n/sections/shop-ui'
+import { normaliseRecipientNames } from '@/lib/supplier/recipient-name'
 
 function toAnalyticsItems(items: CartItem[]): AnalyticsItem[] {
   return items.map((i) => ({
@@ -309,6 +310,12 @@ export default function CheckoutPage() {
     setError(null)
     setFieldErrors({})
 
+    const names = normaliseRecipientNames({ firstName, lastName })
+    if (!names.ok) {
+      setFieldErrors(names.errors)
+      return
+    }
+
     if (!isValidUkrainianPhone(phone)) {
       setFieldErrors({ phone: [t.phoneError] })
       return
@@ -320,9 +327,11 @@ export default function CheckoutPage() {
     }
 
     setSubmitting(true)
+    setFirstName(names.firstName)
+    setLastName(names.lastName)
     const fd = new FormData()
-    fd.set('firstName', firstName.trim())
-    fd.set('lastName', lastName.trim())
+    fd.set('firstName', names.firstName)
+    fd.set('lastName', names.lastName)
     fd.set('phone', phone.trim())
     fd.set('methodPayment', methodPayment)
     fd.set('warehouseId', warehouseId)
@@ -358,9 +367,9 @@ export default function CheckoutPage() {
   }
 
   const phoneDirtyInvalid = phone.length > 0 && !isValidUkrainianPhone(phone)
-  const cyrillicNameRe = /^[Ѐ-ӿ\s\-'ʼ]+$/
-  const firstNameCyrillicInvalid = firstName.trim().length > 0 && !cyrillicNameRe.test(firstName.trim())
-  const lastNameCyrillicInvalid = lastName.trim().length > 0 && !cyrillicNameRe.test(lastName.trim())
+  const currentNames = normaliseRecipientNames({ firstName, lastName })
+  const firstNameCyrillicInvalid = firstName.trim().length > 0 && !!currentNames.errors.firstName
+  const lastNameCyrillicInvalid = lastName.trim().length > 0 && !!currentNames.errors.lastName
 
   return (
     <div className="bg-cream min-h-screen">
