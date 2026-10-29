@@ -28,6 +28,7 @@ const SELECT_COLUMNS = [
   'main_image_url',
   'stock_quantity',
   'is_in_stock',
+  'stock_synced_at',
   'inquiry_only',
   'is_price_suspicious',
   'status',

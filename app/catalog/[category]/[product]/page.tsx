@@ -17,9 +17,10 @@ import {
   getProductTranslation,
 } from '@/lib/supabase/catalog'
 import { buildSocialMetadata, buildAlternates, stripBrand, SITE_URL } from '@/lib/seo'
-import { getRequestLocale } from '@/lib/i18n'
+import { getRequestLocale, localizedPath } from '@/lib/i18n'
 import { tr } from '@/lib/i18n/pages'
 import { stockStatus, stockLabel } from '@/lib/catalog/stock'
+import { isSupplierStockStale } from '@/lib/catalog/stock-freshness'
 import { resolveProductSeo } from '@/lib/catalog/localized-seo'
 import { breadcrumbSchema } from '@/lib/schema'
 import { Breadcrumb } from '@/components/catalog/Breadcrumb'
@@ -103,6 +104,7 @@ export default async function ProductPage({ params }: Props) {
 
   // Public stock availability (supplier rows only; manual/metal → unknown/"ask").
   const stStatus = stockStatus(product)
+  const stockIsStale = isSupplierStockStale(product)
   const stockIsOut = stStatus === 'out_of_stock'
   const stockText = stockLabel(stStatus, locale)
 
@@ -128,7 +130,7 @@ export default async function ProductPage({ params }: Props) {
     image: images[0] ?? undefined,
     url: productCanonicalUrl,
     ...(product.supplier_sku ? { sku: product.supplier_sku } : {}),
-    ...(priceOk
+    ...(priceOk && !stockIsStale
       ? {
           offers: {
             '@type': 'Offer',
@@ -240,7 +242,7 @@ export default async function ProductPage({ params }: Props) {
             )}
 
             {/* Availability badge — supplier stock only (manual/metal excluded). */}
-            {stStatus !== 'unknown' && (
+            {(stStatus !== 'unknown' || stockIsStale) && (
               <div className="mb-4">
                 <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-sm font-medium ${
                   stStatus === 'in_stock' ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500'
@@ -279,6 +281,10 @@ export default async function ProductPage({ params }: Props) {
                     outOfStock={stockIsOut}
                   />
                 </>
+              ) : stockIsStale ? (
+                <a href={localizedPath(locale, '/contact')} className="inline-flex items-center justify-center w-full py-3 px-6 text-base font-semibold rounded-xl border border-honey-300 text-honey-700 hover:bg-honey-50 transition-colors">
+                  {stockText}
+                </a>
               ) : product.status === 'published' ? (
                 // Inquiry / no-price product. Show inline lead form when we have
                 // a lead_type or the product is explicitly inquiry_only; otherwise

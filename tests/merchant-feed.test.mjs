@@ -21,6 +21,7 @@ const good = {
   main_image_url: 'https://images.example.com/a.jpg',
   stock_quantity: 4,
   is_in_stock: true,
+  stock_synced_at: new Date().toISOString(),
   inquiry_only: false,
   is_price_suspicious: false,
   status: 'published',

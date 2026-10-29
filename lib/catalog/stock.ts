@@ -5,6 +5,7 @@
 // Manual + metal rows are never given supplier stock (they're inquiry/manual).
 
 import type { Locale } from '@/lib/i18n'
+import { isSupplierStockStale, type SupplierStockSignal } from './stock-freshness'
 
 export interface NormalizedStock {
   stock_quantity: number
@@ -26,9 +27,10 @@ export type StockStatus = 'in_stock' | 'out_of_stock' | 'unknown'
 
 // The status shown on cards / detail pages. `unknown` when the row has no synced
 // stock signal yet (e.g. a manual product, or a supplier row not yet imported).
-export function stockStatus(p: { source?: string | null; lead_type?: string | null; is_in_stock?: boolean | null; stock_synced_at?: string | null }): StockStatus {
+export function stockStatus(p: SupplierStockSignal): StockStatus {
   // Manual / inquiry products don't carry supplier stock — availability is "ask".
   if (p.source === 'manual' || p.lead_type === 'metal') return 'unknown'
+  if (isSupplierStockStale(p)) return 'unknown'
   if (p.stock_synced_at == null && p.is_in_stock == null) return 'unknown'
   return p.is_in_stock ? 'in_stock' : 'out_of_stock'
 }
@@ -46,6 +48,6 @@ export function stockLabel(status: StockStatus, locale: Locale): string {
 // Cart guard: a SUPPLIER product that is explicitly out of stock cannot be added
 // to the cart. Manual/metal (inquiry) and unknown-stock rows are unaffected — the
 // existing buyability rules still apply on top of this.
-export function isPurchasableForStock(p: { source?: string | null; lead_type?: string | null; is_in_stock?: boolean | null; stock_synced_at?: string | null }): boolean {
-  return stockStatus(p) !== 'out_of_stock'
+export function isPurchasableForStock(p: SupplierStockSignal): boolean {
+  return !isSupplierStockStale(p) && stockStatus(p) !== 'out_of_stock'
 }

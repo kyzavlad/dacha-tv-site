@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import type { CatalogCategory, CatalogProduct, CatalogImageMeta } from '@/types'
 import { resolveImageEntries, primaryImageAlt } from '@/lib/catalog/image-metadata'
+import { isSupplierStockStale } from '@/lib/catalog/stock-freshness'
 
 function getClient() {
   const url = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -308,7 +309,7 @@ export function isInquiryProduct(product: CatalogProduct): boolean {
 
 // Can this product go through the normal cart/checkout path?
 export function canAddToCart(product: CatalogProduct): boolean {
-  return product.status === 'published' && !isInquiryProduct(product)
+  return product.status === 'published' && !isInquiryProduct(product) && !isSupplierStockStale(product)
 }
 
 // Build the display price string, honouring an optional prefix ("від") and a

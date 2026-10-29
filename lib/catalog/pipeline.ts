@@ -1,3 +1,4 @@
+import { supplierStockObservedAt } from './stock-freshness'
 import { getAdminClient } from '@/lib/supabase/admin'
 import { autoSlug } from '@/lib/catalog/csv-utils'
 import { partitionPublishCandidates, PUBLISH_GUARD_COLS, type PublishCandidate } from '@/lib/catalog/storefront-quality'
@@ -539,7 +540,7 @@ export async function insertNewSupplierProducts(
   capReached: boolean,
   nowIso: string,
 ): Promise<NewInsertBatchResult> {
-  const COLS = 'id, supplier_sku, name, name_ua, slug, supplier_category_id, price_uah, supplier_price_usd, main_image_url, images, stock_quantity, is_in_stock'
+  const COLS = 'id, supplier_sku, name, name_ua, slug, supplier_category_id, price_uah, supplier_price_usd, main_image_url, images, stock_quantity, is_in_stock, last_synced_at'
   const fail = (scanned: number, message: string): NewInsertBatchResult => ({
     ok: false, processed: 0, scanned, inserted: 0, approved: 0,
     insertsSkippedCap: 0, duplicateSlugFixed: 0, errors: [], hasMore: false, message,
@@ -762,7 +763,7 @@ async function syncProductsToCatalogLegacy(
   const supplierProducts: Array<{
     id: unknown; supplier_sku: unknown; name: unknown; name_ua: unknown; slug: unknown
     supplier_category_id: unknown; price_uah: unknown; supplier_price_usd: unknown
-    main_image_url: unknown; images: unknown; stock_quantity: unknown; is_in_stock: unknown
+    main_image_url: unknown; images: unknown; stock_quantity: unknown; is_in_stock: unknown; last_synced_at?: unknown
   }> = []
 
   if (opts.skuFilter && opts.skuFilter.length > 0) {
@@ -771,7 +772,7 @@ async function syncProductsToCatalogLegacy(
     for (let i = 0; i < opts.skuFilter.length; i += FILTER_CHUNK) {
       const { data } = await client
         .from('supplier_products')
-        .select('id, supplier_sku, name, name_ua, slug, supplier_category_id, price_uah, supplier_price_usd, main_image_url, images, stock_quantity, is_in_stock')
+        .select('id, supplier_sku, name, name_ua, slug, supplier_category_id, price_uah, supplier_price_usd, main_image_url, images, stock_quantity, is_in_stock, last_synced_at')
         .in('supplier_sku', opts.skuFilter.slice(i, i + FILTER_CHUNK))
         .not('name', 'is', null)
         .gt('price_uah', 0)
@@ -782,7 +783,7 @@ async function syncProductsToCatalogLegacy(
     // Paginate past the PostgREST 1000-row cap, bounded to `limit` — a single
     // `.limit(10000)` silently returns only 1000, which is the root cause of the
     // stuck import. Never loads the whole 112k backlog: we stop at `limit`.
-    const COLS = 'id, supplier_sku, name, name_ua, slug, supplier_category_id, price_uah, supplier_price_usd, main_image_url, images, stock_quantity, is_in_stock'
+    const COLS = 'id, supplier_sku, name, name_ua, slug, supplier_category_id, price_uah, supplier_price_usd, main_image_url, images, stock_quantity, is_in_stock, last_synced_at'
     const PAGE = 1000
     for (let from = 0; supplierProducts.length < limit; from += PAGE) {
       const to = Math.min(from + PAGE, limit) - 1
@@ -856,7 +857,7 @@ async function syncProductsToCatalogLegacy(
   const usedSlugs = new Set(slugRows.map((r) => r.slug).filter(Boolean))
 
   const toInsert: Record<string, unknown>[] = []
-  const toUpdatePrice: { sku: string; payload: CatalogUpdatePayload }[] = []
+  const toUpdatePrice: { sku: string; payload: CatalogUpdatePayload; stockObservedAt: string | null }[] = []
 
   for (const sp of supplierProducts) {
     const sku = sp.supplier_sku as string
@@ -876,7 +877,7 @@ async function syncProductsToCatalogLegacy(
         },
         ownership,
       )
-      if (payload) toUpdatePrice.push({ sku, payload })
+      if (payload) toUpdatePrice.push({ sku, payload, stockObservedAt: supplierStockObservedAt(sp.last_synced_at) })
       continue
     }
     const name = (sp.name_ua || sp.name || '') as string
@@ -915,7 +916,7 @@ async function syncProductsToCatalogLegacy(
       images: sp.images ?? null,
       stock_quantity: stock.stock_quantity,
       is_in_stock: stock.is_in_stock,
-      stock_synced_at: nowIso,
+      stock_synced_at: supplierStockObservedAt(sp.last_synced_at),
       status: 'draft',
       is_featured: false,
       display_order: 0,
@@ -1025,14 +1026,14 @@ async function syncProductsToCatalogLegacy(
   // excludes source='manual' — so a lock toggled on AFTER candidate selection is
   // still honored (the guarded UPDATE simply matches zero rows). A matched row is
   // approved even when fully locked, since it already exists in the catalog.
-  for (const { sku, payload } of toUpdatePrice) {
+  for (const { sku, payload, stockObservedAt } of toUpdatePrice) {
     const writes = planGuardedWrites(payload)
     let rowError: string | null = null
     let wrote = false
     for (const w of writes) {
       // Stock (guardColumn === null) is operational — no manual lock guard, but it
       // still stamps stock_synced_at and keeps the source!=manual guard below.
-      const extra = w.guardColumn === null ? { stock_synced_at: nowIso } : {}
+      const extra = w.guardColumn === null ? { stock_synced_at: stockObservedAt } : {}
       let q = client
         .from('catalog_products')
         .update({ ...w.columns, ...extra, updated_at: nowIso }, { count: 'exact' })
