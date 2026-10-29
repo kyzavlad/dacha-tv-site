@@ -40,7 +40,7 @@ export async function getRelatedCatalogProducts(
   if (!category?.supplier_category_id) return selected
   const { data: supplierCategory } = await client.from('supplier_categories').select('parent_supplier_id')
     .eq('supplier_id', category.supplier_category_id).maybeSingle()
-  if (!supplierCategory?.parent_supplier_id) return selected
+  if (!supplierCategory?.parent_supplier_id || supplierCategory.parent_supplier_id === '0') return selected
   const { data: siblings } = await client.from('supplier_categories').select('supplier_id')
     .eq('parent_supplier_id', supplierCategory.parent_supplier_id).limit(64)
   const ids = (siblings ?? []).map(c => c.supplier_id)
