@@ -88,4 +88,3 @@ not permission to retry. Test-mode acceptance is not a real shipment. Confirm
 the final vendor order/TTN independently; acceptance alone is not dispatch,
 payment or margin. Roll back a defective application release without undoing
 an already accepted supplier order or deleting its receipt.
-
