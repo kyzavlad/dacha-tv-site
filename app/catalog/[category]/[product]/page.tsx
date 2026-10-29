@@ -83,7 +83,7 @@ export default async function ProductPage({ params }: Props) {
 
   if (!product) notFound()
 
-  // Related products from the same category (cheap, single query). Use the
+  // Available products from this category, then real supplier siblings. Use the
   // product's own stored category_slug so /catalog/all entries still get a rail.
   const related = await getRelatedCatalogProducts(
     product.category_slug ?? categorySlug,
@@ -400,6 +400,7 @@ export default async function ProductPage({ params }: Props) {
                   key={p.id}
                   product={p}
                   categorySlug={p.category_slug ?? categorySlug}
+                  locale={locale}
                 />
               ))}
             </div>

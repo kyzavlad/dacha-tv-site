@@ -13,6 +13,7 @@ import { localizedPath, DEFAULT_LOCALE, type Locale } from '@/lib/i18n'
 import { useLocale } from '@/lib/i18n/locale-context'
 import { shopUiDict } from '@/lib/i18n/sections/shop-ui'
 import { normaliseRecipientNames } from '@/lib/supplier/recipient-name'
+import { recipientNamePreview } from '@/lib/supplier/recipient-name-preview'
 
 function toAnalyticsItems(items: CartItem[]): AnalyticsItem[] {
   return items.map((i) => ({
@@ -224,6 +225,27 @@ export default function CheckoutPage() {
 
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
+  const [nameReview, setNameReview] = useState(false)
+  const [nameConfirmed, setNameConfirmed] = useState(false)
+  const nameCopy = locale === 'ru' ? {
+    suggest: 'Предложить написание кириллицей', review: 'Проверьте имя и фамилию для доставки. Это приблизительный вариант, его можно исправить в полях выше.',
+    confirm: 'Подтверждаю правильность имени и фамилии для получения посылки', required: 'Проверьте написание и подтвердите имя и фамилию.', details: 'Контакты и реквизиты продавца',
+  } : locale === 'en' ? {
+    suggest: 'Suggest Cyrillic spelling', review: 'Check the delivery name. This is an approximate spelling; edit the fields above to match your delivery documents.',
+    confirm: 'I confirm the delivery first and last name are correct', required: 'Check and confirm the delivery name.', details: 'Contacts & seller details',
+  } : {
+    suggest: 'Запропонувати написання кирилицею', review: 'Перевірте ім’я та прізвище для доставки. Це приблизний варіант, його можна виправити в полях вище.',
+    confirm: 'Підтверджую правильність імені та прізвища для отримання посилки', required: 'Перевірте написання та підтвердьте ім’я і прізвище.', details: 'Контакти та реквізити продавця',
+  }
+  function showNamePreview() {
+    const draft = recipientNamePreview({ firstName, lastName })
+    if (!draft.ok) { setFieldErrors(draft.errors); return }
+    setFirstName(draft.firstName)
+    setLastName(draft.lastName)
+    setNameReview(true)
+    setNameConfirmed(false)
+    setFieldErrors({})
+  }
   const [phone, setPhone] = useState('')
   const [methodPayment, setMethodPayment] = useState<'cashondelivery' | 'prepayment'>('cashondelivery')
   const [warehouseId, setWarehouseId] = useState('')
@@ -311,10 +333,14 @@ export default function CheckoutPage() {
     setFieldErrors({})
 
     const names = normaliseRecipientNames({ firstName, lastName })
+    const preview = recipientNamePreview({ firstName, lastName })
+    if (preview.ok && preview.changed) { showNamePreview(); return }
     if (!names.ok) {
       setFieldErrors(names.errors)
       return
     }
+
+    if (nameReview && !nameConfirmed) { setError(nameCopy.required); return }
 
     if (!isValidUkrainianPhone(phone)) {
       setFieldErrors({ phone: [t.phoneError] })
@@ -477,7 +503,7 @@ export default function CheckoutPage() {
                       required
                       minLength={2}
                       value={lastName}
-                      onChange={(e) => setLastName(e.target.value)}
+                      onChange={(e) => { setLastName(e.target.value); setNameConfirmed(false) }}
                       placeholder={t.lastNamePlaceholder}
                       className="w-full border border-gray-200 rounded-xl px-4 py-3 text-bark placeholder:text-bark/40 focus:outline-none focus:ring-2 focus:ring-honey-400 focus:border-transparent"
                     />
@@ -496,7 +522,7 @@ export default function CheckoutPage() {
                       required
                       minLength={2}
                       value={firstName}
-                      onChange={(e) => setFirstName(e.target.value)}
+                      onChange={(e) => { setFirstName(e.target.value); setNameConfirmed(false) }}
                       placeholder={t.firstNamePlaceholder}
                       className="w-full border border-gray-200 rounded-xl px-4 py-3 text-bark placeholder:text-bark/40 focus:outline-none focus:ring-2 focus:ring-honey-400 focus:border-transparent"
                     />
@@ -587,6 +613,22 @@ export default function CheckoutPage() {
                   />
                 </div>
 
+                {(firstNameCyrillicInvalid || lastNameCyrillicInvalid) && (
+                  <button type="button" onClick={showNamePreview} className="text-sm text-honey-800 underline underline-offset-4">
+                    {nameCopy.suggest}
+                  </button>
+                )}
+                {nameReview && (
+                  <div className="rounded-xl border border-honey-200 bg-honey-50 p-4 space-y-3" role="status">
+                    <p className="text-sm text-bark/80">{nameCopy.review}</p>
+                    <p className="font-semibold text-bark">{lastName} {firstName}</p>
+                    <label className="flex items-start gap-2 text-sm text-bark">
+                      <input type="checkbox" checked={nameConfirmed} disabled={!currentNames.ok}
+                        onChange={e => setNameConfirmed(e.target.checked)} className="mt-1" />
+                      {nameCopy.confirm}
+                    </label>
+                  </div>
+                )}
                 {error && (
                   <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm">
                     {error}
@@ -602,6 +644,7 @@ export default function CheckoutPage() {
                 </button>
 
                 <p className="text-xs text-bark/40 text-center">{t.afterSubmitNote}</p>
+                <Link href={localizedPath(locale, '/contact#seller-details')} className="block text-xs text-bark/60 underline text-center">{nameCopy.details}</Link>
               </form>
             </div>
           </div>

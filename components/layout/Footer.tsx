@@ -13,7 +13,6 @@ import {
   LAUNCH_PHONE,
   LAUNCH_PHONE_SECONDARY,
   LAUNCH_SUPPORT_EMAIL,
-  LAUNCH_LEGAL_ADDRESS,
   LAUNCH_YOUTUBE_URL,
   LAUNCH_FACEBOOK_URL,
   LAUNCH_INSTAGRAM_URL,
@@ -65,7 +64,6 @@ export async function Footer({ siteSettings }: FooterProps) {
   const t = pageDict(locale)
   const phone = siteSettings?.phone || LAUNCH_PHONE
   const phoneSecondary = siteSettings?.phone_secondary || LAUNCH_PHONE_SECONDARY
-  const address = LAUNCH_LEGAL_ADDRESS
   const currentYear = new Date().getFullYear()
   const hasLogo = existsSync(join(process.cwd(), 'public', LOGO_PATH))
 
@@ -181,9 +179,12 @@ export async function Footer({ siteSettings }: FooterProps) {
               >
                 {LAUNCH_SUPPORT_EMAIL}
               </a>
-              <address className="text-sm text-gray-500 not-italic leading-relaxed">
-                {address}
-              </address>
+              <p className="text-sm text-gray-500">
+                {locale === 'ru' ? 'Доставка по всей Украине' : locale === 'en' ? 'Delivery across Ukraine' : 'Доставка по всій Україні'}
+              </p>
+              <Link href={localizedPath(locale, '/contact#seller-details')} className="block text-sm text-gray-600 underline underline-offset-4 hover:text-bark">
+                {locale === 'ru' ? 'Контакты и реквизиты продавца' : locale === 'en' ? 'Contacts & seller details' : 'Контакти та реквізити продавця'}
+              </Link>
 
             </div>
           </div>
@@ -193,7 +194,7 @@ export async function Footer({ siteSettings }: FooterProps) {
         <div className="border-t border-gray-100 pt-8 space-y-2">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
             <p className="text-xs text-gray-400">
-              © {currentYear} Дача TV. ФОП Кузьменко Владислав Сергійович · Україна
+              © {currentYear} Дача TV
             </p>
             <div className="flex items-center gap-4">
               <Link href={localizedPath(locale, '/delivery')} className="text-xs text-gray-400 hover:text-bark transition-colors">

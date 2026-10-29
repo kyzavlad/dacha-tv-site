@@ -2,6 +2,8 @@ import { createClient } from '@supabase/supabase-js'
 import type { CatalogCategory, CatalogProduct, CatalogImageMeta } from '@/types'
 import { resolveImageEntries, primaryImageAlt } from '@/lib/catalog/image-metadata'
 import { isSupplierStockStale } from '@/lib/catalog/stock-freshness'
+import { SUPPLIER_STOCK_MAX_AGE_MS } from '@/lib/catalog/stock-freshness'
+import { isDiscoveryVisibleProduct } from '@/lib/catalog/discovery'
 
 function getClient() {
   const url = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -648,19 +650,43 @@ export async function getRelatedCatalogProducts(
 ): Promise<CatalogProduct[]> {
   const client = getClient()
   if (!client || !categorySlug || NATURAL_CATEGORY_SLUGS.includes(categorySlug)) return []
-  const { data } = await client
-    .from('catalog_products')
-    .select('*')
-    .eq('status', 'published')
-    .eq('category_slug', categorySlug)
-    .neq('slug', excludeSlug)
-    .or(STOREFRONT_SCOPE_OR)
-    .order('is_featured', { ascending: false })
-    .order('display_order', { ascending: true })
-    .limit(limit * 8)
-  const pool = ((data ?? []) as CatalogProduct[]).filter(isPublicListableProduct)
-  const ranked = rankByRelevanceThenAds(pool.map((product) => ({ product, bucket: 1 })))
-  return ranked.slice(0, limit).map((e) => e.product)
+  const size = Math.max(1, Math.min(12, Math.floor(limit) || 4))
+  // Filter stock BEFORE the bounded query/slice: the card uses this same
+  // predicate, otherwise an apparently nonempty rail can render zero cards.
+  const cutoff = new Date(Date.now() - SUPPLIER_STOCK_MAX_AGE_MS).toISOString()
+  async function candidates(slugs: string[]) {
+    const { data } = await client!
+      .from('catalog_products').select('*').eq('status', 'published')
+      .in('category_slug', slugs).neq('slug', excludeSlug).or(STOREFRONT_SCOPE_OR)
+      .or(`source.eq.manual,lead_type.eq.metal,and(is_in_stock.eq.true,stock_quantity.gt.0,stock_synced_at.gte.${cutoff})`)
+      .order('is_featured', { ascending: false }).order('display_order', { ascending: true })
+      .order('id', { ascending: true }).limit(Math.max(64, size * 16))
+    return ((data ?? []) as CatalogProduct[]).filter(p => isPublicListableProduct(p) && isDiscoveryVisibleProduct(p))
+  }
+  const same = await candidates([categorySlug])
+  const ranked = rankByRelevanceThenAds(same.map(product => ({ product, bucket: 1 as const })))
+  const selected = ranked.slice(0, size).map(e => e.product)
+  if (selected.length >= size) return selected
+
+  // Only the supplier's real sibling categories are eligible for fallback.
+  // Never fill a scooter/metal page with arbitrary products from the store.
+  const { data: category } = await client.from('catalog_categories').select('supplier_category_id')
+    .eq('slug', categorySlug).eq('is_published', true).maybeSingle()
+  if (!category?.supplier_category_id) return selected
+  const { data: supplierCategory } = await client.from('supplier_categories').select('parent_supplier_id')
+    .eq('supplier_id', category.supplier_category_id).maybeSingle()
+  if (!supplierCategory?.parent_supplier_id) return selected
+  const { data: siblings } = await client.from('supplier_categories').select('supplier_id')
+    .eq('parent_supplier_id', supplierCategory.parent_supplier_id).limit(64)
+  const ids = (siblings ?? []).map(c => c.supplier_id)
+  if (!ids.length) return selected
+  const { data: categories } = await client.from('catalog_categories').select('slug')
+    .eq('is_published', true).in('supplier_category_id', ids).neq('slug', categorySlug).limit(64)
+  const slugs = (categories ?? []).map(c => c.slug)
+  if (!slugs.length) return selected
+  const seen = new Set(selected.map(p => p.id))
+  const fallback = rankByRelevanceThenAds((await candidates(slugs)).map(product => ({ product, bucket: 2 as const })))
+  return [...selected, ...fallback.map(e => e.product).filter(p => !seen.has(p.id))].slice(0, size)
 }
 
 export async function getPublishedProductBySlug(
