@@ -21,7 +21,13 @@ test('Merchant-facing support identity is canonical and reachable', () => {
   assert.match(contact, /email: LAUNCH_SUPPORT_EMAIL/)
   assert.match(contact, /streetAddress: 'просп\. Героїв Харкова, 300, кв\. 156'/)
 
-  assert.match(footer, /const address = LAUNCH_LEGAL_ADDRESS/)
+  // Seller details remain one click away, without repeating the residential
+  // address/proprietor name across every storefront page.
+  assert.match(footer, /\/contact#seller-details/)
+  assert.match(contact, /id="seller-details"/)
+  assert.match(footer, /Контакти та реквізити продавця/)
+  assert.match(footer, /Доставка по всій Україні/)
+  assert.doesNotMatch(footer, /LAUNCH_LEGAL_ADDRESS|ФОП Кузьменко|кв\. 156/)
   assert.match(footer, /mailto:\$\{LAUNCH_SUPPORT_EMAIL\}/)
 
   assert.match(home, /email: LAUNCH_SUPPORT_EMAIL/)
