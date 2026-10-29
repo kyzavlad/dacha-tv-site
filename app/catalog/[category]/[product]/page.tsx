@@ -1,11 +1,11 @@
 export const dynamic = 'force-dynamic'
 import { notFound } from 'next/navigation'
+import { getRelatedCatalogProducts } from '@/lib/supabase/related-products.server'
 import type { Metadata } from 'next'
 import {
   getPublishedProductBySlug,
   getPublishedProductBySlugOnly,
   getCategoryBySlug,
-  getRelatedCatalogProducts,
   getCatalogProductImages,
   getCatalogProductImageEntries,
   getCatalogProductImage,

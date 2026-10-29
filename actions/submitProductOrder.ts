@@ -14,7 +14,7 @@ import { getRequestLocale } from '@/lib/i18n'
 import { pageDict } from '@/lib/i18n/pages'
 import { cookies } from 'next/headers'
 import { normaliseRecipientNames } from '@/lib/supplier/recipient-name'
-import { orderProductLines, orderProductUrl } from '@/lib/notifications/order-products'
+import { compactTelegramOrderMessage, orderProductLines, orderProductUrl } from '@/lib/notifications/order-products'
 
 // Localized checkout revalidation messages (uk/ru/en).
 function checkoutMessages(locale: Awaited<ReturnType<typeof getRequestLocale>>) {
@@ -93,7 +93,7 @@ async function notifyProductOrder(opts: {
           const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ chat_id: chatId, text: message }),
+            body: JSON.stringify({ chat_id: chatId, text: compactTelegramOrderMessage(message) }),
           })
           if (res.ok) {
             console.info(`[checkout-submit ${trace}] direct telegram sent`)

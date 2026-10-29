@@ -1,8 +1,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { getRelatedCatalogProducts } from '../lib/supabase/catalog.ts'
+import { getRelatedCatalogProducts } from '../lib/supabase/related-products.server.ts'
 import { isDiscoveryVisibleProduct } from '../lib/catalog/discovery.ts'
-import { orderProductLines, orderProductUrl } from '../lib/notifications/order-products.ts'
+import { compactTelegramOrderMessage, orderProductLines, orderProductUrl } from '../lib/notifications/order-products.ts'
 import { attributionNotificationLine, buildStoredSource, formatAttribution } from '../lib/analytics/attribution.ts'
 import { recipientNamePreview } from '../lib/supplier/recipient-name-preview.ts'
 import { normaliseRecipientNames } from '../lib/supplier/recipient-name.ts'
@@ -14,10 +14,10 @@ function fakeCatalog(t, handler) {
   const oldWebSocket = globalThis.WebSocket
   globalThis.WebSocket = WebSocket
   t.after(() => { if (oldWebSocket === undefined) delete globalThis.WebSocket; else globalThis.WebSocket = oldWebSocket })
-  const old = { url: process.env.SUPABASE_URL, key: process.env.SUPABASE_ANON_KEY }
+  const old = { url: process.env.SUPABASE_URL, key: process.env.SUPABASE_SERVICE_ROLE_KEY }
   process.env.SUPABASE_URL = 'https://catalog-fixture.invalid'
-  process.env.SUPABASE_ANON_KEY = 'fixture'
-  t.after(() => { for (const [key, value] of [['SUPABASE_URL', old.url], ['SUPABASE_ANON_KEY', old.key]]) { if (value === undefined) delete process.env[key]; else process.env[key] = value } })
+  process.env.SUPABASE_SERVICE_ROLE_KEY = 'fixture'
+  t.after(() => { for (const [key, value] of [['SUPABASE_URL', old.url], ['SUPABASE_SERVICE_ROLE_KEY', old.key]]) { if (value === undefined) delete process.env[key]; else process.env[key] = value } })
   t.mock.method(globalThis, 'fetch', async input => {
     const url = new URL(input instanceof Request ? input.url : input)
     assert.equal(url.hostname, 'catalog-fixture.invalid')
@@ -65,6 +65,17 @@ test('human notification removes checkout/LP while internal attribution stays in
   const cookie = encodeURIComponent('utm_source=google&utm_medium=cpc&lp=%2Fcheckout')
   assert.equal(attributionNotificationLine(cookie, false), 'Source: google / cpc')
   assert.match(buildStoredSource('/checkout', formatAttribution(cookie)), /\/checkout.*utm: google\/cpc.*lp: \/checkout/)
+})
+test('large carts keep a single Telegram notification, intact links, recipient and total', () => {
+  const items = Array.from({length:60}, (_,i) => ({productType:'catalog',productSlug:`fixture-tyre-${i}`,name:`Довга назва товару ${i} `.repeat(3),quantity:3,price:145}))
+  const full = `🛒 НОВЕ ЗАМОВЛЕННЯ З САЙТУ\nІм'я: Фікстура\n${orderProductLines(items)}\nСума: 26100 ₴`
+  const compact = compactTelegramOrderMessage(full)
+  assert.ok(compact.length <= 4096)
+  assert.match(compact, /Ім'я: Фікстура/)
+  assert.match(compact, /Сума: 26100 ₴/)
+  assert.match(compact, /Ще \d+ товарних позицій/)
+  assert.ok(compact.split('\n').filter(l=>l.startsWith('https:')).every(l=>/^https:\/\/dachatv.com\/catalog\/all\/fixture-tyre-\d+$/.test(l)))
+  assert.match(full, /fixture-tyre-59/, 'full webhook payload was not truncated')
 })
 for (const [firstName, lastName, expected] of [['Ivan','Koval',['Іван','Ковал']],['Sasha','Shcherba',['Саша','Щерба']],['Alex','Petrenko',['Алекс','Петренко']],['Yuliia','Koval',['Юлія','Ковал']],['Ivan Koval','Koval',['Іван','Ковал']],['Iван','Коваль',['Іван','Коваль']]]) {
   test(`editable draft for ${firstName} never expands a nickname or guesses a missing letter`, () => {
