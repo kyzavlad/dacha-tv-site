@@ -48,6 +48,17 @@ test('sparse category falls back only to real published supplier siblings', asyn
   })
   assert.deepEqual((await getRelatedCatalogProducts('scooter', 'current', 4)).map(p => p.id), ['only', 'sibling'])
 })
+test('root categories never become unrelated whole-store fallback', async t => {
+  let requests = 0
+  fakeCatalog(t, url => {
+    requests++
+    if (url.pathname.endsWith('/catalog_products')) return []
+    if (url.pathname.endsWith('/catalog_categories')) return [{supplier_category_id:'root-child'}]
+    return [{parent_supplier_id:'0'}]
+  })
+  assert.deepEqual(await getRelatedCatalogProducts('root-category', 'current'), [])
+  assert.equal(requests, 3)
+})
 test('no safe inventory returns an empty rail rather than arbitrary store products', async t => {
   fakeCatalog(t, () => [])
   assert.deepEqual(await getRelatedCatalogProducts('scooter', 'current'), [])
