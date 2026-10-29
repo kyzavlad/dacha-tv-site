@@ -11,6 +11,8 @@
 // accidental production shipments impossible. The admin "send test" action always
 // uses test mode regardless of this env, so it can never create a live order.
 
+import { normaliseRecipientNames } from './recipient-name'
+
 export type SupplierOrderMode = 'disabled' | 'test' | 'live'
 
 // Resolve the configured auto-send mode. `manual`/`off`/`none` are treated as a
@@ -113,26 +115,14 @@ const ukrainianPhone = /^(\+380|0)\d{9}$/
 export function buildPersonalCabOrderPayload(input: BuildPayloadInput): BuildPayloadResult {
   const errors: string[] = []
 
-  const firstName = (input.receiver_first_name ?? '').trim()
-  const lastName = (input.receiver_last_name ?? '').trim()
+  const names = normaliseRecipientNames({ firstName: input.receiver_first_name ?? '', lastName: input.receiver_last_name ?? '', patronymic: input.receiver_patronymic })
+  const { firstName, lastName, patronymic } = names
   const phone = (input.receiver_phone ?? '').trim()
   const location = (input.location ?? '').trim()
-  const patronymic = (input.receiver_patronymic ?? '').trim()
   const comments = (input.comments ?? '').trim()
   const payment = (input.method_payment ?? '').trim()
 
-  // Personal.cab requires Cyrillic names — Latin letters cause a hard API rejection.
-  const cyrillicOnly = /^[Ѐ-ӿ\s\-'ʼ]+$/
-  if (firstName.length < 1) {
-    errors.push("Відсутнє ім'я отримувача (receiver_first_name)")
-  } else if (!cyrillicOnly.test(firstName)) {
-    errors.push("Для відправки Новою Поштою введіть імʼя та прізвище кирилицею.")
-  }
-  if (lastName.length < 1) {
-    errors.push('Відсутнє прізвище отримувача (receiver_last_name)')
-  } else if (!cyrillicOnly.test(lastName)) {
-    errors.push("Для відправки Новою Поштою введіть імʼя та прізвище кирилицею.")
-  }
+  errors.push(...Object.values(names.errors).flat())
   if (!ukrainianPhone.test(phone)) errors.push('Некоректний або відсутній телефон отримувача (receiver_phone)')
   if (location.length < 1) errors.push('Відсутнє відділення Нової Пошти (location / nova_poshta_warehouse_id)')
 

@@ -13,6 +13,7 @@ import { revalidateSupplierStock, type RevalRow } from '@/lib/cart/stock-revalid
 import { getRequestLocale } from '@/lib/i18n'
 import { pageDict } from '@/lib/i18n/pages'
 import { cookies } from 'next/headers'
+import { normaliseRecipientNames } from '@/lib/supplier/recipient-name'
 
 // Localized checkout revalidation messages (uk/ru/en).
 function checkoutMessages(locale: Awaited<ReturnType<typeof getRequestLocale>>) {
@@ -210,7 +211,9 @@ export async function submitProductOrder(
     return { success: false, error: 'Перевірте правильність введених даних', fieldErrors }
   }
 
-  const d = parsed.data
+  const names = normaliseRecipientNames(parsed.data)
+  if (!names.ok) return { success: false, error: 'Перевірте дані отримувача', fieldErrors: names.errors }
+  const d = { ...parsed.data, firstName: names.firstName, lastName: names.lastName, patronymic: names.patronymic }
   const customerName = `${d.lastName} ${d.firstName}${d.patronymic ? ` ${d.patronymic}` : ''}`
   const totalUah = d.items.reduce((sum, item) => sum + item.price * item.quantity, 0)
   // d.phone is already normalised to +380XXXXXXXXX by the Zod transform above.
