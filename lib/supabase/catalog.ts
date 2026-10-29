@@ -641,28 +641,6 @@ export async function getScooterModelProducts(
   return { products, hasNext }
 }
 
-export async function getRelatedCatalogProducts(
-  categorySlug: string | null,
-  excludeSlug: string,
-  limit = 4,
-): Promise<CatalogProduct[]> {
-  const client = getClient()
-  if (!client || !categorySlug || NATURAL_CATEGORY_SLUGS.includes(categorySlug)) return []
-  const { data } = await client
-    .from('catalog_products')
-    .select('*')
-    .eq('status', 'published')
-    .eq('category_slug', categorySlug)
-    .neq('slug', excludeSlug)
-    .or(STOREFRONT_SCOPE_OR)
-    .order('is_featured', { ascending: false })
-    .order('display_order', { ascending: true })
-    .limit(limit * 8)
-  const pool = ((data ?? []) as CatalogProduct[]).filter(isPublicListableProduct)
-  const ranked = rankByRelevanceThenAds(pool.map((product) => ({ product, bucket: 1 })))
-  return ranked.slice(0, limit).map((e) => e.product)
-}
-
 export async function getPublishedProductBySlug(
   categorySlug: string,
   productSlug: string,

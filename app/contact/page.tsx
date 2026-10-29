@@ -134,7 +134,7 @@ export default async function ContactPage() {
               </p>
             </div>
 
-            <div className="mb-6">
+            <div id="seller-details" className="mb-6 scroll-mt-24">
               <SellerInfo />
             </div>
 

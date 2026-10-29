@@ -91,10 +91,10 @@ export function parseStoredSource(source: string | null | undefined): ParsedSour
 // Compact one-line attribution for a Telegram/notification message, e.g.
 // "Source: google / cpc / campaign-name · LP: /catalog/...". Empty when there is
 // no UTM/landing info (so a direct/organic order adds no noise).
-export function attributionNotificationLine(cookieValue: string | undefined | null): string {
+export function attributionNotificationLine(cookieValue: string | undefined | null, includeLandingPage = true): string {
   const parsed = parseStoredSource(formatAttribution(cookieValue))
   const bits: string[] = []
   if (parsed.utm) bits.push(`Source: ${parsed.utm.split('/').join(' / ')}`)
-  if (parsed.lp) bits.push(`LP: ${parsed.lp}`)
+  if (includeLandingPage && parsed.lp) bits.push(`LP: ${parsed.lp}`)
   return bits.join(' · ')
 }

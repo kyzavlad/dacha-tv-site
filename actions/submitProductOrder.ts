@@ -14,6 +14,7 @@ import { getRequestLocale } from '@/lib/i18n'
 import { pageDict } from '@/lib/i18n/pages'
 import { cookies } from 'next/headers'
 import { normaliseRecipientNames } from '@/lib/supplier/recipient-name'
+import { compactTelegramOrderMessage, orderProductLines, orderProductUrl } from '@/lib/notifications/order-products'
 
 // Localized checkout revalidation messages (uk/ru/en).
 function checkoutMessages(locale: Awaited<ReturnType<typeof getRequestLocale>>) {
@@ -92,7 +93,7 @@ async function notifyProductOrder(opts: {
           const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ chat_id: chatId, text: message }),
+            body: JSON.stringify({ chat_id: chatId, text: compactTelegramOrderMessage(message) }),
           })
           if (res.ok) {
             console.info(`[checkout-submit ${trace}] direct telegram sent`)
@@ -243,9 +244,8 @@ export async function submitProductOrder(
     prepayment: 'Передоплата',
   }
   const paymentLabel = PAYMENT_LABELS[d.methodPayment] ?? d.methodPayment
-  const itemLines = d.items
-    .map((i) => `• ${i.name}${i.variant ? ` (${i.variant})` : ''} × ${i.quantity} — ${i.price * i.quantity} ₴`)
-    .join('\n')
+  const itemLines = orderProductLines(d.items)
+  const firstProductUrl = d.items.map(orderProductUrl).find(Boolean) ?? null
   const productSummary = d.items
     .map((i) => `${i.name}${i.variant ? ` (${i.variant})` : ''} × ${i.quantity}`)
     .join(', ')
@@ -257,7 +257,7 @@ export async function submitProductOrder(
   // organic orders so it adds no noise). Read from the existing attribution
   // cookie; never blocks the notification.
   let attributionLine = ''
-  try { attributionLine = attributionNotificationLine((await cookies()).get(ATTRIBUTION_COOKIE)?.value) } catch { /* ignore */ }
+  try { attributionLine = attributionNotificationLine((await cookies()).get(ATTRIBUTION_COOKIE)?.value, false) } catch { /* ignore */ }
 
   const primaryNotifyText = [
     isTestOrder ? '🧪 ТЕСТОВЕ/СЛУЖБОВЕ ЗАМОВЛЕННЯ — постачальнику НЕ надсилалось' : '🛒 НОВЕ ЗАМОВЛЕННЯ З САЙТУ',
@@ -271,7 +271,6 @@ export async function submitProductOrder(
     '',
     `Сума: ${totalUah} ₴`,
     d.comment ? `Коментар: ${d.comment}` : null,
-    d.source ? `Сторінка: ${d.source}` : null,
     attributionLine ? `📊 ${attributionLine}` : null,
   ].filter(Boolean).join('\n')
 
@@ -341,7 +340,7 @@ export async function submitProductOrder(
         warehouse: d.warehouseName ?? d.warehouseId,
         warehouse_id: d.warehouseId,
         comment: d.comment ?? null,
-        page_url: d.source ?? null,
+        page_url: firstProductUrl,
       },
     })
 
@@ -503,7 +502,6 @@ export async function submitProductOrder(
           '',
           `Сума: ${totalUah} ₴`,
           d.comment ? `Коментар: ${d.comment}` : null,
-          d.source ? `Сторінка: ${d.source}` : null,
           attributionLine ? `📊 ${attributionLine}` : null,
         ].filter(Boolean).join('\n')
 
@@ -521,7 +519,7 @@ export async function submitProductOrder(
             payment_method: d.methodPayment,
             warehouse: d.warehouseName ?? d.warehouseId,
             warehouse_id: d.warehouseId,
-            page_url: d.source ?? null,
+            page_url: firstProductUrl,
             comment: d.comment ?? null,
             supplier_mode: fbSupplierMode,
             supplier_status: fbSupplierStatus,
@@ -722,7 +720,6 @@ export async function submitProductOrder(
         '',
         `Сума: ${totalUah} ₴`,
         d.comment ? `Коментар: ${d.comment}` : null,
-        d.source ? `Сторінка: ${d.source}` : null,
       ].filter(Boolean).join('\n')
 
       await notifyProductOrder({
@@ -739,7 +736,7 @@ export async function submitProductOrder(
           payment_method: d.methodPayment,
           warehouse: d.warehouseName ?? d.warehouseId,
           warehouse_id: d.warehouseId,
-          page_url: d.source ?? null,
+          page_url: firstProductUrl,
           comment: d.comment ?? null,
           supplier_mode: supplierMode,
           supplier_status: supplierStatus,
