@@ -291,11 +291,12 @@ export async function submitProductOrder(
     // availability at add-to-cart time, so we re-check the live catalog before an
     // order is created. A lookup failure or a missing catalog row blocks the order
     // with a temporary error; a synced supplier row with is_in_stock=false blocks
-    // with the item names. Manual/metal (inquiry) products are never blocked.
+    // with the item names. Every catalog row must also remain published; only
+    // published manual/metal products bypass the supplier-stock check.
     if (catalogSlugs.length > 0) {
       const { data: skuRows, error: skuError } = await client
         .from('catalog_products')
-        .select('slug, supplier_sku, supplier_product_id, source, lead_type, is_in_stock, stock_synced_at, name_ua')
+        .select('slug, status, supplier_sku, supplier_product_id, source, lead_type, is_in_stock, stock_synced_at, name_ua')
         .in('slug', catalogSlugs)
 
       const reval = revalidateSupplierStock({
@@ -316,8 +317,8 @@ export async function submitProductOrder(
         }
         const list = reval.names.slice(0, 5).join(', ')
         if (reval.reason === 'stock_stale') return { success: false, error: t.errStockNeedsConfirmation.replace('{names}', list) }
-        if (reval.reason === 'missing') {
-          console.error(`[checkout-submit ${trace}] blocked — missing catalog rows: ${list}`)
+        if (reval.reason === 'missing' || reval.reason === 'unpublished') {
+          console.error(`[checkout-submit ${trace}] blocked — ${reval.reason} catalog rows: ${list}`)
           return { success: false, error: t.errItemUnavailable.replace('{names}', list) }
         }
         console.error(`[checkout-submit ${trace}] blocked — out of stock: ${list}`)

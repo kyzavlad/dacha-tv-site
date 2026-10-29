@@ -2,7 +2,7 @@
 // Runs server-side at checkout. The cart snapshots availability at add-to-cart
 // time; this re-checks against the live catalog BEFORE an order is created and
 // FAILS CLOSED — a lookup failure or a missing row blocks the order (temporary),
-// never a silent pass. Manual + metal (inquiry) products are never blocked here.
+// never a silent pass. Published manual + metal products skip supplier stock checks.
 
 import { isSupplierStockStale } from '../catalog/stock-freshness'
 
@@ -14,6 +14,7 @@ export interface RevalItem {
 
 export interface RevalRow {
   slug: string
+  status?: string | null
   source?: string | null
   lead_type?: string | null
   is_in_stock?: boolean | null
@@ -29,6 +30,7 @@ export type RevalResult =
   | { ok: false; reason: 'lookup_failed' }
   // Requested catalog product(s) no longer exist — temporary validation error.
   | { ok: false; reason: 'missing'; names: string[] }
+  | { ok: false; reason: 'unpublished'; names: string[] }
   // Synced supplier row explicitly out of stock — block with the item names.
   | { ok: false; reason: 'out_of_stock'; names: string[] }
   | { ok: false; reason: 'stock_stale'; names: string[] }
@@ -36,7 +38,7 @@ export type RevalResult =
 // Decide whether an order may proceed. `lookupFailed` is true when the catalog
 // lookup query itself errored (fail closed). `rows` are the catalog rows found
 // for the cart's catalog slugs. Order of precedence: lookup failure → missing
-// row → out of stock.
+// row → publication hold → out of stock.
 export function revalidateSupplierStock(opts: {
   items: RevalItem[]
   rows: RevalRow[]
@@ -55,6 +57,13 @@ export function revalidateSupplierStock(opts: {
   const missing = catalogItems.filter((i) => !bySlug.has(i.productSlug))
   if (missing.length > 0) {
     return { ok: false, reason: 'missing', names: missing.map((i) => i.name || i.productSlug) }
+  }
+
+  // A manual publication hold must survive a positive supplier feed and stale
+  // carts. Check it before the manual/inquiry stock bypass and all side effects.
+  const unpublished = catalogItems.filter((i) => bySlug.get(i.productSlug)!.status !== 'published')
+  if (unpublished.length > 0) {
+    return { ok: false, reason: 'unpublished', names: unpublished.map((i) => String(bySlug.get(i.productSlug)!.name_ua || i.name || i.productSlug)) }
   }
 
   // Out of stock: only a SYNCED SUPPLIER row explicitly is_in_stock=false blocks.

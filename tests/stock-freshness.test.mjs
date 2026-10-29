@@ -9,7 +9,7 @@ import { buildNewProductRow } from '../lib/catalog/new-product-insert.ts'
 import { toMerchantFeedItem } from '../lib/catalog/merchant-feed.ts'
 
 const now = Date.parse('2026-10-29T03:30:00Z')
-const row = { source: 'supplier', supplier_sku: 'FIXTURE-STALE', is_in_stock: true, stock_quantity: 1, stock_synced_at: '2026-08-15T03:00:00Z' }
+const row = { status: 'published', source: 'supplier', supplier_sku: 'FIXTURE-STALE', is_in_stock: true, stock_quantity: 1, stock_synced_at: '2026-08-15T03:00:00Z' }
 for (const [age, stale] of [[0,false],[SUPPLIER_STOCK_MAX_AGE_MS-1,false],[SUPPLIER_STOCK_MAX_AGE_MS,false],[SUPPLIER_STOCK_MAX_AGE_MS+1,true]]) {
   test(`daily stock freshness boundary ${age}ms`, () => assert.equal(isSupplierStockStale({ ...row, stock_synced_at: new Date(now-age).toISOString() },now),stale))
 }
