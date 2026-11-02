@@ -2,6 +2,7 @@
 
 import { z } from 'zod'
 import { cookies } from 'next/headers'
+import { ADMIN_SESSION_COOKIE, verifyAdminSessionToken } from '@/lib/admin-session'
 import { getSupabaseClient } from '@/lib/supabase/client'
 import { sendTelegramNotification } from '@/lib/notifications/telegram'
 import { sendEmailNotification } from '@/lib/notifications/email'
@@ -301,11 +302,25 @@ export async function updateInquiryStatus(
   status: 'new' | 'contacted' | 'completed' | 'cancelled'
 ): Promise<ActionResult> {
   try {
+    // This exported Server Action is a separate authorization boundary.
+    // The admin-page proxy cannot authorize a direct action invocation.
+    const session = (await cookies()).get(ADMIN_SESSION_COOKIE)
+    if (!(await verifyAdminSessionToken(session?.value))) {
+      return { success: false, error: 'Unauthorized' }
+    }
+
+    // TypeScript types do not constrain untrusted serialized action input.
+    const parsed = z.object({
+      id: z.string().uuid(),
+      status: z.enum(['new', 'contacted', 'completed', 'cancelled']),
+    }).safeParse({ id, status })
+    if (!parsed.success) return { success: false, error: 'Некоректні дані заявки' }
+
     const supabase = getSupabaseClient()
     const { error } = await supabase
       .from('inquiries')
-      .update({ status })
-      .eq('id', id)
+      .update({ status: parsed.data.status })
+      .eq('id', parsed.data.id)
 
     if (error) {
       return { success: false, error: 'Не вдалося оновити статус' }
