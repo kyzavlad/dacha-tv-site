@@ -7,7 +7,7 @@ import { searchNovaPoshtaWarehouses } from '../lib/supplier/warehouses.ts'
 const ROOT = path.resolve(import.meta.dirname, '..')
 const source = fs.readFileSync(path.join(ROOT, 'lib/supplier/warehouses.ts'), 'utf8')
 
-test('checkout warehouse search never fetches the nationwide dataset on a cold request', () => {
+test('checkout lookup always supplies a city and never requests an unscoped cache', () => {
   assert.match(source, /getWarehousesForCityQuery\(query\)/)
   assert.match(source, /fetchNovaPoshtaWarehouses\(supplierCity\)/)
   assert.doesNotMatch(source, /fetchNovaPoshtaWarehouses\(\)\s*\.then/)

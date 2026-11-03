@@ -3,14 +3,16 @@
 // WHY server-side filtering:
 //   get_novaposhta_warehouses returns the FULL Nova Poshta dataset (thousands of
 //   rows). Sending all of that to the checkout UI caused lag and showed every
-//   warehouse in Ukraine. We now fetch once, cache in module memory for 5 min,
-//   and do normalization + ranked filtering here — the client receives ≤30 rows.
+//   warehouse in Ukraine. The supplier currently ignores its city parameter.
+//   Stream records and retain only matching cities, then rank/filter before
+//   applying the 30-result response limit. Never parse the full feed in memory.
 
 export interface NovaPoshtaWarehouse {
   internal_id: string
   name: string
   city_name: string
   address: string
+  warehouse_number?: string
 }
 
 // Normalized shape returned to the client. `label` is ready-to-display.
@@ -32,41 +34,95 @@ function getApiConfig() {
 // ─── Raw fetch ───────────────────────────────────────────────────────────────
 
 export async function fetchNovaPoshtaWarehouses(city?: string): Promise<NovaPoshtaWarehouse[]> {
+  if (!city?.trim()) throw new Error('A city is required for warehouse lookup')
   const { base, key } = getApiConfig()
   const extra: Record<string, string> = {}
   if (city?.trim()) extra.city = city.trim()
   const params = new URLSearchParams({ key, method: 'get_novaposhta_warehouses', type: 'json', ...extra })
-  const res = await fetch(`${base}?${params}`, { cache: 'no-store', headers: { Accept: 'application/json' } })
+  const res = await fetch(`${base}?${params}`, { cache: 'no-store', headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(30_000) })
   if (!res.ok) throw new Error(`get_novaposhta_warehouses → ${res.status} ${res.statusText}`)
+  const rows: NovaPoshtaWarehouse[] = []
+  const q = applyAlias(normalizeSearch(city))
+  await readWarehouseRecords(res, (w) => {
+    const cityName = String(w.city_ua ?? w.city_name ?? w.city ?? '')
+    const normalizedCity = applyAlias(normalizeSearch(cityName))
+    if (!normalizedCity || !(normalizedCity === q || normalizedCity.startsWith(q) ||
+      normalizedCity.includes(q) || withinEditDistance(normalizedCity, q, 1))) return
+    const id = String(w.internal_id ?? w.id ?? '')
+    if (!id) return
+    if (rows.length >= 20_000) throw new Error('Warehouse city result limit exceeded')
+    rows.push({ internal_id: id, name: String(w.name ?? w.description ?? ''),
+      city_name: cityName, address: String(w.address_ua ?? w.address ?? w.short_address ?? ''),
+      warehouse_number: String(w.wnum ?? '') })
+  })
+  return rows
+}
 
-  const raw = await res.json() as unknown
-  const rows = Array.isArray(raw)
-    ? raw
-    : (raw && typeof raw === 'object' && 'data' in (raw as object)
-        ? (raw as { data: unknown[] }).data
-        : [])
-
-  return (rows as Record<string, unknown>[]).map((w) => ({
-    internal_id: String(w.internal_id ?? w.id ?? ''),
-    name: String(w.name ?? w.description ?? ''),
-    city_name: String(w.city_name ?? w.city ?? city ?? ''),
-    address: String(w.address ?? w.short_address ?? ''),
-  })).filter((w) => w.internal_id)
+// The actual response is a 46 MB array. Decode one object at a time so an
+// ignored supplier filter cannot exhaust the checkout worker's memory budget.
+async function readWarehouseRecords(res: Response, accept: (row: Record<string, unknown>) => void): Promise<void> {
+  const reader = res.body?.getReader()
+  if (!reader) throw new Error('Warehouse response body is missing')
+  const decoder = new TextDecoder()
+  let prefix = '', record = '', depth = 0, quoted = false, escaped = false
+  let started = false, complete = false, bytes = 0
+  try {
+    while (true) {
+      const { value, done } = await reader.read()
+      if (done) break
+      bytes += value.byteLength
+      if (bytes > 128 * 1024 * 1024) throw new Error('Warehouse response size limit exceeded')
+      let text = decoder.decode(value, { stream: true })
+      if (!started) {
+        prefix += text
+        const start = /^\s*(?:\{\s*"data"\s*:\s*)?\[/.exec(prefix)
+        if (!start) {
+          if (prefix.length > 16_384) throw new Error('Unexpected warehouse response')
+          continue
+        }
+        text = prefix.slice(start[0].length)
+        prefix = ''
+        started = true
+      }
+      for (const ch of text) {
+        if (complete) continue
+        if (depth === 0) {
+          if (/\s|,/.test(ch)) continue
+          if (ch === ']') { complete = true; continue }
+          if (ch !== '{') throw new Error('Invalid warehouse record')
+          depth = 1; record = ch; continue
+        }
+        record += ch
+        if (record.length > 1_048_576) throw new Error('Warehouse record size limit exceeded')
+        if (quoted) {
+          if (escaped) escaped = false
+          else if (ch === '\\') escaped = true
+          else if (ch === '"') quoted = false
+        } else if (ch === '"') quoted = true
+        else if (ch === '{' || ch === '[') depth++
+        else if (ch === '}' || ch === ']') {
+          depth--
+          if (depth === 0) { accept(JSON.parse(record) as Record<string, unknown>); record = '' }
+        }
+      }
+    }
+    if (!complete || depth !== 0) throw new Error('Incomplete warehouse response')
+  } finally { await reader.cancel().catch(() => {}); reader.releaseLock() }
 }
 
 // ─── Server-side cache ────────────────────────────────────────────────────────
-// Never fetch/cache the nationwide Nova Poshta dataset on a checkout request.
-// On the self-hosted 3.7 GiB production box, parsing that response on a cold
-// process can exhaust the app's PM2 memory budget and restart Next mid-request.
-// Query the supplier by city and cache only those bounded city result sets.
+// Never materialize/cache the nationwide Nova Poshta response. The supplier
+// ignores city filters today, so streaming discards other cities as records
+// arrive. Cache only bounded city result sets within a total row budget.
 
 const CITY_CACHE_TTL_MS = 60 * 60 * 1000 // 1 hour
 const CITY_CACHE_MAX_ENTRIES = 100
+const CITY_CACHE_MAX_ROWS = 30_000
 const _cityCache = new Map<string, { at: number; rows: NovaPoshtaWarehouse[] }>()
 const _cityInflight = new Map<string, Promise<NovaPoshtaWarehouse[]>>()
 
 function supplierCityQuery(query: string): string {
-  const trimmed = query.trim()
+  const trimmed = splitWarehouseQuery(query).city
   const normalized = normalizeSearch(trimmed)
   for (const [alias, canonical] of Object.entries(RAW_ALIASES)) {
     if (normalizeSearch(alias) === normalized) return canonical
@@ -89,6 +145,12 @@ async function getWarehousesForCityQuery(query: string): Promise<NovaPoshtaWareh
       if (_cityCache.size >= CITY_CACHE_MAX_ENTRIES && !_cityCache.has(key)) {
         const oldestKey = _cityCache.keys().next().value
         if (oldestKey) _cityCache.delete(oldestKey)
+      }
+      let retained = [..._cityCache.values()].reduce((n, entry) => n + entry.rows.length, 0)
+      for (const [oldKey, entry] of _cityCache) {
+        if (retained + rows.length <= CITY_CACHE_MAX_ROWS) break
+        _cityCache.delete(oldKey)
+        retained -= entry.rows.length
       }
       _cityCache.set(key, { at: Date.now(), rows })
       return rows
@@ -168,6 +230,17 @@ function withinEditDistance(a: string, b: string, max: number): boolean {
 }
 
 // ─── Search + rank ────────────────────────────────────────────────────────────
+function splitWarehouseQuery(query: string): { city: string; number?: string } {
+  const cleaned = query.trim().replace(/[,#№]/g, ' ').replace(/\s+/g, ' ')
+  const match = /^(.+?)\s+(\d{1,6})$/.exec(cleaned)
+  if (!match) return { city: cleaned }
+  const city = match[1].replace(/\s+(?:відділення|отделение|поштомат|почтомат|відд\.?|отд\.?)$/iu, '').trim()
+  return { city, number: match[2] }
+}
+
+function warehouseNumber(row: NovaPoshtaWarehouse): string | undefined {
+  return row.warehouse_number || /[№#]\s*(\d+)/u.exec(row.name)?.[1] || /^\s*(\d+)\b/u.exec(row.address)?.[1]
+}
 // Rank tiers:
 //   0 exact city match
 //   1 city startsWith query
@@ -176,7 +249,8 @@ function withinEditDistance(a: string, b: string, max: number): boolean {
 //   4 fuzzy city (Levenshtein ≤ 1)
 
 export function searchWarehouses(rows: NovaPoshtaWarehouse[], query: string, limit = 30): WarehouseResult[] {
-  const normRaw = normalizeSearch(query)
+  const parts = splitWarehouseQuery(query)
+  const normRaw = normalizeSearch(parts.city)
   if (normRaw.length < 2) return []
   const q = applyAlias(normRaw)
 
@@ -184,9 +258,11 @@ export function searchWarehouses(rows: NovaPoshtaWarehouse[], query: string, lim
   const scored: Scored[] = []
 
   for (const row of rows) {
+    if (parts.number && warehouseNumber(row) !== parts.number) continue
     // Fold city aliases on both sides so supplier rows returned in Russian
     // still match a Ukrainian query (and vice versa).
     const city = applyAlias(normalizeSearch(row.city_name))
+    if (parts.number && city !== q) continue
     const name = normalizeSearch(row.name)
     const addr = normalizeSearch(row.address)
 

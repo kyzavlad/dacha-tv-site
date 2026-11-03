@@ -139,9 +139,9 @@ const D = {
   // ── Checkout: Nova Poshta warehouse picker ──
   warehouseLabel: { uk: 'Відділення Нової Пошти', ru: 'Отделение Новой Почты', en: 'Nova Poshta branch' },
   warehousePlaceholder: {
-    uk: 'Населений пункт або відділення (наприклад: Пісочин)',
-    ru: 'Населённый пункт или отделение (например: Песочин)',
-    en: 'Town or branch (e.g. Pisochyn)',
+    uk: 'Населений пункт і номер, наприклад: Київ 4428',
+    ru: 'Населённый пункт и номер, например: Киев 4428',
+    en: 'Town and branch number, e.g. Київ 4428',
   },
   warehouseAriaLabel: {
     uk: 'Населений пункт або відділення Нової Пошти',
